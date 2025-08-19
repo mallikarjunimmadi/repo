@@ -9,34 +9,70 @@ import configparser
 import fnmatch
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import List, Tuple, Set
+from typing import List, Tuple, Set, Optional
 
 # =========================
 # ANSI COLOR CODES
 # =========================
 RESET = "\033[0m"
-RED = "\033[31m"          # filename color (red). Use "\033[1;31m" for bold red if you prefer.
-DARK_YELLOW = "\033[33m"  # match highlight (dark yellow). Use "\033[93m" for brighter yellow.
+RED = "\033[31m"          # filename color
+DARK_YELLOW = "\033[33m"  # match highlight
 
 # =========================
-# ABSOLUTE MATCH PATTERN
+# ABSOLUTE MATCH HELPERS
 # =========================
+_TOKEN_BOUNDARY = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_")
+
+def _is_boundary_char(ch: Optional[str]) -> bool:
+    """True if ch is None or not a token char; token chars are letters/digits/_."""
+    return (ch is None) or (ch not in _TOKEN_BOUNDARY)
+
+def _allowed_token_chars(term: str) -> bool:
+    """Fast-path eligibility: typical tokens (names/IPs/MACs)."""
+    allowed = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._:-_")
+    return all(c in allowed for c in term)
+
 def build_absolute_pattern(term: str) -> str:
-    """
-    Absolute match = exact substring not glued to letters/digits/underscore.
-    Allows punctuation around the term (quotes, commas, brackets, =, etc.).
-    """
+    """Regex for absolute (not glued to letters/digits/_)."""
     return r'(?<![A-Za-z0-9_])' + re.escape(term) + r'(?![A-Za-z0-9_])'
 
-def highlight_match(line: str, search_term: str, case_sensitive: bool, color_enabled: bool, match_mode: str) -> str:
+def manual_abs_indices(text: str, term: str, case_sensitive: bool) -> List[Tuple[int,int]]:
     """
-    Highlight only the matched substring in dark yellow; leave the rest of the line as-is.
+    Find all absolute matches (not glued to letters/digits/_) using manual scanning.
+    Returns list of (start, end) indices. Much faster than regex for common tokens.
     """
-    if not color_enabled:
+    hay = text if case_sensitive else text.lower()
+    ned = term if case_sensitive else term.lower()
+    L, n = hay, len(ned)
+    out = []
+    i = 0
+    while True:
+        j = L.find(ned, i)
+        if j == -1:
+            break
+        left  = L[j-1] if j-1 >= 0 else None
+        right = L[j+n] if j+n < len(L) else None
+        if _is_boundary_char(left) and _is_boundary_char(right):
+            out.append((j, j+n))
+        i = j + 1  # allow overlaps (not typical here but safe)
+    return out
+
+# =========================
+# HIGHLIGHTING
+# =========================
+def highlight_via_spans(line: str, spans: List[Tuple[int,int]], color_enabled: bool) -> str:
+    if not color_enabled or not spans:
         return line
-    flags = 0 if case_sensitive else re.IGNORECASE
-    pattern = build_absolute_pattern(search_term) if match_mode == "absolute" else re.escape(search_term)
-    return re.sub(pattern, f"{DARK_YELLOW}\\g<0>{RESET}", line, flags=flags)
+    # Merge & paint spans in order
+    spans = sorted(spans)
+    out = []
+    prev = 0
+    for a,b in spans:
+        out.append(line[prev:a])
+        out.append(f"{DARK_YELLOW}{line[a:b]}{RESET}")
+        prev = b
+    out.append(line[prev:])
+    return "".join(out)
 
 def color_filename(path: str, color_enabled: bool) -> str:
     return f"{RED}{path}{RESET}" if color_enabled else path
@@ -69,7 +105,7 @@ def load_config(config_path: str) -> dict:
     }
 
 # =========================
-# MATCHING
+# MATCH MODE
 # =========================
 def normalize_mode(mode: str) -> str:
     if not mode:
@@ -78,18 +114,64 @@ def normalize_mode(mode: str) -> str:
     mapping = {"abs": "absolute", "absolute": "absolute", "rel": "relative", "relative": "relative"}
     return mapping.get(m, "relative")
 
-def match_found(line: str, search_term: str, case_sensitive: bool, match_mode: str) -> bool:
-    text = line.rstrip("\n")
-    flags = 0 if case_sensitive else re.IGNORECASE
+# =========================
+# MATCHING (FAST)
+# =========================
+class AbsMatcher:
+    """
+    Absolute matcher with two fast paths:
+      - manual boundary scan for token-y terms (names/IPs/MACs)
+      - precompiled regex fallback for other terms
+    Also exposes highlight spans for consistent coloring.
+    """
+    def __init__(self, term: str, case_sensitive: bool):
+        self.term = term
+        self.case_sensitive = case_sensitive
+        self.use_manual = _allowed_token_chars(term)
+        flags = 0 if case_sensitive else re.IGNORECASE
+        self.regex = None if self.use_manual else re.compile(build_absolute_pattern(term), flags)
 
+        # For cheap substring prefilter
+        self.term_prefilter = term if case_sensitive else term.lower()
+
+    def find_spans(self, line: str) -> List[Tuple[int,int]]:
+        # Cheap prefilter to skip most lines
+        hay = line if self.case_sensitive else line.lower()
+        if self.term_prefilter not in hay:
+            return []
+
+        if self.use_manual:
+            return manual_abs_indices(line, self.term, self.case_sensitive)
+        else:
+            # regex fallback
+            spans = []
+            for m in self.regex.finditer(line):
+                spans.append((m.start(), m.end()))
+            return spans
+
+def match_found_and_spans(line: str, term: str, case_sensitive: bool, match_mode: str,
+                          abs_matcher: Optional[AbsMatcher]) -> Tuple[bool, List[Tuple[int,int]]]:
+    text = line.rstrip("\n")
     if match_mode == "absolute":
-        pattern = build_absolute_pattern(search_term)
-        return re.search(pattern, text, flags=flags) is not None
+        # Use prebuilt matcher
+        spans = abs_matcher.find_spans(text) if abs_matcher else []
+        return (len(spans) > 0, spans)
     else:
-        term = search_term if case_sensitive else search_term.lower()
-        if not case_sensitive:
-            text = text.lower()
-        return term in text
+        # Relative = substring
+        hay = text if case_sensitive else text.lower()
+        ned = term if case_sensitive else term.lower()
+        if ned in hay:
+            # Build spans for highlighting all occurrences (simple substring)
+            spans = []
+            i = 0
+            n = len(ned)
+            while True:
+                j = hay.find(ned, i)
+                if j == -1: break
+                spans.append((j, j+n))
+                i = j + 1
+            return True, spans
+        return False, []
 
 # =========================
 # FILE HELPERS
@@ -99,7 +181,6 @@ def is_allowed_extension(file_path: str, allowed_ext: List[str]) -> bool:
     return any(lower.endswith(ext) for ext in allowed_ext)
 
 def path_for_glob(p: str) -> str:
-    # Normalize to POSIX-like for consistent fnmatch across OSes
     return Path(p).as_posix()
 
 def passes_globs(p: str, includes: List[str], excludes: List[str]) -> bool:
@@ -108,7 +189,7 @@ def passes_globs(p: str, includes: List[str], excludes: List[str]) -> bool:
         return False
     if includes:
         return any(fnmatch.fnmatch(posix, pat) for pat in includes)
-    return True  # no include filter ⇒ allow
+    return True
 
 def get_file_timestamp(file_path: str) -> float:
     try:
@@ -120,17 +201,24 @@ def get_file_timestamp(file_path: str) -> float:
 # SEARCH CORE
 # =========================
 def search_in_file(file_path: str, search_term: str, case_sensitive: bool, match_mode: str
-                   ) -> List[Tuple[float, str, int, str]]:
-    matches: List[Tuple[float, str, int, str]] = []
+                   ) -> List[Tuple[float, str, int, str, List[Tuple[int,int]]]]:
+    """
+    Returns tuples: (mtime, path, lineno, line_text, highlight_spans)
+    """
+    matches: List[Tuple[float, str, int, str, List[Tuple[int,int]]]] = []
     ts = get_file_timestamp(file_path)
+
+    # Build matcher once per file for absolute mode
+    abs_matcher = AbsMatcher(search_term, case_sensitive) if match_mode == "absolute" else None
 
     # Try UTF-8 first, then latin-1 fallback
     tried_alt = False
     try:
         with open(file_path, "r", encoding="utf-8", errors="strict") as f:
             for lineno, line in enumerate(f, 1):
-                if match_found(line, search_term, case_sensitive, match_mode):
-                    matches.append((ts, file_path, lineno, line.rstrip()))
+                ok, spans = match_found_and_spans(line, search_term, case_sensitive, match_mode, abs_matcher)
+                if ok:
+                    matches.append((ts, file_path, lineno, line.rstrip(), spans))
     except UnicodeDecodeError:
         tried_alt = True
     except Exception as e:
@@ -141,8 +229,9 @@ def search_in_file(file_path: str, search_term: str, case_sensitive: bool, match
         try:
             with open(file_path, "r", encoding="latin-1", errors="ignore") as f:
                 for lineno, line in enumerate(f, 1):
-                    if match_found(line, search_term, case_sensitive, match_mode):
-                        matches.append((ts, file_path, lineno, line.rstrip()))
+                    ok, spans = match_found_and_spans(line, search_term, case_sensitive, match_mode, abs_matcher)
+                    if ok:
+                        matches.append((ts, file_path, lineno, line.rstrip(), spans))
         except Exception as e:
             print(f"[ERROR] Failed to read {file_path}: {e}")
 
@@ -167,11 +256,10 @@ def collect_files(base_path: str, allowed_ext: List[str], includes: List[str], e
     return files
 
 def scan_files_parallel(files: List[str], search_term: str, case_sensitive: bool, match_mode: str, threads: int
-                        ) -> List[Tuple[float, str, int, str]]:
-    all_matches: List[Tuple[float, str, int, str]] = []
+                        ) -> List[Tuple[float, str, int, str, List[Tuple[int,int]]]]:
+    all_matches: List[Tuple[float, str, int, str, List[Tuple[int,int]]]] = []
     if not files:
         return all_matches
-
     try:
         with ThreadPoolExecutor(max_workers=threads) as ex:
             futures = [ex.submit(search_in_file, f, search_term, case_sensitive, match_mode) for f in files]
@@ -185,16 +273,13 @@ def scan_files_parallel(files: List[str], search_term: str, case_sensitive: bool
     return all_matches
 
 def scan_until_n(files_sorted: List[str], n: int, search_term: str, case_sensitive: bool,
-                 match_mode: str, threads: int, newest: bool = False) -> List[Tuple[float, str, int, str]]:
-    """
-    Scan files in order (oldest→newest by default; newest→oldest if newest=True),
-    submitting work in chunks to allow early stop once we have >= n matches.
-    """
+                 match_mode: str, threads: int, newest: bool = False
+                 ) -> List[Tuple[float, str, int, str, List[Tuple[int,int]]]]:
     if not files_sorted or n <= 0:
         return []
 
     order = list(reversed(files_sorted)) if newest else files_sorted
-    collected: List[Tuple[float, str, int, str]] = []
+    collected: List[Tuple[float, str, int, str, List[Tuple[int,int]]]] = []
     chunk_size = max(1, threads * 4)
 
     idx = 0
@@ -218,12 +303,7 @@ def scan_until_n(files_sorted: List[str], n: int, search_term: str, case_sensiti
 
 def two_pass_collect(files: List[str], result_count: int,
                      search_term: str, case_sensitive: bool, match_mode: str, threads: int
-                     ) -> List[Tuple[float, str, int, str]]:
-    """
-    Two-pass optimization:
-      - Pass A: oldest → collect up to N matches (stop early)
-      - Pass B: newest → collect up to N matches (stop early)
-    """
+                     ) -> List[Tuple[float, str, int, str, List[Tuple[int,int]]]]:
     if not files or result_count <= 0:
         return []
 
@@ -232,9 +312,8 @@ def two_pass_collect(files: List[str], result_count: int,
     first_n = scan_until_n(files_sorted, result_count, search_term, case_sensitive, match_mode, threads, newest=False)
     last_n  = scan_until_n(files_sorted, result_count, search_term, case_sensitive, match_mode, threads, newest=True)
 
-    # Dedup on (path, lineno)
     seen: Set[Tuple[str, int]] = set()
-    merged: List[Tuple[float, str, int, str]] = []
+    merged: List[Tuple[float, str, int, str, List[Tuple[int,int]]]] = []
     for rec in first_n + last_n:
         key = (rec[1], rec[2])
         if key not in seen:
@@ -294,9 +373,8 @@ def main():
         print(f"[ERROR] {e}")
         return
 
-    # CLI overrides
     base_path = args.base_path or cfg["base_path"]
-    search_term = args.search_term  # required on CLI
+    search_term = args.search_term
     case_sensitive = (not args.ignore_case) if args.ignore_case else cfg["case_sensitive"]
     match_mode = normalize_mode(args.match_mode or cfg["match_mode"])
     result_count = args.result_count or cfg["result_count"]
@@ -323,14 +401,12 @@ def main():
         else cfg["exclude_glob"]
     )
 
-    # Color auto-detect with overrides
     color_enabled = sys.stdout.isatty() and not (args.no_color or cfg["no_color"])
 
     if not base_path:
         print("[ERROR] 'base_path' must be provided (config or CLI).")
         return
 
-    # Collect candidate files
     files = collect_files(base_path, file_extensions, includes, excludes)
     scanned_files = len(files)
 
@@ -342,14 +418,12 @@ def main():
         if two_pass:
             matches = two_pass_collect(files, result_count, search_term, case_sensitive, match_mode, threads)
         else:
-            # Single pass: scan all files in parallel then slice ends
             matches = scan_files_parallel(files, search_term, case_sensitive, match_mode, threads)
             matches.sort(key=lambda x: (x[0], x[1], x[2]))
             if len(matches) > result_count:
                 matches = matches[:result_count] + matches[-result_count:]
     except KeyboardInterrupt:
         print("\n[WARN] Interrupted by user (Ctrl-C). Returning partial results...")
-        # proceed with whatever we have
         pass
 
     total = len(matches)
@@ -361,23 +435,24 @@ def main():
     first_half = matches[:split]
     last_half = matches[-split:] if total > split else []
 
+    def print_match(rec):
+        _, file_path, lineno, line, spans = rec
+        print(f"  {color_filename(file_path, color_enabled)}")
+        colored = highlight_via_spans(line, spans, color_enabled)
+        if args.no_line_number:
+            print(f"    {colored}")
+        else:
+            print(f"    Line {lineno} -> {colored}")
+
     if first_half:
         print(f"\n[+] First {len(first_half)} Matches:")
-        for _, file_path, lineno, line in first_half:
-            print(f"  {color_filename(file_path, color_enabled)}")
-            if args.no_line_number:
-                print(f"    {highlight_match(line, search_term, case_sensitive, color_enabled, match_mode)}")
-            else:
-                print(f"    Line {lineno} -> {highlight_match(line, search_term, case_sensitive, color_enabled, match_mode)}")
+        for rec in first_half:
+            print_match(rec)
 
     if last_half and total > split:
         print(f"\n[+] Last {len(last_half)} Matches:")
-        for _, file_path, lineno, line in last_half:
-            print(f"  {color_filename(file_path, color_enabled)}")
-            if args.no_line_number:
-                print(f"    {highlight_match(line, search_term, case_sensitive, color_enabled, match_mode)}")
-            else:
-                print(f"    Line {lineno} -> {highlight_match(line, search_term, case_sensitive, color_enabled, match_mode)}")
+        for rec in last_half:
+            print_match(rec)
 
     dur = time.time() - start
     print(f"\n[INFO] Done in {dur:.2f}s | files scanned: {scanned_files} | matches printed: {len(first_half) + len(last_half)}")
