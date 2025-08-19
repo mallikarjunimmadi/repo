@@ -472,4 +472,20 @@ def main():
         if args.no_line_number:
             print(f"    {colored}")
         else:
-            print(f"    Line {lineno
+            print(f"    Line {lineno} -> {colored}")
+
+    if first_half:
+        print(f"\n[+] First {len(first_half)} Matches:")
+        for rec in first_half:
+            print_match(rec)
+
+    if last_half and total > split:
+        print(f"\n[+] Last {len(last_half)} Matches:")
+        for rec in last_half:
+            print_match(rec)
+
+    dur = time.time() - start
+    print(f"\n[INFO] Done in {dur:.2f}s ({format_duration(dur)}) | files scanned: {scanned_files} | matches printed: {len(first_half) + len(last_half)}")
+
+if __name__ == "__main__":
+    main()
