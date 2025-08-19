@@ -101,6 +101,7 @@ def load_config(config_path: str) -> dict:
         "include_glob": [p.strip() for p in s.get("include_glob", fallback="").split(",") if p.strip()],
         "exclude_glob": [p.strip() for p in s.get("exclude_glob", fallback="").split(",") if p.strip()],
         "no_color": s.getboolean("no_color", fallback=False),
+        "no_file_name": s.getboolean("no_file_name", fallback=False),
     }
 
 # =========================
@@ -369,6 +370,7 @@ Examples:
     parser.add_argument("--exclude-glob", help="Comma-separated glob patterns to exclude (match against full path)")
     parser.add_argument("--no-color", action="store_true", help="Disable color highlighting")
     parser.add_argument("--no-line-number", action="store_true", help="Do not show line numbers in output")
+    parser.add_argument("--no-file-name", "-F", action="store_true", help="Do not show file names in output")
     return parser.parse_args()
 
 # =========================
@@ -430,6 +432,7 @@ def main():
     )
 
     color_enabled = sys.stdout.isatty() and not (args.no_color or cfg["no_color"])
+    hide_file_name = args.no_file_name or cfg["no_file_name"]
 
     if not base_path:
         print("[ERROR] 'base_path' must be provided (config or CLI).")
@@ -467,7 +470,8 @@ def main():
 
     def print_match(rec):
         _, file_path, lineno, line, spans = rec
-        print(f"  {color_filename(file_path, color_enabled)}")
+        if not hide_file_name:
+            print(f"  {color_filename(file_path, color_enabled)}")
         colored = highlight_via_spans(line, spans, color_enabled)
         if args.no_line_number:
             print(f"    {colored}")
