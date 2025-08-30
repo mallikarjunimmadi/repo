@@ -1,21 +1,17 @@
 #!/usr/bin/env python3
 # json2html.py — JSON → interactive HTML graphs (Plotly)
 #
-# Highlights:
-# - Prompts interactively when missing:
-#     * Input JSON path (required)
-#     * Output HTML path (required)
-#     * Title (optional; default "Metrics Report")
-#     * IST? (Y/N) if --ist not provided
-#     * Inline Plotly JS? (Y/N) if --inline-js not provided
-# - Bidirectional zoom/pan sync across ALL charts
-# - No range slider (clean look)
-# - Legend below; legend labels = metric IDs; hover shows friendly description
-# - Wide plots by default (no flag needed)
-# - Summary table uses human-readable numbers
-#
-# Defaults you don't need to answer for:
-#   chart height = 520, columns = 1, timezone = UTC (unless you answered IST=Y)
+# This version:
+# - UI checkbox "Individual graphs":
+#     • OFF (default): group charts by unit (multi-trace). X-axis title HIDDEN.
+#     • ON: one chart per metric. X-axis title = metric label/description.
+# - Legend shows metric IDs; zoom/pan sync across all visible charts.
+# - Prompts for input & (optional) output name:
+#     • If output left blank → defaults to <input_stem>.html
+#     • If output has no extension → .html is added
+#     • .htm/.html kept as-is; respects folders
+# - Input existence check; if "<path>" missing but "<path>.json" exists → use it.
+# - IST default YES; inline-JS default YES; human-readable Summary; no range slider.
 #
 # Requirements: Python 3.8+, plotly>=5, pandas
 
@@ -64,7 +60,7 @@ ${plotly_js}
   th { background: #fafafa; }
   .note { font-size: 12px; color:#666; margin-top: 8px; }
 
-  .controls { display:flex; gap:8px; align-items: center; flex-wrap: wrap; margin: 8px 0 12px; }
+  .controls { display:flex; gap:12px; align-items: center; flex-wrap: wrap; margin: 8px 0 12px; }
   .controls .group { display:flex; gap:6px; align-items:center; }
   select[multiple] {
     min-width: 380px; min-height: 160px; padding: 6px; border: 1px solid #ddd; border-radius: 8px; background: #fff;
@@ -97,7 +93,8 @@ ${plotly_js}
     <h2>Summary Statistics</h2>
     ${summary_table}
     <div class="note">
-      Tip: Zoom/pan/double-click on <i>any</i> chart to sync the same time window across all charts.
+      Tip: Use the checkbox below to switch between grouped-by-unit charts and individual charts.
+      Zoom/pan any chart to sync the time window across all currently displayed charts.
     </div>
   </div>
 
@@ -114,6 +111,9 @@ ${plotly_js}
         <button id="btn-select-all">Select All</button>
         <button id="btn-clear">Clear</button>
       </div>
+      <div class="group">
+        <label><input type="checkbox" id="chk-individual"> Individual graphs</label>
+      </div>
       <div id="warn" class="warn"></div>
     </div>
     <div class="charts-wrap" id="interactive-panels"></div>
@@ -122,27 +122,15 @@ ${plotly_js}
 <script>
 // ---- Data for Interactive Select ----
 const METRICS_DATA = ${metrics_json};
-const XAXIS_TITLE = ${xaxis_title_json};
 
 // Build an index: metricName -> { unit, label, x[], y[] }
 const METRIC_NAMES = Object.keys(METRICS_DATA).sort((a,b)=> a.localeCompare(b));
-
-function byUnit(selectedNames) {
-  const out = {};
-  for (const name of selectedNames) {
-    const m = METRICS_DATA[name];
-    if (!m) continue;
-    const u = m.unit || "UNKNOWN";
-    (out[u] ||= []).push(m);
-  }
-  return out;
-}
 
 function populateMetricSelect() {
   const sel = document.getElementById('metric-select');
   if (!sel) return;
   sel.innerHTML = '';
-  // group options by unit using <optgroup>
+  // Group options by unit for easier selection
   const unitMap = {};
   for (const name of METRIC_NAMES) {
     const m = METRICS_DATA[name];
@@ -186,6 +174,22 @@ function showWarn(msg) {
   w.style.display = msg ? 'block' : 'none';
 }
 
+function truncateLabel(s, maxLen=140) {
+  if (!s) return '';
+  return s.length > maxLen ? s.slice(0, maxLen - 1) + '…' : s;
+}
+
+function groupByUnit(selectedNames) {
+  const out = {};
+  for (const name of selectedNames) {
+    const m = METRICS_DATA[name];
+    if (!m) continue;
+    const u = m.unit || "UNKNOWN";
+    (out[u] ||= []).push(m);
+  }
+  return out;
+}
+
 function renderInteractive() {
   const names = getSelectedMetricNames();
   const wrap = document.getElementById('interactive-panels');
@@ -198,50 +202,110 @@ function renderInteractive() {
   }
   showWarn('');
 
-  const unitsMap = byUnit(names);
+  const individual = !!document.getElementById('chk-individual')?.checked;
+
+  if (individual) {
+    renderPerMetric(names, wrap);
+  } else {
+    renderGroupedByUnit(names, wrap);
+  }
+}
+
+function renderPerMetric(names, wrap) {
   const chartIds = [];
 
-  // Build each unit group chart
-  for (const unit of Object.keys(unitsMap)) {
+  for (const metricName of names) {
+    const m = METRICS_DATA[metricName];
+    if (!m) continue;
+    const unit = m.unit || "UNKNOWN";
+    const xTitle = truncateLabel(m.label || m.metric);
+
+    const card = document.createElement('div');
+    card.className = 'chart-card';
+    const title = document.createElement('div');
+    title.className = 'chart-title';
+    title.innerHTML = metricName + ' <span class="pill">' + unit + '</span>';
+    const div = document.createElement('div');
+    const chartId = 'chart-' + metricName.replace(/[^a-zA-Z0-9_-]/g,'_') + '-' + Math.random().toString(36).slice(2,8);
+    div.id = chartId;
+    card.appendChild(title);
+    card.appendChild(div);
+    wrap.appendChild(card);
+
+    const traces = [{
+      type: 'scatter',
+      mode: 'lines+markers',
+      x: m.x,
+      y: m.y,
+      name: metricName, // legend = metric ID (hidden for single trace)
+      hovertemplate: 'Metric: ' + (m.label || m.metric) + '<br>Time: %{x}<br>Value: %{y}<extra></extra>'
+    }];
+
+    const containerWidth = div.clientWidth || window.innerWidth - 32;
+    const layout = {
+      title: '',
+      xaxis: { title: xTitle },  // title = metric label/desc
+      yaxis: { title: '' },      // remove Y-axis title
+      hovermode: 'x unified',
+      showlegend: false,
+      margin: { t: 40, r: 30, b: 60, l: 60 },
+      height: ${chart_height},
+      autosize: true,
+      width: containerWidth
+    };
+
+    Plotly.newPlot(chartId, traces, layout, {responsive: true});
+    chartIds.push(chartId);
+
+    window.addEventListener('resize', () => {
+      const w = div.clientWidth || window.innerWidth - 32;
+      Plotly.relayout(chartId, { width: w, height: ${chart_height} });
+    });
+  }
+
+  if (chartIds.length > 1) {
+    setupRangeSync(chartIds);
+  }
+}
+
+function renderGroupedByUnit(names, wrap) {
+  const byU = groupByUnit(names);
+  const chartIds = [];
+
+  for (const unit of Object.keys(byU)) {
+    const metrics = byU[unit];
+    if (!metrics.length) continue;
+
+    // X-axis title hidden in grouped mode (per your request)
     const card = document.createElement('div');
     card.className = 'chart-card';
     const title = document.createElement('div');
     title.className = 'chart-title';
     title.innerHTML = 'Selected Metrics <span class="pill">' + unit + '</span>';
     const div = document.createElement('div');
-    const chartId = 'chart-' + unit.replace(/[^a-zA-Z0-9_-]/g,'_') + '-' + Math.random().toString(36).slice(2,8);
+    const chartId = 'chart-unit-' + unit.replace(/[^a-zA-Z0-9_-]/g,'_') + '-' + Math.random().toString(36).slice(2,8);
     div.id = chartId;
     card.appendChild(title);
     card.appendChild(div);
     wrap.appendChild(card);
 
-    const traces = [];
-    for (const m of unitsMap[unit]) {
-      traces.push({
-        type: 'scatter',
-        mode: 'lines+markers',
-        x: m.x,
-        y: m.y,
-        name: m.metric,  // legend = metric ID only
-        hovertemplate: 'Metric: ' + (m.label || m.metric) + '<br>Time: %{x}<br>Value: %{y}<extra></extra>'
-      });
-    }
+    const traces = metrics.map(m => ({
+      type: 'scatter',
+      mode: 'lines+markers',
+      x: m.x,
+      y: m.y,
+      name: m.metric, // legend shows metric IDs
+      hovertemplate: 'Metric: ' + (m.label || m.metric) + '<br>Time: %{x}<br>Value: %{y}<extra></extra>'
+    }));
 
     const containerWidth = div.clientWidth || window.innerWidth - 32;
-
     const layout = {
       title: '',
-      xaxis: { title: XAXIS_TITLE },                 // <-- no rangeslider
-      yaxis: { title: unit },
+      xaxis: { title: '' },        // HIDE x-axis title in grouped mode
+      yaxis: { title: '' },        // remove Y-axis title
       hovermode: 'x unified',
-      legend: {
-        orientation: 'h',
-        x: 0,
-        xanchor: 'left',
-        y: -0.25,
-        yanchor: 'top',
-        font: { size: 11 }
-      },
+      showlegend: true,
+      legend: { orientation: 'h', x: 0, xanchor: 'left', y: -0.25, yanchor: 'top', font: { size: 11 } },
       margin: { t: 40, r: 30, b: 150, l: 60 },
       height: ${chart_height},
       autosize: true,
@@ -257,57 +321,59 @@ function renderInteractive() {
     });
   }
 
-  // ----- GLOBAL RANGE SYNC (any chart can drive) -----
-  if (chartIds.length > 0) {
-    let suppressSync = false;
+  if (chartIds.length > 1) {
+    setupRangeSync(chartIds);
+  }
+}
 
-    function parseRangeEvent(ev) {
-      // Return { r0, r1, autorange, changed }
-      let r0 = null, r1 = null, autorange = null, changed = false;
+function setupRangeSync(chartIds) {
+  let suppressSync = false;
 
-      if (ev && Object.prototype.hasOwnProperty.call(ev, 'xaxis.autorange')) {
-        autorange = !!ev['xaxis.autorange'];
-        changed = true;
-        return { r0, r1, autorange, changed };
-      }
+  function parseRangeEvent(ev) {
+    let r0 = null, r1 = null, autorange = null, changed = false;
 
-      if (Array.isArray(ev?.['xaxis.range'])) {
-        r0 = ev['xaxis.range'][0];
-        r1 = ev['xaxis.range'][1];
-        changed = true;
-      } else if (
-        Object.prototype.hasOwnProperty.call(ev || {}, 'xaxis.range[0]') &&
-        Object.prototype.hasOwnProperty.call(ev || {}, 'xaxis.range[1]')
-      ) {
-        r0 = ev['xaxis.range[0]'];
-        r1 = ev['xaxis.range[1]'];
-        changed = true;
-      }
+    if (ev && Object.prototype.hasOwnProperty.call(ev, 'xaxis.autorange')) {
+      autorange = !!ev['xaxis.autorange'];
+      changed = true;
       return { r0, r1, autorange, changed };
     }
 
-    function applyRangeToAll(sourceId, r0, r1, autorange) {
-      suppressSync = true;
-      for (const id of chartIds) {
-        if (id === sourceId) continue;
-        if (autorange) {
-          Plotly.relayout(id, { 'xaxis.autorange': true });
-        } else if (r0 != null && r1 != null) {
-          Plotly.relayout(id, { 'xaxis.range': [r0, r1], 'xaxis.autorange': false });
-        }
-      }
-      setTimeout(() => { suppressSync = false; }, 0);
+    if (Array.isArray(ev?.['xaxis.range'])) {
+      r0 = ev['xaxis.range'][0];
+      r1 = ev['xaxis.range'][1];
+      changed = true;
+    } else if (
+      Object.prototype.hasOwnProperty.call(ev || {}, 'xaxis.range[0]') &&
+      Object.prototype.hasOwnProperty.call(ev || {}, 'xaxis.range[1]')
+    ) {
+      r0 = ev['xaxis.range[0]'];
+      r1 = ev['xaxis.range[1]'];
+      changed = true;
     }
+    return { r0, r1, autorange, changed };
+  }
 
+  function applyRangeToAll(sourceId, r0, r1, autorange) {
+    suppressSync = true;
     for (const id of chartIds) {
-      const div = document.getElementById(id);
-      div.on('plotly_relayout', (ev) => {
-        if (suppressSync) return;
-        const { r0, r1, autorange, changed } = parseRangeEvent(ev);
-        if (!changed) return;
-        applyRangeToAll(id, r0, r1, autorange);
-      });
+      if (id === sourceId) continue;
+      if (autorange) {
+        Plotly.relayout(id, { 'xaxis.autorange': true });
+      } else if (r0 != null && r1 != null) {
+        Plotly.relayout(id, { 'xaxis.range': [r0, r1], 'xaxis.autorange': false });
+      }
     }
+    setTimeout(() => { suppressSync = false; }, 0);
+  }
+
+  for (const id of chartIds) {
+    const div = document.getElementById(id);
+    div.on('plotly_relayout', (ev) => {
+      if (suppressSync) return;
+      const { r0, r1, autorange, changed } = parseRangeEvent(ev);
+      if (!changed) return;
+      applyRangeToAll(id, r0, r1, autorange);
+    });
   }
 }
 
@@ -353,11 +419,11 @@ def prompt_str(prompt: str, default: str = "") -> str:
     ans = input(msg).strip()
     return ans or default
 
-def prompt_yes_no(prompt: str, default_no: bool = True) -> bool:
-    default = "N" if default_no else "Y"
+def prompt_yes_no(prompt: str, default_yes: bool = True) -> bool:
+    default = "Y" if default_yes else "N"
     ans = input(f"{prompt} (Y/N) [{default}]: ").strip().lower()
     if not ans:
-        return not default_no
+        return default_yes
     return ans.startswith("y")
 
 def parse_args():
@@ -366,9 +432,9 @@ def parse_args():
         formatter_class=argparse.RawTextHelpFormatter,
         add_help=True,
     )
-    # Make input/output optional here; we will prompt if missing
-    p.add_argument("-i", "--input", help="Input JSON file path.")
-    p.add_argument("-o", "--output", help="Output HTML file path.")
+    # We prompt if missing
+    p.add_argument("-i", "--input", help="Input JSON file path ('.json' extension optional).")
+    p.add_argument("-o", "--output", help="Output HTML file name/path (optional). If blank, uses <input_stem>.html")
     p.add_argument("--title", help='Page title (default: "Metrics Report").')
 
     # Flags that can be supplied non-interactively; if omitted, we will prompt Y/N
@@ -386,28 +452,64 @@ def parse_args():
     # Prompt for required args if missing
     if not args.input:
         args.input = prompt_str("Enter input JSON file path")
-    if not args.output:
-        args.output = prompt_str("Enter output HTML file path")
+
+    # Prompt for optional output name; empty means default to input_stem.html
+    if args.output is None:
+        args.output = prompt_str("Output HTML file name/path (optional)", "")
 
     # Title optional
     if not args.title:
         args.title = prompt_str("Title (optional)", "Metrics Report")
 
-    # Decide IST if user didn't explicitly pass --ist
+    # Decide IST if user didn't explicitly pass --ist (default YES)
     if "--ist" not in sys.argv:
-        args.ist = prompt_yes_no("Render times in IST (Asia/Kolkata)?", default_no=False)
+        args.ist = prompt_yes_no("Render times in IST (Asia/Kolkata)?", default_yes=True)
 
-    # Decide inline JS if user didn't explicitly pass --inline-js
+    # Decide inline JS if user didn't explicitly pass --inline-js (default YES)
     if "--inline-js" not in sys.argv:
-        args.inline_js = prompt_yes_no("Embed Plotly JS in the HTML (works fully offline)?", default_no=False)
+        args.inline_js = prompt_yes_no("Embed Plotly JS in the HTML (works fully offline)?", default_yes=True)
 
-    # Timezone resolution (we don't ask for custom tz)
-    if args.ist:
-        args.timezone = "Asia/Kolkata"
-    else:
-        args.timezone = "UTC"
-
+    # Timezone resolution (no custom tz prompt)
+    args.timezone = "Asia/Kolkata" if args.ist else "UTC"
     return args
+
+
+# ---------------------------- FILE HELPERS ----------------------------
+
+def resolve_input_path(raw: str) -> Path:
+    """Return an existing Path for input; if raw doesn't exist and raw+'.json' does, use that."""
+    p = Path(raw).expanduser()
+    if p.exists():
+        return p.resolve()
+    if p.suffix.lower() != ".json":
+        p_json = p.with_suffix(".json")
+        if p_json.exists():
+            return p_json.resolve()
+    return p.resolve()
+
+def _ensure_html_suffix(p: Path) -> Path:
+    """If path has neither .html nor .htm, append .html."""
+    suf = p.suffix.lower()
+    if suf in (".html", ".htm"):
+        return p
+    return p.with_suffix(".html")
+
+def resolve_output_path(input_path: Path, raw_out: str | None) -> Path:
+    """
+    Determine output path:
+      - If raw_out is empty/blank: use input_path.stem + '.html' in the same directory.
+      - If raw_out has no .html/.htm suffix: append '.html'.
+      - If directory parts are present, respect them.
+    """
+    if not raw_out:
+        out = input_path.with_suffix(".html")
+    else:
+        p = Path(raw_out).expanduser()
+        if p.parent == Path(""):  # just a filename
+            p = Path.cwd() / p.name
+        p = _ensure_html_suffix(p)
+        out = p
+    return out.resolve()
 
 
 # ---------------------------- I/O + TRANSFORM ----------------------------
@@ -487,7 +589,7 @@ def _fmt_ts(ts_str: str, tz_name: str) -> str:
     try:
         t = pd.to_datetime(ts_str, utc=True, errors="coerce")
         if pd.isna(t):
-            return str(ts_str)
+          return str(ts_str)
         t = t.tz_convert(tz_name)
         return t.strftime("%Y-%m-%d %H:%M:%S %Z")
     except Exception:
@@ -513,10 +615,7 @@ def to_label(metric: str, description: str):
 def build_metrics_json_for_js(df_all: pd.DataFrame, tz_name: str) -> str:
     """
     JSON for client-side plotting in requested timezone:
-    {
-      "<metric>": { "metric": ..., "unit": ..., "label": ..., "x": [...], "y": [...] },
-      ...
-    }
+    { "<metric>": { "metric": ..., "unit": ..., "label": ..., "x": [...], "y": [...] }, ... }
     """
     store = {}
     if df_all.empty:
@@ -549,15 +648,21 @@ def main():
         format="[%(levelname)s] %(message)s"
     )
 
+    # Resolve input path (allow implicit ".json")
+    in_raw = args.input
+    in_path = resolve_input_path(in_raw)
+    if not in_path.exists():
+        logging.error(
+            "Input file not found: %s\nHint: If your file is named '%s.json', you can pass '%s' (without .json) or the full name.",
+            in_raw, Path(in_raw).name, in_raw
+        )
+        raise SystemExit(2)
+
+    # Resolve output path (handle optional prompt value)
+    out_path = resolve_output_path(in_path, (args.output or "").strip())
+
     tz_name = "Asia/Kolkata" if args.ist else "UTC"
     tz_label = "IST" if tz_name == "Asia/Kolkata" else tz_name
-
-    in_path = Path(args.input).expanduser().resolve()
-    out_path = Path(args.output).expanduser().resolve()
-
-    if not in_path.exists():
-        logging.error("Input file not found: %s", in_path)
-        raise SystemExit(2)
 
     logging.info("Reading: %s", in_path)
     data = load_json(in_path)
@@ -598,9 +703,6 @@ def main():
     # JS data for Interactive Select (X values converted to tz)
     metrics_json = build_metrics_json_for_js(df_all, tz_name)
 
-    # Axis title text
-    xaxis_title = f"Time ({tz_label})"
-
     # Render
     html = render_html(HTML_TEMPLATE, {
         "title": args.title or "Metrics Report",
@@ -612,7 +714,6 @@ def main():
         "step": (step if step is not None else ""),
         "summary_table": stats_html,
         "metrics_json": metrics_json,
-        "xaxis_title_json": json.dumps(xaxis_title),
         "tz_label": tz_label,
         "chart_height": args.chart_height,
     })
