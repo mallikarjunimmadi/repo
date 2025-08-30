@@ -18,7 +18,7 @@
 #   --ist                         (set timezone to Asia/Kolkata)
 #   --timezone / --tz <IANA>      (e.g., Asia/Kolkata, America/New_York)
 #
-# Requirements: Python 3.8+, plotly>=5, pandas, pytz/zoneinfo (pandas uses zoneinfo)
+# Requirements: Python 3.8+, plotly>=5, pandas
 
 import argparse
 import json
@@ -219,7 +219,7 @@ function renderInteractive() {
         mode: 'lines+markers',
         x: m.x,
         y: m.y,
-        name: m.label || m.metric,
+        name: m.metric,  // legend = metric ID only
         hovertemplate: 'Metric: ' + (m.label || m.metric) + '<br>Time: %{x}<br>Value: %{y}<extra></extra>'
       });
     }
@@ -232,7 +232,16 @@ function renderInteractive() {
       xaxis: { title: XAXIS_TITLE },
       yaxis: { title: unit },
       hovermode: 'x unified',
-      legend: { orientation: 'h', yanchor: 'bottom', y: 1.02, xanchor: 'left', x: 0 },
+      // Legend below the plot (Option B)
+      legend: {
+        orientation: 'h',
+        x: 0,
+        xanchor: 'left',
+        y: -0.25,     // push legend below the x-axis
+        yanchor: 'top',
+        font: { size: 11 }
+      },
+      margin: { t: 40, r: 30, b: 150, l: 60 },  // room for legend below
       height: ${chart_height},
       autosize: true,
       width: containerWidth
@@ -295,11 +304,6 @@ python json2html.py -i perfdata.json -o report.html --tz America/New_York
 
 # 3) Narrow reading width (~1100px)
 python json2html.py -i perfdata.json -o report.html --title "VS Metrics" --narrow
-
-TIPS
-----
-- Interactive Select groups chosen metrics by units; one chart per unit.
-- Legend items are clickable; drag to zoom; double-click to reset.
 """
     p = argparse.ArgumentParser(
         description="Convert metrics JSON to an interactive HTML (Summary + Interactive Select). Wide plots by default; use --narrow to cap width.",
@@ -324,7 +328,7 @@ TIPS
     p.add_argument("--ist", action="store_true",
                    help="Shortcut for --timezone Asia/Kolkata.")
     p.add_argument("--timezone", "--tz", dest="timezone", default="UTC",
-                   help="IANA timezone name, e.g. Asia/Kolkata, America/New_York. Default: UTC.")
+                   help="IANA timezone name, e.g., Asia/Kolkata, America/New_York. Default: UTC.")
 
     p.add_argument("-v", "--verbose", action="store_true", help="Verbose logging.")
     return p.parse_args()
@@ -455,7 +459,6 @@ def build_metrics_json_for_js(df_all: pd.DataFrame, tz_name: str) -> str:
             if pd.isna(t):
                 times.append(None)
             else:
-                # ensure tz-aware then convert to target tz and format ISO
                 tt = pd.Timestamp(t).tz_convert(tz_name)
                 times.append(tt.isoformat())
         store[metric] = {
