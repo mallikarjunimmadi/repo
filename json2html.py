@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 # json2html.py — JSON → interactive HTML graphs (Plotly)
 #
-# Streamlined per your request:
-# - ONLY two tabs: Summary + Interactive Select (no static per-metric/per-unit panels)
-# - NO Plotly range slider (removed)
+# Streamlined:
+# - ONLY two tabs: Summary + Interactive Select
+# - NO Plotly range slider
+# - Plots default to full browser width; use --narrow to cap page width (~1100px)
 #
-# Still supports:
+# Options:
 #   --chart-height <px>           (default 520)
-#   --panel-width full|narrow     (default full; narrow ≈1100px)
-#   --interactive-columns <int>   (default 1; # charts per row for Interactive tab)
+#   --narrow                      (cap page width; otherwise full width)
+#   --interactive-columns <int>   (default 1; # charts per row in Interactive tab)
 #   --inline-js                   (embed Plotly JS; otherwise CDN)
 #
 # Requirements: Python 3.8+, plotly>=5, pandas
@@ -19,8 +20,8 @@ import logging
 from pathlib import Path
 
 import pandas as pd
-import plotly.graph_objects as go  # noqa: F401 (kept for future static additions)
-from plotly.offline import plot as plot_offline  # noqa: F401 (kept for future static additions)
+import plotly.graph_objects as go  # noqa: F401
+from plotly.offline import plot as plot_offline  # noqa: F401
 
 
 # ---------------------------- HTML TEMPLATE ----------------------------
@@ -34,6 +35,7 @@ HTML_TEMPLATE = r"""<!doctype html>
 ${plotly_js}
 <style>
   :root { --page-max-width: ${page_max_width}; --interactive-cols: ${interactive_cols}; }
+  html, body { width: 100%; }
   body {
     font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
     margin: 16px;
@@ -67,6 +69,9 @@ ${plotly_js}
   .chart-card { padding: 8px; border: 1px solid #eee; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.04); }
   .chart-title { font-weight: 600; margin-bottom: 6px; font-size: 14px; }
   .pill { display:inline-block; padding:2px 8px; border-radius: 999px; border:1px solid #ddd; font-size: 12px; color:#444; background:#fafafa; }
+
+  /* Make plot containers expand fully */
+  .chart-card > div { width: 100%; }
 </style>
 </head>
 <body>
@@ -212,15 +217,26 @@ function renderInteractive() {
       });
     }
 
+    // Make width match container (browser width if not narrow)
+    const containerWidth = div.clientWidth || window.innerWidth - 32;
+
     const layout = {
       title: '',
       xaxis: { title: 'Time (UTC)' }, // rangeslider removed
       yaxis: { title: unit },
       hovermode: 'x unified',
       legend: { orientation: 'h', yanchor: 'bottom', y: 1.02, xanchor: 'left', x: 0 },
-      height: ${chart_height}
+      height: ${chart_height},
+      autosize: true,
+      width: containerWidth
     };
     Plotly.newPlot(chartId, traces, layout, {responsive: true});
+
+    // Keep width synced on resize
+    window.addEventListener('resize', () => {
+      const w = div.clientWidth || window.innerWidth - 32;
+      Plotly.relayout(chartId, { width: w, height: ${chart_height} });
+    });
   }
 }
 
@@ -263,20 +279,20 @@ def parse_args():
 EXAMPLES
 --------
 
-# 1) Basic run (offline HTML, bigger charts, 2 columns in Interactive)
+# 1) Full-width, offline HTML, bigger charts, 2 columns
 python json2html.py -i perfdata.json -o report.html --title "UPI" \
-  --inline-js --chart-height 650 --panel-width narrow --interactive-columns 2
+  --inline-js --chart-height 650 --interactive-columns 2
 
-# 2) Default sizes, CDN Plotly
-python json2html.py -i perfdata.json -o report.html --title "VS Metrics"
+# 2) Narrow reading width (~1100px)
+python json2html.py -i perfdata.json -o report.html --title "VS Metrics" --narrow
 
 TIPS
 ----
 - Use Interactive Select to pick any subset of metrics; charts are grouped by their units.
-- Click legend items to hide/show traces. Drag to zoom; double-click to reset view.
+- Legend items are clickable; drag to zoom; double-click to reset view.
 """
     p = argparse.ArgumentParser(
-        description="Convert metrics JSON to an interactive HTML report (Plotly). Only Summary + Interactive Select tabs (no static metric panels).",
+        description="Convert metrics JSON to an interactive HTML (Summary + Interactive Select). Wide plots by default; use --narrow to cap width.",
         formatter_class=argparse.RawTextHelpFormatter,
         epilog=epilog
     )
@@ -286,13 +302,13 @@ TIPS
     p.add_argument("--inline-js", action="store_true",
                    help="Embed Plotly JS inline (offline HTML). If unavailable, falls back to CDN.")
 
-    # Size controls
+    # Size / layout controls
     p.add_argument("--chart-height", type=int, default=520,
-                   help="Chart height in pixels for charts (default: 520).")
-    p.add_argument("--panel-width", choices=["full", "narrow"], default="full",
-                   help="Panel content width. 'full' (edge-to-edge) or 'narrow' (~1100px). Default: full.")
+                   help="Chart height in pixels (default: 520).")
     p.add_argument("--interactive-columns", type=int, default=1,
-                   help="Number of columns in the Interactive Select tab grid (default: 1).")
+                   help="Number of columns in the Interactive Select grid (default: 1).")
+    p.add_argument("--narrow", action="store_true",
+                   help="Constrain page width to ~1100px (otherwise charts span browser width).")
 
     p.add_argument("-v", "--verbose", action="store_true", help="Verbose logging.")
     return p.parse_args()
@@ -347,13 +363,37 @@ def collect_stats(series_list):
         df = df.sort_values(["units","metric"], kind="stable")
     return df
 
+def _human_number(x):
+    """Return a human-readable string: no scientific notation; K/M/B/T suffix; tidy decimals."""
+    if pd.isna(x):
+        return ""
+    try:
+        x = float(x)
+    except Exception:
+        return str(x)
+    neg = x < 0
+    x = abs(x)
+    # thresholds
+    for unit, thresh in [("T", 1e12), ("B", 1e9), ("M", 1e6), ("K", 1e3)]:
+        if x >= thresh:
+            val = x / thresh
+            s = f"{val:,.2f}".rstrip("0").rstrip(".") + unit
+            return "-" + s if neg else s
+    # small numbers: avoid scientific; keep up to 6 decimals as needed
+    if x != int(x):
+        s = f"{x:,.6f}".rstrip("0").rstrip(".")
+    else:
+        s = f"{int(x):,d}"
+    return "-" + s if neg else s
+
 def dataframe_to_html_table(df: pd.DataFrame) -> str:
     if df.empty:
         return "<p class='note'>No statistics available.</p>"
     df2 = df.copy()
-    for c in ["mean","min","max","sum","trend"]:
+    # format numeric columns to human-readable
+    for c in ["mean","min","max","sum","trend","num_samples"]:
         if c in df2.columns:
-            df2[c] = pd.to_numeric(df2[c], errors="coerce").round(6)
+            df2[c] = df2[c].apply(_human_number)
     cols = ["metric","units","description","mean","min","min_ts","max","max_ts","sum","trend","num_samples"]
     cols = [c for c in cols if c in df2.columns]
     return df2[cols].to_html(index=False, classes="stats", border=0, escape=False)
@@ -442,7 +482,7 @@ def main():
         plotly_js = '<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>'
 
     # Width + columns CSS variables
-    page_max_width = "100%" if args.panel_width == "full" else "1100px"
+    page_max_width = "1100px" if args.narrow else "100%"
     interactive_cols = max(1, int(args.interactive_columns))
 
     # JS data for Interactive Select
