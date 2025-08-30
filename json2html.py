@@ -2,27 +2,27 @@
 # json2html.py — JSON → interactive HTML graphs (Plotly)
 #
 # Highlights:
-# - Tabs: Summary + Interactive Select
-# - Single global time slider on the FIRST chart controls ALL charts
-# - Zoom/pan/double-click on ANY chart syncs all others (bidirectional)
-# - Legend sits below the plot; legend labels = metric IDs; hover shows friendly description
-# - Wide plots by default; pass --narrow to cap width (~1100px)
-# - Timestamps in UTC by default; use --ist or --tz/--timezone to render in any IANA TZ
-# - Summary table shows human-readable numbers (no scientific notation)
+# - Prompts interactively when missing:
+#     * Input JSON path (required)
+#     * Output HTML path (required)
+#     * Title (optional; default "Metrics Report")
+#     * IST? (Y/N) if --ist not provided
+#     * Inline Plotly JS? (Y/N) if --inline-js not provided
+# - Bidirectional zoom/pan sync across ALL charts
+# - No range slider (clean look)
+# - Legend below; legend labels = metric IDs; hover shows friendly description
+# - Wide plots by default (no flag needed)
+# - Summary table uses human-readable numbers
 #
-# Options:
-#   --chart-height <px>           (default 520)
-#   --narrow                      (cap page width; otherwise full width)
-#   --interactive-columns <int>   (default 1; charts per row)
-#   --inline-js                   (embed Plotly JS; otherwise CDN)
-#   --ist                         (shortcut for --tz Asia/Kolkata)
-#   --timezone / --tz <IANA>      (e.g., Asia/Kolkata, America/New_York)
+# Defaults you don't need to answer for:
+#   chart height = 520, columns = 1, timezone = UTC (unless you answered IST=Y)
 #
 # Requirements: Python 3.8+, plotly>=5, pandas
 
 import argparse
 import json
 import logging
+import sys
 from pathlib import Path
 
 import pandas as pd
@@ -40,7 +40,7 @@ HTML_TEMPLATE = r"""<!doctype html>
 <title>${title}</title>
 ${plotly_js}
 <style>
-  :root { --page-max-width: ${page_max_width}; --interactive-cols: ${interactive_cols}; }
+  :root { --page-max-width: 100%; --interactive-cols: 1; }
   html, body { width: 100%; }
   body {
     font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
@@ -97,7 +97,7 @@ ${plotly_js}
     <h2>Summary Statistics</h2>
     ${summary_table}
     <div class="note">
-      Tip: Use the global time slider (on the first chart in Interactive tab) or zoom/pan any chart to sync all.
+      Tip: Zoom/pan/double-click on <i>any</i> chart to sync the same time window across all charts.
     </div>
   </div>
 
@@ -202,7 +202,6 @@ function renderInteractive() {
   const chartIds = [];
 
   // Build each unit group chart
-  let idx = 0;
   for (const unit of Object.keys(unitsMap)) {
     const card = document.createElement('div');
     card.className = 'chart-card';
@@ -228,17 +227,13 @@ function renderInteractive() {
       });
     }
 
-    // Make width match container (browser width if not narrow)
     const containerWidth = div.clientWidth || window.innerWidth - 32;
 
-    // First chart becomes the "master" with the only range slider
-    
     const layout = {
       title: '',
-      xaxis: { title: XAXIS_TITLE },
+      xaxis: { title: XAXIS_TITLE },                 // <-- no rangeslider
       yaxis: { title: unit },
       hovermode: 'x unified',
-      // Legend below the plot
       legend: {
         orientation: 'h',
         x: 0,
@@ -255,9 +250,7 @@ function renderInteractive() {
 
     Plotly.newPlot(chartId, traces, layout, {responsive: true});
     chartIds.push(chartId);
-    idx += 1;
 
-    // Keep width synced on resize
     window.addEventListener('resize', () => {
       const w = div.clientWidth || window.innerWidth - 32;
       Plotly.relayout(chartId, { width: w, height: ${chart_height} });
@@ -306,7 +299,6 @@ function renderInteractive() {
       setTimeout(() => { suppressSync = false; }, 0);
     }
 
-    // Attach listeners to every chart
     for (const id of chartIds) {
       const div = document.getElementById(id);
       div.on('plotly_relayout', (ev) => {
@@ -341,60 +333,81 @@ function renderInteractive() {
 </html>
 """
 
-# ---------------------------- HELPER: SAFE RENDER ----------------------------
+# ---------------------------- SAFE REPLACER ----------------------------
 
 def render_html(template: str, mapping: dict) -> str:
-    """Literal placeholder replacement for ${key} only; won't touch other ${...} in JS you didn't pass."""
+    """Literal placeholder replacement for ${key} only."""
     out = template
     for k, v in mapping.items():
         out = out.replace("${" + k + "}", str(v))
     return out
 
 
-# ---------------------------- ARG PARSING ----------------------------
+# ---------------------------- ARG PARSING + PROMPTS ----------------------------
+
+def prompt_str(prompt: str, default: str = "") -> str:
+    msg = f"{prompt}"
+    if default:
+        msg += f" [{default}]"
+    msg += ": "
+    ans = input(msg).strip()
+    return ans or default
+
+def prompt_yes_no(prompt: str, default_no: bool = True) -> bool:
+    default = "N" if default_no else "Y"
+    ans = input(f"{prompt} (Y/N) [{default}]: ").strip().lower()
+    if not ans:
+        return not default_no
+    return ans.startswith("y")
 
 def parse_args():
-    epilog = r"""
-EXAMPLES
---------
-
-# 1) Full-width, offline HTML, bigger charts, 2 columns, IST
-python json2html.py -i perfdata.json -o report.html --title "UPI" \
-  --inline-js --chart-height 650 --interactive-columns 2 --ist
-
-# 2) Any timezone by name (e.g., America/New_York)
-python json2html.py -i perfdata.json -o report.html --tz America/New_York
-
-# 3) Narrow reading width (~1100px)
-python json2html.py -i perfdata.json -o report.html --title "VS Metrics" --narrow
-"""
     p = argparse.ArgumentParser(
-        description="Convert metrics JSON to an interactive HTML (Summary + Interactive Select). Wide plots by default; use --narrow to cap width. Global slider + bidirectional range sync.",
+        description="Convert metrics JSON to an interactive HTML (Summary + Interactive Select). Wide plots by default; bidirectional zoom/pan sync.",
         formatter_class=argparse.RawTextHelpFormatter,
-        epilog=epilog
+        add_help=True,
     )
-    p.add_argument("-i", "--input", required=True, help="Input JSON file path.")
-    p.add_argument("-o", "--output", required=True, help="Output HTML file path.")
-    p.add_argument("--title", default="Metrics Report", help="Page title.")
-    p.add_argument("--inline-js", action="store_true",
-                   help="Embed Plotly JS inline (offline HTML). If unavailable, falls back to CDN.")
+    # Make input/output optional here; we will prompt if missing
+    p.add_argument("-i", "--input", help="Input JSON file path.")
+    p.add_argument("-o", "--output", help="Output HTML file path.")
+    p.add_argument("--title", help='Page title (default: "Metrics Report").')
 
-    # Size / layout controls
-    p.add_argument("--chart-height", type=int, default=520,
-                   help="Chart height in pixels (default: 520).")
-    p.add_argument("--interactive-columns", type=int, default=1,
-                   help="Number of columns in the Interactive Select grid (default: 1).")
-    p.add_argument("--narrow", action="store_true",
-                   help="Constrain page width to ~1100px (otherwise charts span browser width).")
+    # Flags that can be supplied non-interactively; if omitted, we will prompt Y/N
+    p.add_argument("--inline-js", action="store_true", help="Embed Plotly JS inline (offline HTML).")
+    p.add_argument("--ist", action="store_true", help="Shortcut for Asia/Kolkata timezone.")
 
-    # Timezone controls
-    p.add_argument("--ist", action="store_true",
-                   help="Shortcut for --timezone Asia/Kolkata.")
-    p.add_argument("--timezone", "--tz", dest="timezone", default="UTC",
-                   help="IANA timezone name, e.g., Asia/Kolkata, America/New_York. Default: UTC.")
-
+    # Hidden defaults we do NOT prompt for
+    p.add_argument("--chart-height", type=int, default=520, help=argparse.SUPPRESS)
+    p.add_argument("--interactive-columns", type=int, default=1, help=argparse.SUPPRESS)
+    p.add_argument("--narrow", action="store_true", help=argparse.SUPPRESS)
+    p.add_argument("--timezone", "--tz", dest="timezone", default=None, help=argparse.SUPPRESS)
     p.add_argument("-v", "--verbose", action="store_true", help="Verbose logging.")
-    return p.parse_args()
+    args = p.parse_args()
+
+    # Prompt for required args if missing
+    if not args.input:
+        args.input = prompt_str("Enter input JSON file path")
+    if not args.output:
+        args.output = prompt_str("Enter output HTML file path")
+
+    # Title optional
+    if not args.title:
+        args.title = prompt_str("Title (optional)", "Metrics Report")
+
+    # Decide IST if user didn't explicitly pass --ist
+    if "--ist" not in sys.argv:
+        args.ist = prompt_yes_no("Render times in IST (Asia/Kolkata)?", default_no=False)
+
+    # Decide inline JS if user didn't explicitly pass --inline-js
+    if "--inline-js" not in sys.argv:
+        args.inline_js = prompt_yes_no("Embed Plotly JS in the HTML (works fully offline)?", default_no=False)
+
+    # Timezone resolution (we don't ask for custom tz)
+    if args.ist:
+        args.timezone = "Asia/Kolkata"
+    else:
+        args.timezone = "UTC"
+
+    return args
 
 
 # ---------------------------- I/O + TRANSFORM ----------------------------
@@ -499,15 +512,10 @@ def to_label(metric: str, description: str):
 
 def build_metrics_json_for_js(df_all: pd.DataFrame, tz_name: str) -> str:
     """
-    Create JSON for client-side plotting in the requested timezone:
+    JSON for client-side plotting in requested timezone:
     {
-      "<metric>": {
-        "metric": "<metric>",
-        "unit": "<units>",
-        "label": "<description or metric>",
-        "x": ["YYYY-MM-DDTHH:MM:SS+TZ", ...],
-        "y": [value, ...]
-      }, ...
+      "<metric>": { "metric": ..., "unit": ..., "label": ..., "x": [...], "y": [...] },
+      ...
     }
     """
     store = {}
@@ -541,7 +549,7 @@ def main():
         format="[%(levelname)s] %(message)s"
     )
 
-    tz_name = "Asia/Kolkata" if args.ist else args.timezone
+    tz_name = "Asia/Kolkata" if args.ist else "UTC"
     tz_label = "IST" if tz_name == "Asia/Kolkata" else tz_name
 
     in_path = Path(args.input).expanduser().resolve()
@@ -567,13 +575,16 @@ def main():
 
     # Combine all series into one DataFrame
     frames = [make_dataframe(s) for s in series_list]
-    df_all = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=["time","value","metric","units","description"])
+    if frames:
+        df_all = pd.concat(frames, ignore_index=True)
+    else:
+        df_all = pd.DataFrame(columns=["time","value","metric","units","description"])
 
-    # Stats table (with timezone-aware min_ts/max_ts)
+    # Stats table
     stats_df = collect_stats(series_list)
     stats_html = dataframe_to_html_table(stats_df, tz_name)
 
-    # Plotly JS
+    # Plotly JS (inline if requested, else CDN)
     if args.inline_js:
         try:
             from plotly.offline import get_plotlyjs
@@ -584,10 +595,6 @@ def main():
     else:
         plotly_js = '<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>'
 
-    # Width + columns CSS variables
-    page_max_width = "1100px" if args.narrow else "100%"
-    interactive_cols = max(1, int(args.interactive_columns))
-
     # JS data for Interactive Select (X values converted to tz)
     metrics_json = build_metrics_json_for_js(df_all, tz_name)
 
@@ -596,7 +603,7 @@ def main():
 
     # Render
     html = render_html(HTML_TEMPLATE, {
-        "title": args.title,
+        "title": args.title or "Metrics Report",
         "plotly_js": plotly_js,
         "entity_uuid": entity_uuid,
         "metric_entity": metric_entity,
@@ -608,8 +615,6 @@ def main():
         "xaxis_title_json": json.dumps(xaxis_title),
         "tz_label": tz_label,
         "chart_height": args.chart_height,
-        "page_max_width": page_max_width,
-        "interactive_cols": interactive_cols,
     })
 
     logging.info("Writing HTML: %s", out_path)
