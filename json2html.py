@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 # json2html.py — JSON → interactive HTML graphs (Plotly)
 #
-# Streamlined:
-# - ONLY two tabs: Summary + Interactive Select
-# - NO Plotly range slider
-# - Plots default to full browser width; use --narrow to cap page width (~1100px)
-#
-# Timezone:
-# - Default timestamps are shown in UTC.
-# - Use --ist (shortcut) or --timezone/--tz "Asia/Kolkata" to render all times in that TZ
+# Highlights:
+# - Tabs: Summary + Interactive Select
+# - Single global time slider on the FIRST chart controls ALL charts
+# - Zoom/pan/double-click on ANY chart syncs all others (bidirectional)
+# - Legend sits below the plot; legend labels = metric IDs; hover shows friendly description
+# - Wide plots by default; pass --narrow to cap width (~1100px)
+# - Timestamps in UTC by default; use --ist or --tz/--timezone to render in any IANA TZ
+# - Summary table shows human-readable numbers (no scientific notation)
 #
 # Options:
 #   --chart-height <px>           (default 520)
 #   --narrow                      (cap page width; otherwise full width)
-#   --interactive-columns <int>   (default 1; # charts per row)
+#   --interactive-columns <int>   (default 1; charts per row)
 #   --inline-js                   (embed Plotly JS; otherwise CDN)
-#   --ist                         (set timezone to Asia/Kolkata)
+#   --ist                         (shortcut for --tz Asia/Kolkata)
 #   --timezone / --tz <IANA>      (e.g., Asia/Kolkata, America/New_York)
 #
 # Requirements: Python 3.8+, plotly>=5, pandas
@@ -97,7 +97,7 @@ ${plotly_js}
     <h2>Summary Statistics</h2>
     ${summary_table}
     <div class="note">
-      Tip: In charts, click legend items to hide/show a series. Drag to zoom; double-click to reset view.
+      Tip: Use the global time slider (on the first chart in Interactive tab) or zoom/pan any chart to sync all.
     </div>
   </div>
 
@@ -199,6 +199,10 @@ function renderInteractive() {
   showWarn('');
 
   const unitsMap = byUnit(names);
+  const chartIds = [];
+
+  // Build each unit group chart
+  let idx = 0;
   for (const unit of Object.keys(unitsMap)) {
     const card = document.createElement('div');
     card.className = 'chart-card';
@@ -227,32 +231,91 @@ function renderInteractive() {
     // Make width match container (browser width if not narrow)
     const containerWidth = div.clientWidth || window.innerWidth - 32;
 
+    // First chart becomes the "master" with the only range slider
+    const isMaster = (idx === 0);
     const layout = {
       title: '',
-      xaxis: { title: XAXIS_TITLE },
+      xaxis: { title: XAXIS_TITLE, rangeslider: (isMaster ? { visible: true } : undefined) },
       yaxis: { title: unit },
       hovermode: 'x unified',
-      // Legend below the plot (Option B)
+      // Legend below the plot
       legend: {
         orientation: 'h',
         x: 0,
         xanchor: 'left',
-        y: -0.25,     // push legend below the x-axis
+        y: -0.25,
         yanchor: 'top',
         font: { size: 11 }
       },
-      margin: { t: 40, r: 30, b: 150, l: 60 },  // room for legend below
+      margin: { t: 40, r: 30, b: 150, l: 60 },
       height: ${chart_height},
       autosize: true,
       width: containerWidth
     };
+
     Plotly.newPlot(chartId, traces, layout, {responsive: true});
+    chartIds.push(chartId);
+    idx += 1;
 
     // Keep width synced on resize
     window.addEventListener('resize', () => {
       const w = div.clientWidth || window.innerWidth - 32;
       Plotly.relayout(chartId, { width: w, height: ${chart_height} });
     });
+  }
+
+  // ----- GLOBAL RANGE SYNC (any chart can drive) -----
+  if (chartIds.length > 0) {
+    let suppressSync = false;
+
+    function parseRangeEvent(ev) {
+      // Return { r0, r1, autorange, changed }
+      let r0 = null, r1 = null, autorange = null, changed = false;
+
+      if (ev && Object.prototype.hasOwnProperty.call(ev, 'xaxis.autorange')) {
+        autorange = !!ev['xaxis.autorange'];
+        changed = true;
+        return { r0, r1, autorange, changed };
+      }
+
+      if (Array.isArray(ev?.['xaxis.range'])) {
+        r0 = ev['xaxis.range'][0];
+        r1 = ev['xaxis.range'][1];
+        changed = true;
+      } else if (
+        Object.prototype.hasOwnProperty.call(ev || {}, 'xaxis.range[0]') &&
+        Object.prototype.hasOwnProperty.call(ev || {}, 'xaxis.range[1]')
+      ) {
+        r0 = ev['xaxis.range[0]'];
+        r1 = ev['xaxis.range[1]'];
+        changed = true;
+      }
+      return { r0, r1, autorange, changed };
+    }
+
+    function applyRangeToAll(sourceId, r0, r1, autorange) {
+      suppressSync = true;
+      for (const id of chartIds) {
+        if (id === sourceId) continue;
+        if (autorange) {
+          Plotly.relayout(id, { 'xaxis.autorange': true });
+        } else if (r0 != null && r1 != null) {
+          Plotly.relayout(id, { 'xaxis.range': [r0, r1], 'xaxis.autorange': false });
+        }
+      }
+      setTimeout(() => { suppressSync = false; }, 0);
+    }
+
+    // Attach listeners to every chart
+    for (const id of chartIds) {
+      const div = document.getElementById(id);
+      div.on('plotly_relayout', (ev) => {
+        if (suppressSync) return;
+        const { r0, r1, autorange, changed } = parseRangeEvent(ev);
+        if (!changed) return;
+        applyRangeToAll(id, r0, r1, autorange);
+      });
+    }
   }
 }
 
@@ -306,7 +369,7 @@ python json2html.py -i perfdata.json -o report.html --tz America/New_York
 python json2html.py -i perfdata.json -o report.html --title "VS Metrics" --narrow
 """
     p = argparse.ArgumentParser(
-        description="Convert metrics JSON to an interactive HTML (Summary + Interactive Select). Wide plots by default; use --narrow to cap width.",
+        description="Convert metrics JSON to an interactive HTML (Summary + Interactive Select). Wide plots by default; use --narrow to cap width. Global slider + bidirectional range sync.",
         formatter_class=argparse.RawTextHelpFormatter,
         epilog=epilog
     )
@@ -421,11 +484,9 @@ def dataframe_to_html_table(df: pd.DataFrame, tz_name: str) -> str:
     if df.empty:
         return "<p class='note'>No statistics available.</p>"
     df2 = df.copy()
-    # format numeric columns to human-readable
     for c in ["mean","min","max","sum","trend","num_samples"]:
         if c in df2.columns:
             df2[c] = df2[c].apply(_human_number)
-    # convert min_ts / max_ts to target timezone & readable format
     for c in ["min_ts","max_ts"]:
         if c in df2.columns:
             df2[c] = df2[c].apply(lambda s: _fmt_ts(s, tz_name))
