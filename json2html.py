@@ -6,13 +6,19 @@
 # - NO Plotly range slider
 # - Plots default to full browser width; use --narrow to cap page width (~1100px)
 #
+# Timezone:
+# - Default timestamps are shown in UTC.
+# - Use --ist (shortcut) or --timezone/--tz "Asia/Kolkata" to render all times in that TZ
+#
 # Options:
 #   --chart-height <px>           (default 520)
 #   --narrow                      (cap page width; otherwise full width)
-#   --interactive-columns <int>   (default 1; # charts per row in Interactive tab)
+#   --interactive-columns <int>   (default 1; # charts per row)
 #   --inline-js                   (embed Plotly JS; otherwise CDN)
+#   --ist                         (set timezone to Asia/Kolkata)
+#   --timezone / --tz <IANA>      (e.g., Asia/Kolkata, America/New_York)
 #
-# Requirements: Python 3.8+, plotly>=5, pandas
+# Requirements: Python 3.8+, plotly>=5, pandas, pytz/zoneinfo (pandas uses zoneinfo)
 
 import argparse
 import json
@@ -78,7 +84,7 @@ ${plotly_js}
   <h1>${title}</h1>
   <div class="meta">
     <div><b>Entity:</b> ${entity_uuid} (${metric_entity})</div>
-    <div><b>Window:</b> ${start} → ${stop} | <b>Step:</b> ${step}s</div>
+    <div><b>Window:</b> ${start} → ${stop} | <b>Step:</b> ${step}s | <b>Time Zone:</b> ${tz_label}</div>
   </div>
 
   <div class="tabs" id="tabs">
@@ -116,6 +122,7 @@ ${plotly_js}
 <script>
 // ---- Data for Interactive Select ----
 const METRICS_DATA = ${metrics_json};
+const XAXIS_TITLE = ${xaxis_title_json};
 
 // Build an index: metricName -> { unit, label, x[], y[] }
 const METRIC_NAMES = Object.keys(METRICS_DATA).sort((a,b)=> a.localeCompare(b));
@@ -222,7 +229,7 @@ function renderInteractive() {
 
     const layout = {
       title: '',
-      xaxis: { title: 'Time (UTC)' }, // rangeslider removed
+      xaxis: { title: XAXIS_TITLE },
       yaxis: { title: unit },
       hovermode: 'x unified',
       legend: { orientation: 'h', yanchor: 'bottom', y: 1.02, xanchor: 'left', x: 0 },
@@ -279,17 +286,20 @@ def parse_args():
 EXAMPLES
 --------
 
-# 1) Full-width, offline HTML, bigger charts, 2 columns
+# 1) Full-width, offline HTML, bigger charts, 2 columns, IST
 python json2html.py -i perfdata.json -o report.html --title "UPI" \
-  --inline-js --chart-height 650 --interactive-columns 2
+  --inline-js --chart-height 650 --interactive-columns 2 --ist
 
-# 2) Narrow reading width (~1100px)
+# 2) Any timezone by name (e.g., America/New_York)
+python json2html.py -i perfdata.json -o report.html --tz America/New_York
+
+# 3) Narrow reading width (~1100px)
 python json2html.py -i perfdata.json -o report.html --title "VS Metrics" --narrow
 
 TIPS
 ----
-- Use Interactive Select to pick any subset of metrics; charts are grouped by their units.
-- Legend items are clickable; drag to zoom; double-click to reset view.
+- Interactive Select groups chosen metrics by units; one chart per unit.
+- Legend items are clickable; drag to zoom; double-click to reset.
 """
     p = argparse.ArgumentParser(
         description="Convert metrics JSON to an interactive HTML (Summary + Interactive Select). Wide plots by default; use --narrow to cap width.",
@@ -309,6 +319,12 @@ TIPS
                    help="Number of columns in the Interactive Select grid (default: 1).")
     p.add_argument("--narrow", action="store_true",
                    help="Constrain page width to ~1100px (otherwise charts span browser width).")
+
+    # Timezone controls
+    p.add_argument("--ist", action="store_true",
+                   help="Shortcut for --timezone Asia/Kolkata.")
+    p.add_argument("--timezone", "--tz", dest="timezone", default="UTC",
+                   help="IANA timezone name, e.g. Asia/Kolkata, America/New_York. Default: UTC.")
 
     p.add_argument("-v", "--verbose", action="store_true", help="Verbose logging.")
     return p.parse_args()
@@ -373,20 +389,31 @@ def _human_number(x):
         return str(x)
     neg = x < 0
     x = abs(x)
-    # thresholds
     for unit, thresh in [("T", 1e12), ("B", 1e9), ("M", 1e6), ("K", 1e3)]:
         if x >= thresh:
             val = x / thresh
             s = f"{val:,.2f}".rstrip("0").rstrip(".") + unit
             return "-" + s if neg else s
-    # small numbers: avoid scientific; keep up to 6 decimals as needed
     if x != int(x):
         s = f"{x:,.6f}".rstrip("0").rstrip(".")
     else:
         s = f"{int(x):,d}"
     return "-" + s if neg else s
 
-def dataframe_to_html_table(df: pd.DataFrame) -> str:
+def _fmt_ts(ts_str: str, tz_name: str) -> str:
+    """Format a timestamp string into the given timezone; fallback to original if parse fails."""
+    if not ts_str:
+        return ""
+    try:
+        t = pd.to_datetime(ts_str, utc=True, errors="coerce")
+        if pd.isna(t):
+            return str(ts_str)
+        t = t.tz_convert(tz_name)
+        return t.strftime("%Y-%m-%d %H:%M:%S %Z")
+    except Exception:
+        return str(ts_str)
+
+def dataframe_to_html_table(df: pd.DataFrame, tz_name: str) -> str:
     if df.empty:
         return "<p class='note'>No statistics available.</p>"
     df2 = df.copy()
@@ -394,6 +421,10 @@ def dataframe_to_html_table(df: pd.DataFrame) -> str:
     for c in ["mean","min","max","sum","trend","num_samples"]:
         if c in df2.columns:
             df2[c] = df2[c].apply(_human_number)
+    # convert min_ts / max_ts to target timezone & readable format
+    for c in ["min_ts","max_ts"]:
+        if c in df2.columns:
+            df2[c] = df2[c].apply(lambda s: _fmt_ts(s, tz_name))
     cols = ["metric","units","description","mean","min","min_ts","max","max_ts","sum","trend","num_samples"]
     cols = [c for c in cols if c in df2.columns]
     return df2[cols].to_html(index=False, classes="stats", border=0, escape=False)
@@ -401,15 +432,15 @@ def dataframe_to_html_table(df: pd.DataFrame) -> str:
 def to_label(metric: str, description: str):
     return description or metric
 
-def build_metrics_json_for_js(df_all: pd.DataFrame) -> str:
+def build_metrics_json_for_js(df_all: pd.DataFrame, tz_name: str) -> str:
     """
-    Create JSON for client-side plotting:
+    Create JSON for client-side plotting in the requested timezone:
     {
       "<metric>": {
         "metric": "<metric>",
         "unit": "<units>",
         "label": "<description or metric>",
-        "x": ["2025-08-30T...Z", ...],
+        "x": ["YYYY-MM-DDTHH:MM:SS+TZ", ...],
         "y": [value, ...]
       }, ...
     }
@@ -424,7 +455,9 @@ def build_metrics_json_for_js(df_all: pd.DataFrame) -> str:
             if pd.isna(t):
                 times.append(None)
             else:
-                times.append(pd.Timestamp(t).isoformat())
+                # ensure tz-aware then convert to target tz and format ISO
+                tt = pd.Timestamp(t).tz_convert(tz_name)
+                times.append(tt.isoformat())
         store[metric] = {
             "metric": metric,
             "unit": dfx["units"].iloc[0],
@@ -444,6 +477,9 @@ def main():
         format="[%(levelname)s] %(message)s"
     )
 
+    tz_name = "Asia/Kolkata" if args.ist else args.timezone
+    tz_label = "IST" if tz_name == "Asia/Kolkata" else tz_name
+
     in_path = Path(args.input).expanduser().resolve()
     out_path = Path(args.output).expanduser().resolve()
 
@@ -454,8 +490,11 @@ def main():
     logging.info("Reading: %s", in_path)
     data = load_json(in_path)
 
-    start = data.get("start", "")
-    stop  = data.get("stop", "")
+    # Header window times (convert for display)
+    start_raw = data.get("start", "")
+    stop_raw  = data.get("stop", "")
+    start_disp = _fmt_ts(start_raw, tz_name) if start_raw else ""
+    stop_disp  = _fmt_ts(stop_raw, tz_name) if stop_raw else ""
     step  = data.get("step", "")
     entity_uuid = data.get("entity_uuid", "")
     metric_entity = data.get("metric_entity", "")
@@ -466,9 +505,9 @@ def main():
     frames = [make_dataframe(s) for s in series_list]
     df_all = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=["time","value","metric","units","description"])
 
-    # Stats table
+    # Stats table (with timezone-aware min_ts/max_ts)
     stats_df = collect_stats(series_list)
-    stats_html = dataframe_to_html_table(stats_df)
+    stats_html = dataframe_to_html_table(stats_df, tz_name)
 
     # Plotly JS
     if args.inline_js:
@@ -485,8 +524,11 @@ def main():
     page_max_width = "1100px" if args.narrow else "100%"
     interactive_cols = max(1, int(args.interactive_columns))
 
-    # JS data for Interactive Select
-    metrics_json = build_metrics_json_for_js(df_all)
+    # JS data for Interactive Select (X values converted to tz)
+    metrics_json = build_metrics_json_for_js(df_all, tz_name)
+
+    # Axis title text
+    xaxis_title = f"Time ({tz_label})"
 
     # Render
     html = render_html(HTML_TEMPLATE, {
@@ -494,11 +536,13 @@ def main():
         "plotly_js": plotly_js,
         "entity_uuid": entity_uuid,
         "metric_entity": metric_entity,
-        "start": start,
-        "stop": stop,
+        "start": start_disp,
+        "stop": stop_disp,
         "step": (step if step is not None else ""),
         "summary_table": stats_html,
         "metrics_json": metrics_json,
+        "xaxis_title_json": json.dumps(xaxis_title),
+        "tz_label": tz_label,
         "chart_height": args.chart_height,
         "page_max_width": page_max_width,
         "interactive_cols": interactive_cols,
