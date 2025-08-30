@@ -232,10 +232,10 @@ function renderInteractive() {
     const containerWidth = div.clientWidth || window.innerWidth - 32;
 
     // First chart becomes the "master" with the only range slider
-    const isMaster = (idx === 0);
+    
     const layout = {
       title: '',
-      xaxis: { title: XAXIS_TITLE, rangeslider: (isMaster ? { visible: true } : undefined) },
+      xaxis: { title: XAXIS_TITLE },
       yaxis: { title: unit },
       hovermode: 'x unified',
       // Legend below the plot
