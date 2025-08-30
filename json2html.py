@@ -1,18 +1,15 @@
 #!/usr/bin/env python3
 # json2html.py — JSON → interactive HTML graphs (Plotly)
 #
-# Features:
-# - Summary stats table (from header.statistics)
-# - Static charts:
-#     --layout per-unit     -> one chart per units group (default)
-#     --layout per-metric   -> one chart per metric (a tab per metric)
-# - Interactive Select tab: pick any metrics via multi-select; draws one chart per unit among your selection
-# - Chart/page sizing:
-#     --chart-height <px>           (default 520)
-#     --panel-width full|narrow     (default full; narrow caps width ~1100px)
-#     --interactive-columns <int>   (default 1; # of charts per row in Interactive tab)
-# - Offline or CDN Plotly:
-#     --inline-js                   (embed Plotly JS; else use CDN)
+# Streamlined per your request:
+# - ONLY two tabs: Summary + Interactive Select (no static per-metric/per-unit panels)
+# - NO Plotly range slider (removed)
+#
+# Still supports:
+#   --chart-height <px>           (default 520)
+#   --panel-width full|narrow     (default full; narrow ≈1100px)
+#   --interactive-columns <int>   (default 1; # charts per row for Interactive tab)
+#   --inline-js                   (embed Plotly JS; otherwise CDN)
 #
 # Requirements: Python 3.8+, plotly>=5, pandas
 
@@ -20,11 +17,10 @@ import argparse
 import json
 import logging
 from pathlib import Path
-from collections import OrderedDict
 
 import pandas as pd
-import plotly.graph_objects as go
-from plotly.offline import plot as plot_offline
+import plotly.graph_objects as go  # noqa: F401 (kept for future static additions)
+from plotly.offline import plot as plot_offline  # noqa: F401 (kept for future static additions)
 
 
 # ---------------------------- HTML TEMPLATE ----------------------------
@@ -81,10 +77,36 @@ ${plotly_js}
   </div>
 
   <div class="tabs" id="tabs">
-    ${tab_buttons}
+    <div class="tab-btn" data-target="panel-summary">Summary</div>
+    <div class="tab-btn" data-target="panel-interactive">Interactive Select</div>
   </div>
 
-  ${panels}
+  <!-- Summary -->
+  <div class="panel" id="panel-summary">
+    <h2>Summary Statistics</h2>
+    ${summary_table}
+    <div class="note">
+      Tip: In charts, click legend items to hide/show a series. Drag to zoom; double-click to reset view.
+    </div>
+  </div>
+
+  <!-- Interactive Select -->
+  <div class="panel" id="panel-interactive">
+    <h2>Interactive Select</h2>
+    <div class="controls">
+      <div class="group">
+        <label for="metric-select"><b>Metrics</b></label>
+        <select id="metric-select" multiple></select>
+      </div>
+      <div class="group">
+        <button id="btn-plot">Plot</button>
+        <button id="btn-select-all">Select All</button>
+        <button id="btn-clear">Clear</button>
+      </div>
+      <div id="warn" class="warn"></div>
+    </div>
+    <div class="charts-wrap" id="interactive-panels"></div>
+  </div>
 
 <script>
 // ---- Data for Interactive Select ----
@@ -192,7 +214,7 @@ function renderInteractive() {
 
     const layout = {
       title: '',
-      xaxis: { title: 'Time (UTC)', rangeslider: { visible: true } },
+      xaxis: { title: 'Time (UTC)' }, // rangeslider removed
       yaxis: { title: unit },
       hovermode: 'x unified',
       legend: { orientation: 'h', yanchor: 'bottom', y: 1.02, xanchor: 'left', x: 0 },
@@ -203,6 +225,7 @@ function renderInteractive() {
 }
 
 (function init(){
+  // Tabs
   const tabs = document.querySelectorAll('.tab-btn');
   const panels = document.querySelectorAll('.panel');
   function activate(id) {
@@ -212,13 +235,11 @@ function renderInteractive() {
   tabs.forEach(t => t.addEventListener('click', () => activate(t.dataset.target)));
   if (tabs.length) activate(tabs[0].dataset.target);
 
-  // Interactive tab setup (if present)
-  if (document.getElementById('panel-interactive')) {
-    populateMetricSelect();
-    document.getElementById('btn-plot')?.addEventListener('click', renderInteractive);
-    document.getElementById('btn-select-all')?.addEventListener('click', () => { selectAllMetrics(); renderInteractive(); });
-    document.getElementById('btn-clear')?.addEventListener('click', () => { clearSelection(); renderInteractive(); });
-  }
+  // Interactive tab setup
+  populateMetricSelect();
+  document.getElementById('btn-plot')?.addEventListener('click', renderInteractive);
+  document.getElementById('btn-select-all')?.addEventListener('click', () => { selectAllMetrics(); renderInteractive(); });
+  document.getElementById('btn-clear')?.addEventListener('click', () => { clearSelection(); renderInteractive(); });
 })();
 </script>
 </body>
@@ -242,49 +263,32 @@ def parse_args():
 EXAMPLES
 --------
 
-# 1) Per-unit charts (default), plus Interactive Select tab
+# 1) Basic run (offline HTML, bigger charts, 2 columns in Interactive)
+python json2html.py -i perfdata.json -o report.html --title "UPI" \
+  --inline-js --chart-height 650 --panel-width narrow --interactive-columns 2
+
+# 2) Default sizes, CDN Plotly
 python json2html.py -i perfdata.json -o report.html --title "VS Metrics"
-
-# 2) One chart per metric (a tab per metric), plus Interactive Select
-python json2html.py -i perfdata.json -o report_per_metric.html --layout per-metric
-
-# 3) Fully offline HTML (embed Plotly JS)
-python json2html.py -i perfdata.json -o report_offline.html --inline-js
-
-# 4) Bigger charts (650px), readable width, 2 columns in Interactive tab
-python json2html.py -i perfdata.json -o upi.html --title UPI \
-  --layout per-metric --inline-js \
-  --chart-height 650 --panel-width narrow --interactive-columns 2
-
-# 5) Windows PowerShell example
-python.exe .\json2html.py -i .\perfdata.json -o upi.html --title UPI --layout per-unit --inline-js
-
-# 6) Disable Interactive Select tab entirely (only static panels)
-python json2html.py -i perfdata.json -o report.html --no-interactive
 
 TIPS
 ----
-- Interactive Select groups your chosen metrics by units and draws one chart per unit.
-- Click legend items to hide/show traces. Drag to zoom; use the range slider for quick navigation.
+- Use Interactive Select to pick any subset of metrics; charts are grouped by their units.
+- Click legend items to hide/show traces. Drag to zoom; double-click to reset view.
 """
     p = argparse.ArgumentParser(
-        description="Convert metrics JSON to an interactive HTML report (Plotly), with optional multi-select plotting.",
+        description="Convert metrics JSON to an interactive HTML report (Plotly). Only Summary + Interactive Select tabs (no static metric panels).",
         formatter_class=argparse.RawTextHelpFormatter,
         epilog=epilog
     )
     p.add_argument("-i", "--input", required=True, help="Input JSON file path.")
     p.add_argument("-o", "--output", required=True, help="Output HTML file path.")
     p.add_argument("--title", default="Metrics Report", help="Page title.")
-    p.add_argument("--layout", choices=["per-unit", "per-metric"], default="per-unit",
-                   help="Chart grouping for pre-rendered panels:\n  per-unit    -> one chart per units group (default)\n  per-metric  -> one chart per metric")
     p.add_argument("--inline-js", action="store_true",
                    help="Embed Plotly JS inline (offline HTML). If unavailable, falls back to CDN.")
-    p.add_argument("--no-interactive", action="store_true",
-                   help="Disable the Interactive Select tab.")
 
     # Size controls
     p.add_argument("--chart-height", type=int, default=520,
-                   help="Chart height in pixels for all charts (default: 520).")
+                   help="Chart height in pixels for charts (default: 520).")
     p.add_argument("--panel-width", choices=["full", "narrow"], default="full",
                    help="Panel content width. 'full' (edge-to-edge) or 'narrow' (~1100px). Default: full.")
     p.add_argument("--interactive-columns", type=int, default=1,
@@ -357,81 +361,6 @@ def dataframe_to_html_table(df: pd.DataFrame) -> str:
 def to_label(metric: str, description: str):
     return description or metric
 
-
-# ---------------------------- FIGURE BUILDERS ----------------------------
-
-def build_figures(df_all: pd.DataFrame, layout_mode: str, chart_height: int):
-    panels = OrderedDict()
-    if df_all.empty:
-        return panels
-
-    if layout_mode == "per-metric":
-        for metric, dfx in df_all.groupby("metric", sort=True):
-            units = (dfx["units"].iloc[0]) if not dfx.empty else ""
-            title = f"{metric} ({units})"
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(
-                x=dfx["time"], y=dfx["value"], mode="lines+markers",
-                name=to_label(metric, dfx["description"].iloc[0] if not dfx.empty else metric),
-                hovertemplate="Time: %{x}<br>Value: %{y}<extra></extra>"
-            ))
-            fig.update_layout(
-                title=title,
-                xaxis_title="Time (UTC)",
-                yaxis_title=units,
-                hovermode="x unified",
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-                height=chart_height
-            )
-            fig.update_xaxes(rangeslider=dict(visible=True))
-            div = plot_offline(fig, include_plotlyjs=False, output_type="div")
-            panel_id = f"panel-{len(panels)+1}"
-            panels[panel_id] = (title, div)
-        return panels
-
-    # per-unit
-    for units, dfg in df_all.groupby("units", sort=True):
-        title = f"Metrics ({units})"
-        fig = go.Figure()
-        for metric, dfx in dfg.groupby("metric", sort=True):
-            label = to_label(metric, dfx["description"].iloc[0] if not dfx.empty else metric)
-            fig.add_trace(go.Scatter(
-                x=dfx["time"], y=dfx["value"], mode="lines+markers",
-                name=label,
-                hovertemplate="Metric: " + label + "<br>Time: %{x}<br>Value: %{y}<extra></extra>"
-            ))
-        fig.update_layout(
-            title=title,
-            xaxis_title="Time (UTC)",
-            yaxis_title=units,
-            hovermode="x unified",
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-            height=chart_height
-        )
-        fig.update_xaxes(rangeslider=dict(visible=True))
-        div = plot_offline(fig, include_plotlyjs=False, output_type="div")
-        panel_id = f"panel-{len(panels)+1}"
-        panels[panel_id] = (title, div)
-
-    return panels
-
-
-# ---------------------------- PLOTLY JS HANDLING ----------------------------
-
-def build_plotly_script_tag(inline: bool) -> str:
-    if not inline:
-        return '<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>'
-    try:
-        from plotly.offline import get_plotlyjs
-        js = get_plotlyjs()
-        return f"<script>{js}</script>"
-    except Exception:
-        logging.warning("Failed to inline Plotly JS; falling back to CDN.")
-        return '<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>'
-
-
-# ---------------------------- JS DATA PACKER ----------------------------
-
 def build_metrics_json_for_js(df_all: pd.DataFrame) -> str:
     """
     Create JSON for client-side plotting:
@@ -450,13 +379,11 @@ def build_metrics_json_for_js(df_all: pd.DataFrame) -> str:
         return json.dumps(store)
     for metric, dfx in df_all.groupby("metric", sort=True):
         dfx = dfx.sort_values("time")
-        # ensure UTC isoformat (with Z if tz-aware)
         times = []
         for t in dfx["time"]:
             if pd.isna(t):
                 times.append(None)
             else:
-                # t is tz-aware UTC; use ISO string
                 times.append(pd.Timestamp(t).isoformat())
         store[metric] = {
             "metric": metric,
@@ -503,54 +430,25 @@ def main():
     stats_df = collect_stats(series_list)
     stats_html = dataframe_to_html_table(stats_df)
 
-    # Pre-rendered figures (per-unit or per-metric)
-    logging.info("Building charts using layout: %s", args.layout)
-    panels_map = build_figures(df_all, layout_mode=args.layout, chart_height=args.chart_height)
-
-    # Build tab buttons/panels
-    tab_btns = []
-    panel_divs = []
-
-    # Summary tab
-    tab_btns.append('<div class="tab-btn" data-target="panel-summary">Summary</div>')
-    panel_divs.append(f'<div class="panel" id="panel-summary"><h2>Summary Statistics</h2>{stats_html}<div class="note">Tip: Click legend items in charts to hide/show series. Drag on the chart to zoom; use the range slider beneath for quick zooming.</div></div>')
-
-    # Interactive Select tab (unless disabled)
-    metrics_json = build_metrics_json_for_js(df_all)
-    if not args.no_interactive:
-        tab_btns.append('<div class="tab-btn" data-target="panel-interactive">Interactive Select</div>')
-        interactive_panel = """
-        <div class="panel" id="panel-interactive">
-          <h2>Interactive Select</h2>
-          <div class="controls">
-            <div class="group">
-              <label for="metric-select"><b>Metrics</b></label>
-              <select id="metric-select" multiple></select>
-            </div>
-            <div class="group">
-              <button id="btn-plot">Plot</button>
-              <button id="btn-select-all">Select All</button>
-              <button id="btn-clear">Clear</button>
-            </div>
-            <div id="warn" class="warn"></div>
-          </div>
-          <div class="charts-wrap" id="interactive-panels"></div>
-        </div>
-        """
-        panel_divs.append(interactive_panel)
-
-    # Static chart panels
-    for panel_id, (title, div) in panels_map.items():
-        tab_btns.append(f'<div class="tab-btn" data-target="{panel_id}">{title}</div>')
-        panel_divs.append(f'<div class="panel" id="{panel_id}">{div}</div>')
-
     # Plotly JS
-    plotly_js = build_plotly_script_tag(args.inline_js)
+    if args.inline_js:
+        try:
+            from plotly.offline import get_plotlyjs
+            plotly_js = f"<script>{get_plotlyjs()}</script>"
+        except Exception:
+            logging.warning("Failed to inline Plotly JS; falling back to CDN.")
+            plotly_js = '<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>'
+    else:
+        plotly_js = '<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>'
 
     # Width + columns CSS variables
     page_max_width = "100%" if args.panel_width == "full" else "1100px"
     interactive_cols = max(1, int(args.interactive_columns))
 
+    # JS data for Interactive Select
+    metrics_json = build_metrics_json_for_js(df_all)
+
+    # Render
     html = render_html(HTML_TEMPLATE, {
         "title": args.title,
         "plotly_js": plotly_js,
@@ -559,8 +457,7 @@ def main():
         "start": start,
         "stop": stop,
         "step": (step if step is not None else ""),
-        "tab_buttons": "\n    ".join(tab_btns),
-        "panels": "\n  ".join(panel_divs),
+        "summary_table": stats_html,
         "metrics_json": metrics_json,
         "chart_height": args.chart_height,
         "page_max_width": page_max_width,
