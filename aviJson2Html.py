@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # json2html.py — JSON → interactive HTML graphs (Plotly)
 #
-# UI refresh:
-# - Plot / Clear Charts / Reset Zoom restyled as pill chips (like tabs) with colors.
-# - "Individual graphs" is now a pill-style toggle chip (keeps hidden checkbox for a11y).
-# - All previous features retained: compact multi-select with Show Selected toggle,
-#   grouped/individual charts, zoom sync, prompts, IST default YES, inline-JS default YES,
-#   human-readable summary, input/output niceties.
+# What's new here:
+# - Reset Zoom now resets BOTH X and Y axes across all charts.
+# - Keeps your polished UI (chip-style action buttons, toggle for individual charts),
+#   compact multi-select with Show Selected, zoom/pan sync, prompts,
+#   IST default YES, inline-JS default YES, human-readable summary,
+#   and input/output niceties (.json/.html handling).
 #
 # Requirements: Python 3.8+, plotly>=5, pandas
 
@@ -68,13 +68,13 @@ ${plotly_js}
 
   .controls { display:flex; gap:12px; align-items:flex-start; flex-wrap:wrap; margin: 8px 0 12px; }
 
-  /* Classic small buttons (kept for dropdown internal actions) */
+  /* Small buttons (for dropdown's internal actions) */
   .btn { appearance:none; border:1px solid var(--border); background:#fff; padding:6px 10px; border-radius:8px; cursor:pointer; transition:all .15s ease; font-size:12px; }
   .btn:hover { background:#f3f4f6; }
   .btn-primary { background: var(--primary); border-color: var(--primary); color:#fff; }
   .btn-primary:hover { background: var(--primary-600); border-color: var(--primary-600); }
 
-  /* New pill-style action buttons */
+  /* Chip-style action buttons */
   .chip-bar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
   .chip-btn {
     display:inline-flex; align-items:center; gap:8px;
@@ -95,11 +95,11 @@ ${plotly_js}
     padding:8px 12px; border:1px solid var(--border); border-radius:999px; cursor:pointer;
     background:#f8fafc; transition:all .15s ease; font-weight:600; font-size:13px;
   }
-  .chip-toggle.active { background:#ecfdf5; border-color:#a7f3d0; color:#065f46; } /* green-ish when ON */
+  .chip-toggle.active { background:#ecfdf5; border-color:#a7f3d0; color:#065f46; }
   .chip-toggle:hover { filter:brightness(0.98); }
   .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
 
-  /* MultiSelect (unchanged) */
+  /* MultiSelect (compact + Show Selected toggle) */
   .ms { position: relative; width: 520px; max-width: 90vw; }
   .ms-toggle {
     min-height: 42px; border:1px solid var(--border); border-radius:10px; padding:6px 36px 6px 10px;
@@ -559,6 +559,16 @@ function setupRangeSync(chartIds){
   }
 }
 
+// ---- Reset zoom (now resets BOTH axes) ----
+function resetZoomAll() {
+  document.querySelectorAll('#interactive-panels .chart-card > div[id^="chart"]').forEach(div => {
+    Plotly.relayout(div.id, {
+      'xaxis.autorange': true,
+      'yaxis.autorange': true   // ensure Y resets too
+    });
+  });
+}
+
 // ---- Boot ----
 (function init(){
   // Tabs
@@ -573,11 +583,7 @@ function setupRangeSync(chartIds){
   // Action chips
   document.getElementById('btn-plot')?.addEventListener('click', renderInteractive);
   document.getElementById('btn-clear')?.addEventListener('click', ()=>{ document.getElementById('interactive-panels').innerHTML=''; showWarn(''); });
-  document.getElementById('btn-reset-range')?.addEventListener('click', ()=>{
-    document.querySelectorAll('#interactive-panels .chart-card > div[id^="chart"]').forEach(div=>{
-      Plotly.relayout(div.id, {'xaxis.autorange': true});
-    });
-  });
+  document.getElementById('btn-reset-range')?.addEventListener('click', resetZoomAll);
 
   // Toggle chip for "Individual graphs"
   const chk = document.getElementById('chk-individual');
@@ -590,11 +596,9 @@ function setupRangeSync(chartIds){
   chip.addEventListener('click', ()=>{
     chk.checked = !chk.checked;
     syncChip();
-    // auto-render if there are selections
     const selectedCount = (typeof MS.getSelected === 'function') ? MS.getSelected().length : 0;
     if (selectedCount > 0) renderInteractive();
   });
-  // for completeness if someone toggles via keyboard focus to hidden checkbox
   chk.addEventListener('change', ()=>{ syncChip(); const n = MS.getSelected().length; if (n>0) renderInteractive(); });
   syncChip();
 })();
@@ -604,244 +608,244 @@ function setupRangeSync(chartIds){
 """
 
 def render_html(template: str, mapping: dict) -> str:
-  out = template
-  for k, v in mapping.items():
-    out = out.replace("${" + k + "}", str(v))
-  return out
+    out = template
+    for k, v in mapping.items():
+        out = out.replace("${" + k + "}", str(v))
+    return out
 
 def prompt_str(prompt: str, default: str = "") -> str:
-  msg = f"{prompt}"
-  if default: msg += f" [{default}]"
-  msg += ": "
-  ans = input(msg).strip()
-  return ans or default
+    msg = f"{prompt}"
+    if default: msg += f" [{default}]"
+    msg += ": "
+    ans = input(msg).strip()
+    return ans or default
 
 def prompt_yes_no(prompt: str, default_yes: bool = True) -> bool:
-  default = "Y" if default_yes else "N"
-  ans = input(f"{prompt} (Y/N) [{default}]: ").strip().lower()
-  if not ans: return default_yes
-  return ans.startswith("y")
+    default = "Y" if default_yes else "N"
+    ans = input(f"{prompt} (Y/N) [{default}]: ").strip().lower()
+    if not ans: return default_yes
+    return ans.startswith("y")
 
 def parse_args():
-  p = argparse.ArgumentParser(
-      description="Convert metrics JSON → interactive HTML (Summary + Interactive Select). Wide plots by default; zoom/pan sync.",
-      formatter_class=argparse.RawTextHelpFormatter, add_help=True,
-  )
-  p.add_argument("-i","--input", help="Input JSON file path ('.json' optional).")
-  p.add_argument("-o","--output", help="Output HTML file path (optional). If blank, uses <input_stem>.html")
-  p.add_argument("--title", help='Page title (default: "Metrics Report").')
-  p.add_argument("--inline-js", action="store_true", help="Embed Plotly JS inline (offline HTML).")
-  p.add_argument("--ist", action="store_true", help="Use Asia/Kolkata timestamps.")
-  # hidden opts
-  p.add_argument("--chart-height", type=int, default=520, help=argparse.SUPPRESS)
-  p.add_argument("--interactive-columns", type=int, default=1, help=argparse.SUPPRESS)
-  p.add_argument("--narrow", action="store_true", help=argparse.SUPPRESS)
-  p.add_argument("--timezone","--tz", dest="timezone", default=None, help=argparse.SUPPRESS)
-  p.add_argument("-v","--verbose", action="store_true", help="Verbose logging.")
-  args = p.parse_args()
+    p = argparse.ArgumentParser(
+        description="Convert metrics JSON → interactive HTML (Summary + Interactive Select). Wide plots by default; zoom/pan sync.",
+        formatter_class=argparse.RawTextHelpFormatter, add_help=True,
+    )
+    p.add_argument("-i","--input", help="Input JSON file path ('.json' optional).")
+    p.add_argument("-o","--output", help="Output HTML file path (optional). If blank, uses <input_stem>.html")
+    p.add_argument("--title", help='Page title (default: "Metrics Report").')
+    p.add_argument("--inline-js", action="store_true", help="Embed Plotly JS inline (offline HTML).")
+    p.add_argument("--ist", action="store_true", help="Use Asia/Kolkata timestamps.")
+    # hidden opts
+    p.add_argument("--chart-height", type=int, default=520, help=argparse.SUPPRESS)
+    p.add_argument("--interactive-columns", type=int, default=1, help=argparse.SUPPRESS)
+    p.add_argument("--narrow", action="store_true", help=argparse.SUPPRESS)
+    p.add_argument("--timezone","--tz", dest="timezone", default=None, help=argparse.SUPPRESS)
+    p.add_argument("-v","--verbose", action="store_true", help="Verbose logging.")
+    args = p.parse_args()
 
-  if not args.input:
-      args.input = prompt_str("Enter input JSON file path")
-  if args.output is None:
-      args.output = prompt_str("Output HTML file name/path (optional)", "")
-  if not args.title:
-      args.title = prompt_str("Title (optional)", "Metrics Report")
+    if not args.input:
+        args.input = prompt_str("Enter input JSON file path")
+    if args.output is None:
+        args.output = prompt_str("Output HTML file name/path (optional)", "")
+    if not args.title:
+        args.title = prompt_str("Title (optional)", "Metrics Report")
 
-  if "--ist" not in sys.argv:
-      args.ist = prompt_yes_no("Render times in IST (Asia/Kolkata)?", default_yes=True)
-  if "--inline-js" not in sys.argv:
-      args.inline_js = prompt_yes_no("Embed Plotly JS in the HTML (works fully offline)?", default_yes=True)
+    if "--ist" not in sys.argv:
+        args.ist = prompt_yes_no("Render times in IST (Asia/Kolkata)?", default_yes=True)
+    if "--inline-js" not in sys.argv:
+        args.inline_js = prompt_yes_no("Embed Plotly JS in the HTML (works fully offline)?", default_yes=True)
 
-  args.timezone = "Asia/Kolkata" if args.ist else "UTC"
-  return args
+    args.timezone = "Asia/Kolkata" if args.ist else "UTC"
+    return args
 
 def resolve_input_path(raw: str) -> Path:
-  p = Path(raw).expanduser()
-  if p.exists(): return p.resolve()
-  if p.suffix.lower() != ".json":
-      p_json = p.with_suffix(".json")
-      if p_json.exists(): return p_json.resolve()
-  return p.resolve()
+    p = Path(raw).expanduser()
+    if p.exists(): return p.resolve()
+    if p.suffix.lower() != ".json":
+        p_json = p.with_suffix(".json")
+        if p_json.exists(): return p_json.resolve()
+    return p.resolve()
 
 def _ensure_html_suffix(p: Path) -> Path:
-  suf = p.suffix.lower()
-  if suf in (".html",".htm"): return p
-  return p.with_suffix(".html")
+    suf = p.suffix.lower()
+    if suf in (".html",".htm"): return p
+    return p.with_suffix(".html")
 
 def resolve_output_path(input_path: Path, raw_out: str | None) -> Path:
-  if not raw_out:
-      out = input_path.with_suffix(".html")
-  else:
-      p = Path(raw_out).expanduser()
-      if p.parent == Path(""): p = Path.cwd() / p.name
-      p = _ensure_html_suffix(p)
-      out = p
-  return out.resolve()
+    if not raw_out:
+        out = input_path.with_suffix(".html")
+    else:
+        p = Path(raw_out).expanduser()
+        if p.parent == Path(""): p = Path.cwd() / p.name
+        p = _ensure_html_suffix(p)
+        out = p
+    return out.resolve()
 
 def load_json(path: Path):
-  with path.open("r", encoding="utf-8") as f:
-      return json.load(f)
+    with path.open("r", encoding="utf-8") as f:
+        return json.load(f)
 
 def make_dataframe(series_entry):
-  header = series_entry.get("header", {}) or {}
-  name = header.get("name", "unknown")
-  units = header.get("units", "UNKNOWN")
-  desc  = header.get("metric_description", "") or name
-  data  = series_entry.get("data", []) or []
+    header = series_entry.get("header", {}) or {}
+    name = header.get("name", "unknown")
+    units = header.get("units", "UNKNOWN")
+    desc  = header.get("metric_description", "") or name
+    data  = series_entry.get("data", []) or []
 
-  df = pd.DataFrame(data)
-  if df.empty:
-      return pd.DataFrame(columns=["time","value","metric","units","description"])
+    df = pd.DataFrame(data)
+    if df.empty:
+        return pd.DataFrame(columns=["time","value","metric","units","description"])
 
-  df["time"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
-  df = df.drop(columns=["timestamp"], errors="ignore")
-  df["value"] = pd.to_numeric(df["value"], errors="coerce")
-  df["metric"] = name
-  df["units"] = units
-  df["description"] = desc
-  df = df.sort_values("time").reset_index(drop=True)
-  return df[["time","value","metric","units","description"]]
+    df["time"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
+    df = df.drop(columns=["timestamp"], errors="ignore")
+    df["value"] = pd.to_numeric(df["value"], errors="coerce")
+    df["metric"] = name
+    df["units"] = units
+    df["description"] = desc
+    df = df.sort_values("time").reset_index(drop=True)
+    return df[["time","value","metric","units","description"]]
 
 def collect_stats(series_list):
-  rows = []
-  for s in series_list:
-      h = s.get("header", {}) or {}
-      st = h.get("statistics", {}) or {}
-      rows.append({
-          "metric": h.get("name",""),
-          "units": h.get("units",""),
-          "description": h.get("metric_description","") or h.get("name",""),
-          "mean": st.get("mean", None),
-          "min": st.get("min", None),
-          "min_ts": st.get("min_ts", None),
-          "max": st.get("max", None),
-          "max_ts": st.get("max_ts", None),
-          "sum": st.get("sum", None),
-          "trend": st.get("trend", None),
-          "num_samples": st.get("num_samples", None),
-      })
-  df = pd.DataFrame(rows)
-  if not df.empty:
-      df = df.sort_values(["units","metric"], kind="stable")
-  return df
+    rows = []
+    for s in series_list:
+        h = s.get("header", {}) or {}
+        st = h.get("statistics", {}) or {}
+        rows.append({
+            "metric": h.get("name",""),
+            "units": h.get("units",""),
+            "description": h.get("metric_description","") or h.get("name",""),
+            "mean": st.get("mean", None),
+            "min": st.get("min", None),
+            "min_ts": st.get("min_ts", None),
+            "max": st.get("max", None),
+            "max_ts": st.get("max_ts", None),
+            "sum": st.get("sum", None),
+            "trend": st.get("trend", None),
+            "num_samples": st.get("num_samples", None),
+        })
+    df = pd.DataFrame(rows)
+    if not df.empty:
+        df = df.sort_values(["units","metric"], kind="stable")
+    return df
 
 def _human_number(x):
-  if pd.isna(x): return ""
-  try: x = float(x)
-  except Exception: return str(x)
-  neg = x < 0; x = abs(x)
-  for unit,th in [("T",1e12),("B",1e9),("M",1e6),("K",1e3)]:
-      if x >= th:
-          val = x / th
-          s = f"{val:,.2f}".rstrip("0").rstrip(".") + unit
-          return "-" + s if neg else s
-  if x != int(x): s = f"{x:,.6f}".rstrip("0").rstrip(".")
-  else: s = f"{int(x):,d}"
-  return "-" + s if neg else s
+    if pd.isna(x): return ""
+    try: x = float(x)
+    except Exception: return str(x)
+    neg = x < 0; x = abs(x)
+    for unit,th in [("T",1e12),("B",1e9),("M",1e6),("K",1e3)]:
+        if x >= th:
+            val = x / th
+            s = f"{val:,.2f}".rstrip("0").rstrip(".") + unit
+            return "-" + s if neg else s
+    if x != int(x): s = f"{x:,.6f}".rstrip("0").rstrip(".")
+    else: s = f"{int(x):,d}"
+    return "-" + s if neg else s
 
 def _fmt_ts(ts_str: str, tz_name: str) -> str:
-  if not ts_str: return ""
-  try:
-      t = pd.to_datetime(ts_str, utc=True, errors="coerce")
-      if pd.isna(t): return str(ts_str)
-      t = t.tz_convert(tz_name)
-      return t.strftime("%Y-%m-%d %H:%M:%S %Z")
-  except Exception:
-      return str(ts_str)
+    if not ts_str: return ""
+    try:
+        t = pd.to_datetime(ts_str, utc=True, errors="coerce")
+        if pd.isna(t): return str(ts_str)
+        t = t.tz_convert(tz_name)
+        return t.strftime("%Y-%m-%d %H:%M:%S %Z")
+    except Exception:
+        return str(ts_str)
 
 def dataframe_to_html_table(df: pd.DataFrame, tz_name: str) -> str:
-  if df.empty:
-      return "<p class='note'>No statistics available.</p>"
-  df2 = df.copy()
-  for c in ["mean","min","max","sum","trend","num_samples"]:
-      if c in df2.columns: df2[c] = df2[c].apply(_human_number)
-  for c in ["min_ts","max_ts"]:
-      if c in df2.columns: df2[c] = df2[c].apply(lambda s: _fmt_ts(s, tz_name))
-  cols = ["metric","units","description","mean","min","min_ts","max","max_ts","sum","trend","num_samples"]
-  cols = [c for c in cols if c in df2.columns]
-  return df2[cols].to_html(index=False, classes="stats", border=0, escape=False)
+    if df.empty:
+        return "<p class='note'>No statistics available.</p>"
+    df2 = df.copy()
+    for c in ["mean","min","max","sum","trend","num_samples"]:
+        if c in df2.columns: df2[c] = df2[c].apply(_human_number)
+    for c in ["min_ts","max_ts"]:
+        if c in df2.columns: df2[c] = df2[c].apply(lambda s: _fmt_ts(s, tz_name))
+    cols = ["metric","units","description","mean","min","min_ts","max","max_ts","sum","trend","num_samples"]
+    cols = [c for c in cols if c in df2.columns]
+    return df2[cols].to_html(index=False, classes="stats", border=0, escape=False)
 
 def to_label(metric: str, description: str):
-  return description or metric
+    return description or metric
 
 def build_metrics_json_for_js(df_all: pd.DataFrame, tz_name: str) -> str:
-  store = {}
-  if df_all.empty: return json.dumps(store)
-  for metric, dfx in df_all.groupby("metric", sort=True):
-      dfx = dfx.sort_values("time")
-      times=[]
-      for t in dfx["time"]:
-        if pd.isna(t): times.append(None)
-        else:
-          tt = pd.Timestamp(t).tz_convert(tz_name)
-          times.append(tt.isoformat())
-      store[metric] = {
-          "metric": metric,
-          "unit": dfx["units"].iloc[0],
-          "label": to_label(metric, dfx["description"].iloc[0] if not dfx.empty else metric),
-          "x": times,
-          "y": [None if pd.isna(v) else float(v) for v in dfx["value"]],
-      }
-  return json.dumps(store, ensure_ascii=False)
+    store = {}
+    if df_all.empty: return json.dumps(store)
+    for metric, dfx in df_all.groupby("metric", sort=True):
+        dfx = dfx.sort_values("time")
+        times=[]
+        for t in dfx["time"]:
+            if pd.isna(t): times.append(None)
+            else:
+                tt = pd.Timestamp(t).tz_convert(tz_name)
+                times.append(tt.isoformat())
+        store[metric] = {
+            "metric": metric,
+            "unit": dfx["units"].iloc[0],
+            "label": to_label(metric, dfx["description"].iloc[0] if not dfx.empty else metric),
+            "x": times,
+            "y": [None if pd.isna(v) else float(v) for v in dfx["value"]],
+        }
+    return json.dumps(store, ensure_ascii=False)
 
 def main():
-  args = parse_args()
-  logging.basicConfig(level=(logging.DEBUG if args.verbose else logging.INFO), format="[%(levelname)s] %(message)s")
+    args = parse_args()
+    logging.basicConfig(level=(logging.DEBUG if args.verbose else logging.INFO), format="[%(levelname)s] %(message)s")
 
-  in_raw = args.input
-  in_path = resolve_input_path(in_raw)
-  if not in_path.exists():
-      logging.error("Input file not found: %s\nHint: If your file is named '%s.json', you can pass '%s' (without .json) or the full name.",
-                    in_raw, Path(in_raw).name, in_raw)
-      raise SystemExit(2)
+    in_raw = args.input
+    in_path = resolve_input_path(in_raw)
+    if not in_path.exists():
+        logging.error("Input file not found: %s\nHint: If your file is named '%s.json', you can pass '%s' (without .json) or the full name.",
+                      in_raw, Path(in_raw).name, in_raw)
+        raise SystemExit(2)
 
-  out_path = resolve_output_path(in_path, (args.output or "").strip())
+    out_path = resolve_output_path(in_path, (args.output or "").strip())
 
-  tz_name = "Asia/Kolkata" if args.ist else "UTC"
-  tz_label = "IST" if tz_name == "Asia/Kolkata" else tz_name
+    tz_name = "Asia/Kolkata" if args.ist else "UTC"
+    tz_label = "IST" if tz_name == "Asia/Kolkata" else tz_name
 
-  logging.info("Reading: %s", in_path)
-  data = load_json(in_path)
+    logging.info("Reading: %s", in_path)
+    data = load_json(in_path)
 
-  start_raw = data.get("start", ""); stop_raw = data.get("stop", "")
-  start_disp = _fmt_ts(start_raw, tz_name) if start_raw else ""
-  stop_disp  = _fmt_ts(stop_raw, tz_name) if stop_raw else ""
-  step  = data.get("step", "")
-  entity_uuid = data.get("entity_uuid", ""); metric_entity = data.get("metric_entity", "")
-  series_list = data.get("series", []) or []
+    start_raw = data.get("start", ""); stop_raw = data.get("stop", "")
+    start_disp = _fmt_ts(start_raw, tz_name) if start_raw else ""
+    stop_disp  = _fmt_ts(stop_raw, tz_name) if stop_raw else ""
+    step  = data.get("step", "")
+    entity_uuid = data.get("entity_uuid", ""); metric_entity = data.get("metric_entity", "")
+    series_list = data.get("series", []) or []
 
-  frames = [make_dataframe(s) for s in series_list]
-  df_all = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=["time","value","metric","units","description"])
+    frames = [make_dataframe(s) for s in series_list]
+    df_all = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=["time","value","metric","units","description"])
 
-  stats_df = collect_stats(series_list)
-  stats_html = dataframe_to_html_table(stats_df, tz_name)
+    stats_df = collect_stats(series_list)
+    stats_html = dataframe_to_html_table(stats_df, tz_name)
 
-  if args.inline_js:
-      try:
-          from plotly.offline import get_plotlyjs
-          plotly_js = f"<script>{get_plotlyjs()}</script>"
-      except Exception:
-          logging.warning("Failed to inline Plotly JS; falling back to CDN.")
-          plotly_js = '<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>'
-  else:
-      plotly_js = '<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>'
+    if args.inline_js:
+        try:
+            from plotly.offline import get_plotlyjs
+            plotly_js = f"<script>{get_plotlyjs()}</script>"
+        except Exception:
+            logging.warning("Failed to inline Plotly JS; falling back to CDN.")
+            plotly_js = '<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>'
+    else:
+        plotly_js = '<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>'
 
-  metrics_json = build_metrics_json_for_js(df_all, tz_name)
+    metrics_json = build_metrics_json_for_js(df_all, tz_name)
 
-  html = render_html(HTML_TEMPLATE, {
-      "title": args.title or "Metrics Report",
-      "plotly_js": plotly_js,
-      "entity_uuid": entity_uuid,
-      "metric_entity": metric_entity,
-      "start": start_disp, "stop": stop_disp, "step": (step if step is not None else ""),
-      "summary_table": stats_html, "metrics_json": metrics_json, "tz_label": tz_label,
-      "chart_height": args.chart_height,
-  })
+    html = render_html(HTML_TEMPLATE, {
+        "title": args.title or "Metrics Report",
+        "plotly_js": plotly_js,
+        "entity_uuid": entity_uuid,
+        "metric_entity": metric_entity,
+        "start": start_disp, "stop": stop_disp, "step": (step if step is not None else ""),
+        "summary_table": stats_html, "metrics_json": metrics_json, "tz_label": tz_label,
+        "chart_height": args.chart_height,
+    })
 
-  logging.info("Writing HTML: %s", out_path)
-  out_path.parent.mkdir(parents=True, exist_ok=True)
-  out_path.write_text(html, encoding="utf-8")
-  logging.info("Done. Open %s in your browser.", out_path)
+    logging.info("Writing HTML: %s", out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(html, encoding="utf-8")
+    logging.info("Done. Open %s in your browser.", out_path)
 
 if __name__ == "__main__":
-  main()
+    main()
