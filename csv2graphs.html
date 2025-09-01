@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CSV → Interactive Grapher</title>
+
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+
+<style>
+  /* THEME VARIABLES */
+  :root[data-theme="dark"]{
+    --accent:#2563eb; --danger:#ef4444;
+    --bg:#0b1020; --panel:#121a2b; --text:#e6e9f0; --muted:#9aa3b2; --border:#1d2740;
+  }
+  :root[data-theme="light"]{
+    --accent:#2563eb; --danger:#ef4444;
+    --bg:#f6f7fb; --panel:#ffffff; --text:#0b1020; --muted:#5b6475; --border:#d9dee8;
+  }
+
+  /* BASE */
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial;background:var(--bg);color:var(--text)}
+  header{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);background:var(--panel);position:sticky;top:0;z-index:10}
+  h1{margin:0;font-size:16px}
+  #themeToggle{margin-left:auto;border:1px solid var(--border);background:var(--panel);color:var(--text);padding:6px 10px;border-radius:6px;cursor:pointer}
+
+  /* LAYOUT */
+  .controls{
+    display:grid;
+    grid-template-columns:400px minmax(0,1fr); /* ← prevents overlap */
+    gap:12px;
+    padding:10px 14px 0;
+    align-items:start;
+  }
+  @media(max-width:960px){.controls{grid-template-columns:1fr}}
+
+  .left-col{display:grid;gap:10px;align-self:start;position:sticky;top:54px;max-height:calc(100vh - 66px)}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:8px}
+
+  input[type=file]{width:100%;background:transparent;border:1px dashed var(--border);color:var(--muted);padding:8px;border-radius:6px}
+
+  .searchbox{display:flex;gap:6px;margin:6px 0}
+  .searchbox input{flex:1;background:transparent;border:1px solid var(--border);color:var(--text);padding:6px;border-radius:6px}
+
+  .btn{border:1px solid #2a375a;background:#182037;padding:6px 10px;border-radius:6px;cursor:pointer;color:#e6e9f0;font-size:12px;font-weight:600;white-space:nowrap}
+  .btn.secondary{background:transparent;color:var(--text)}
+  .btn-primary{background:var(--accent);border-color:transparent;color:#fff}
+  .btn-danger{background:var(--danger);border-color:transparent;color:#fff}
+  .btn:disabled{opacity:.6;cursor:not-allowed}
+
+  .select-wrap{height:56vh;overflow:auto;border:1px solid var(--border);border-radius:6px}
+  .select-wrap label{display:flex;align-items:center;gap:6px;padding:6px 8px;border-bottom:1px solid var(--border);font-size:13px;cursor:pointer}
+  .badge{margin-left:auto;font-size:11px;padding:1px 6px;border-radius:999px;background:rgba(127,127,127,.12);color:var(--muted)}
+
+  .actions{
+    display:flex;gap:8px;align-items:center;margin:10px 14px;
+    flex-wrap:wrap; overflow-x:auto; /* ← no overlap; scroll if tight */
+  }
+
+  main{padding:0 14px 16px}
+  .chart{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:6px;min-height:70vh;margin:10px 0}
+  .chart.small{min-height:42vh}
+
+  .meta{color:var(--muted);font-size:12px;margin-top:6px}
+</style>
+</head>
+<body>
+<header>
+  <h1>CSV → Interactive Grapher</h1>
+  <button id="themeToggle">Toggle theme</button>
+</header>
+
+<section class="controls">
+  <!-- LEFT SIDEBAR -->
+  <div class="left-col">
+    <div class="panel">
+      <strong style="font-size:13px">Load CSV</strong>
+      <input id="fileInput" type="file" accept=".csv,text/csv"/>
+      <div id="fileInfo" class="meta"></div>
+    </div>
+
+    <div class="panel">
+      <div class="searchbox">
+        <input id="search" placeholder="Filter metrics…"/>
+        <button class="btn secondary" id="btnShowAll" title="Show all metrics">All</button>
+        <button class="btn secondary" id="btnShowSelected" title="Show only checked">Sel</button>
+        <button class="btn" id="btnClearMetrics" title="Uncheck all metrics">Clear metrics</button>
+      </div>
+      <div id="metricList" class="select-wrap"></div>
+    </div>
+  </div>
+
+  <!-- RIGHT: actions + charts -->
+  <div>
+    <div class="actions">
+      <button id="btnPlot" class="btn btn-primary">Plot</button>
+      <button id="btnResetZoom" class="btn">Reset Zoom</button>
+      <button id="btnClear" class="btn btn-danger">Clear Charts</button>
+
+      <label class="btn secondary" style="display:flex;align-items:center;gap:6px;">
+        <input type="checkbox" id="chkIndividual"/> Individual
+      </label>
+      <label class="btn secondary" style="display:flex;align-items:center;gap:6px;">
+        <input type="checkbox" id="chkEpoch"/> Epoch?
+      </label>
+      <label class="btn secondary" style="display:flex;align-items:center;gap:6px;">
+        <input type="checkbox" id="chkStrict"/> Strict rows
+      </label>
+    </div>
+
+    <main><div id="charts"></div></main>
+  </div>
+</section>
+
+<script>
+/* ---------- THEME ---------- */
+(function initTheme(){
+  const saved = localStorage.getItem('csvgrapher-theme');
+  const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const initial = saved || (prefersDark ? 'dark' : 'light');
+  document.documentElement.setAttribute('data-theme', initial);
+  document.getElementById('themeToggle').addEventListener('click', ()=>{
+    const cur = document.documentElement.getAttribute('data-theme') || 'light';
+    const next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('csvgrapher-theme', next);
+    if (parsed) autoPlot(); // re-render with new colors
+  });
+})();
+
+/* ---------- ELEMENTS ---------- */
+const fileInput=document.getElementById('fileInput');
+const metricList=document.getElementById('metricList');
+const searchInput=document.getElementById('search');
+const btnShowAll=document.getElementById('btnShowAll');
+const btnShowSelected=document.getElementById('btnShowSelected');
+const btnClearMetrics=document.getElementById('btnClearMetrics');
+
+const btnPlot=document.getElementById('btnPlot');
+const btnClear=document.getElementById('btnClear');
+const btnResetZoom=document.getElementById('btnResetZoom');
+const chkIndividual=document.getElementById('chkIndividual');
+const chkEpoch=document.getElementById('chkEpoch');
+const chkStrict=document.getElementById('chkStrict');
+
+const chartsDiv=document.getElementById('charts');
+const fileInfo=document.getElementById('fileInfo');
+
+let parsed=null;
+let lastXRanges=[];
+
+/* ---------- UTILS ---------- */
+const debounce=(fn,ms=150)=>{let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>fn(...a),ms)}};
+function isNumeric(x){ if(x===''||x==null) return false; return isFinite(Number(x)); }
+
+function robustParseTimestamp(v){
+  if(v==null||v==='') return null;
+  const s=String(v).trim();
+  if(/^\d+$/.test(s)){ const x=Number(s); if(x>1e12) return new Date(x); if(x>1e9) return new Date(x*1000); return new Date(x); }
+  if(/^\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}(:\d{2})?$/.test(s)){ const d=new Date(s.replace(' ','T')); if(!isNaN(d)) return d; }
+  const d2=new Date(s); if(!isNaN(d2)) return d2;
+  const m=/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(s); if(m){ const now=new Date(); now.setHours(+m[1],+m[2],+(m[3]||0),0); return now; }
+  return null;
+}
+function parseTimestamp(v){ if(chkEpoch.checked){ const s=String(v||'').trim(); if(/^\d+$/.test(s)){ const x=Number(s); if(x>1e12) return new Date(x); if(x>1e9) return new Date(x*1000); } } return robustParseTimestamp(v); }
+
+function getThemeColors(){
+  const cs = getComputedStyle(document.documentElement);
+  return {
+    panel: cs.getPropertyValue('--panel').trim(),
+    text: cs.getPropertyValue('--text').trim(),
+    grid: 'rgba(127,127,127,.2)'
+  };
+}
+
+/* ---------- FILE LOAD ---------- */
+fileInput.addEventListener('change',()=>{
+  const f=fileInput.files?.[0]; if(!f) return;
+  Papa.parse(f,{header:true,skipEmptyLines:true,worker:true,complete:(res)=>{
+    const h=res.meta.fields || (res.data[0]?Object.keys(res.data[0]):[]);
+    if(!res.data.length || h.length<2){ alert('Need at least 2 columns: timestamp + one metric.'); return; }
+    const tsKey=h[0];
+    const rows=res.data.map(r=>{
+      const obj={}; h.forEach(k=>obj[k]=r[k]);
+      const d=parseTimestamp(r[tsKey]); if(d) obj[tsKey]=d;
+      return obj;
+    });
+    parsed={headers:h,rows,tsKey};
+    buildMetricList();
+    fileInfo.textContent=`${f.name} · ${rows.length} rows · ${h.length} cols`;
+    btnClear.disabled=false; btnResetZoom.disabled=true;
+    const first = metricList.querySelector('input[type="checkbox"]:not([disabled])'); if(first && !first.checked) first.checked = true;
+    autoPlot();
+  }});
+});
+
+/* ---------- METRIC LIST ---------- */
+function buildMetricList(){
+  metricList.innerHTML="";
+  if(!parsed) return;
+  const {headers,rows}=parsed;
+  const sample=Math.min(100, rows.length);
+  const numeric=new Set();
+  headers.slice(1).forEach(h=>{
+    let hits=0; for(let i=0;i<sample;i++){ if(isNumeric(rows[i][h])){ hits++; if(hits>=2) break; } }
+    if(hits>0) numeric.add(h);
+  });
+  headers.slice(1).forEach((h)=>{
+    const lab=document.createElement('label'); lab.dataset.metric=h;
+    lab.innerHTML=`<input type="checkbox" ${numeric.has(h)?'':'disabled'}/> <span>${h}</span> <span class="badge">${numeric.has(h)?'num':'txt'}</span>`;
+    metricList.appendChild(lab);
+  });
+  metricList.addEventListener('change', debounce(autoPlot, 120), { once:false });
+}
+searchInput.addEventListener('input', ()=>{
+  const q=searchInput.value.trim().toLowerCase();
+  [...metricList.children].forEach(l=>{ l.style.display = l.dataset.metric.toLowerCase().includes(q) ? 'flex' : 'none'; });
+});
+btnShowAll.addEventListener('click', ()=>{ [...metricList.children].forEach(l=>l.style.display='flex'); });
+btnShowSelected.addEventListener('click', ()=>{ [...metricList.children].forEach(l=>{ l.style.display = l.querySelector('input').checked ? 'flex' : 'none'; }); });
+btnClearMetrics.addEventListener('click', ()=>{ [...metricList.querySelectorAll('input[type="checkbox"]')].forEach(cb=>cb.checked=false); autoPlot(); });
+
+/* ---------- PLOTTING ---------- */
+btnPlot.addEventListener('click', ()=>autoPlot());
+btnClear.addEventListener('click', ()=>{ chartsDiv.innerHTML=""; lastXRanges=[]; btnResetZoom.disabled=true; });
+btnResetZoom.addEventListener('click', ()=>{ chartsDiv.querySelectorAll('.chart').forEach((div,i)=>{ const r=lastXRanges[i]; Plotly.relayout(div, r ? {'xaxis.range':[r[0],r[1]]} : {'xaxis.autorange':true}); }); });
+[chkIndividual,chkEpoch,chkStrict].forEach(el=>el.addEventListener('change', debounce(()=>{ if(el===chkEpoch && parsed){ const {rows,tsKey}=parsed; rows.forEach(r=>{ const d=parseTimestamp(r[tsKey]); if(d) r[tsKey]=d; }); } autoPlot(); },120)));
+
+function autoPlot(){
+  if(!parsed){ return; }
+  const selected = [...metricList.querySelectorAll('input[type="checkbox"]:checked')].map(cb=>cb.closest('label').dataset.metric);
+  if(selected.length===0){ chartsDiv.innerHTML = ""; btnResetZoom.disabled = true; return; }
+  const {rows, tsKey} = parsed;
+  const xs = rows.map(r => r[tsKey] instanceof Date ? r[tsKey] : parseTimestamp(r[tsKey]));
+  let idx = xs.map((d,i)=>({d,i})).filter(o=>o.d instanceof Date);
+  if (chkStrict.checked){ idx = idx.filter(({i}) => selected.every(m => isNumeric(rows[i][m]))); }
+  const x = idx.map(o=>o.d);
+  const traces = selected.map(metric=>{
+    const y = idx.map(({i})=>{ const n = Number(rows[i][metric]); return isFinite(n)?n:null; });
+    return { x, y, type:'scatter', mode:'lines', name:metric, hovertemplate: '%{x}<br>%{y}<extra>'+metric+'</extra>' };
+  });
+  chartsDiv.innerHTML = ""; lastXRanges = [];
+  if (chkIndividual.checked){
+    selected.forEach((metric,k)=>{
+      const div=document.createElement('div'); div.className='chart small'; chartsDiv.appendChild(div);
+      Plotly.newPlot(div, [traces[k]], layoutWithLegend(metric, x), {responsive:true, displaylogo:false});
+      cacheInitialX(div);
+    });
+  } else {
+    const div=document.createElement('div'); div.className='chart'; chartsDiv.appendChild(div);
+    Plotly.newPlot(div, traces, layoutWithLegend('Compare: '+selected.join(' vs '), x), {responsive:true, displaylogo:false});
+    cacheInitialX(div);
+  }
+  btnResetZoom.disabled = false;
+}
+function layoutWithLegend(title, x){
+  const colors=getThemeColors();
+  const span = x && x.length ? [x[0], x[x.length-1]] : null;
+  return {
+    title:{ text:title, font:{size:13, color:colors.text} },
+    paper_bgcolor:colors.panel, plot_bgcolor:colors.panel,
+    margin:{ t:30, r:14, b:70, l:50 },
+    xaxis:{ title:'Time', type:'date', gridcolor:colors.grid, range: span||undefined, zeroline:false, color:colors.text },
+    yaxis:{ title:'Value', gridcolor:colors.grid, zeroline:false, color:colors.text },
+    legend:{ orientation:'h', y:-0.35, x:0.5, xanchor:'center', font:{color:colors.text} }
+  };
+}
+function cacheInitialX(div){ const xr=div.layout?.xaxis?.range; lastXRanges.push(xr && xr.length===2 ? [xr[0],xr[1]] : null); }
+
+/* keyboard nicety */
+document.addEventListener('keydown', e=>{ if(e.key==='Enter' && parsed) autoPlot(); });
+</script>
+</body>
+</html>
