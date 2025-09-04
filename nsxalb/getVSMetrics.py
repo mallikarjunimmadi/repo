@@ -153,9 +153,16 @@ def dump_entity(
         timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
         safe_id = eid.replace("/", "_")
         out_path = os.path.join(out_dir, f"{safe_id}_{timestamp}.json")
-        with open(out_path, "w", encoding="utf-8") as f:
-            f.write(r.text)
+        try:
+            data = r.json()  # parse response
+            with open(out_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)  # pretty JSON
+        except ValueError:
+            # Fallback: if response isn't valid JSON, write raw text so you can inspect it
+            with open(out_path, "w", encoding="utf-8") as f:
+                f.write(r.text)
         log(f"[{entity_label}] Wrote: {out_path}")
+
 
 
 def main():
