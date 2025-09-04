@@ -8,18 +8,19 @@ import logging
 import configparser
 from datetime import datetime
 from urllib.parse import urlencode
+from typing import Optional, List
 
 import requests
 import urllib3
 
 # -----------------------------
-# Defaults / setup
+# Setup
 # -----------------------------
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 CONFIG_FILE = "config.ini"
 
 
-def load_config(profile: str):
+def load_config(profile: str) -> configparser.SectionProxy:
     cfg = configparser.ConfigParser()
     cfg.read(CONFIG_FILE)
     if profile not in cfg:
@@ -39,11 +40,11 @@ def setup_logging(log_dir: str, debug: bool) -> str:
     return log_file
 
 
-def log(msg, level="info"):
+def log(msg: str, level: str = "info") -> None:
     getattr(logging, level.lower(), logging.info)(msg)
 
 
-def parse_list(val: str):
+def parse_list(val: Optional[str]) -> List[str]:
     """
     Accepts comma-separated or newline-separated values from config/CLI.
     Example:
@@ -52,7 +53,7 @@ def parse_list(val: str):
     """
     if not val:
         return []
-    parts = []
+    parts: List[str] = []
     for line in val.splitlines():
         parts.extend([p.strip() for p in line.split(",") if p.strip()])
     return parts
@@ -95,9 +96,15 @@ def retry_get(url: str, headers: dict, controller: str):
     return last
 
 
-def build_metrics_url(controller: str, vs_uuid: str, metric_ids: str,
-                      limit: int = 720, step: int | None = None,
-                      start: int | None = None, end: int | None = None) -> str:
+def build_metrics_url(
+    controller: str,
+    vs_uuid: str,
+    metric_ids: str,
+    limit: int = 720,
+    step: Optional[int] = None,
+    start: Optional[int] = None,
+    end: Optional[int] = None,
+) -> str:
     """
     Build the exact analytics URL:
       https://<controller>/api/analytics/metrics/virtualservice/<vs_uuid>/?metric_id=...&limit=...
@@ -131,7 +138,7 @@ def main():
     ap.add_argument("--end", type=int, default=None, help="Optional API 'end' epoch ms")
     # Output & misc
     ap.add_argument("--output-dir", help="Output directory (defaults to profile output_dir or ./output)")
-    ap.add_argument("--filename-prefix", default=None, help="Optional extra prefix in filename")
+    ap.add_argument("--filename-prefix", default=None, help="(Ignored in this version; fixed name format)")
     ap.add_argument("--tenant", default=None, help="Tenant header (defaults to profile or 'admin')")
     ap.add_argument("--debug", action="store_true", help="Debug logging")
     args = ap.parse_args()
@@ -191,9 +198,10 @@ def main():
             log(f"Non-200 for VS {vs_uuid}: {r.status_code} {r.text[:500]}", "error")
             continue
 
-		timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
-		safe_vs = vs_uuid.replace("/", "_")
-		out_path = os.path.join(out_dir, f"{safe_vs}_{timestamp}.json")
+        # Filename format: <vs_uuid>_<YYYYMMDDTHHMMSS>.json
+        timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
+        safe_vs = vs_uuid.replace("/", "_")
+        out_path = os.path.join(out_dir, f"{safe_vs}_{timestamp}.json")
 
         with open(out_path, "w", encoding="utf-8") as f:
             f.write(r.text)
