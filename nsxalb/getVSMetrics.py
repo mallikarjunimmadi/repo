@@ -191,10 +191,10 @@ def main():
             log(f"Non-200 for VS {vs_uuid}: {r.status_code} {r.text[:500]}", "error")
             continue
 
-        timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
-        safe_vs = vs_uuid.replace("/", "_")
-        extra = f"{args.filename_prefix}_" if args.filename_prefix else ""
-        out_path = os.path.join(out_dir, f"{timestamp}_{extra}metrics_{controller}_{safe_vs}.json")
+		timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
+		safe_vs = vs_uuid.replace("/", "_")
+		out_path = os.path.join(out_dir, f"{safe_vs}_{timestamp}.json")
+
         with open(out_path, "w", encoding="utf-8") as f:
             f.write(r.text)
         log(f"Wrote: {out_path}")
