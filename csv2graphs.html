@@ -26,19 +26,23 @@
   #themeIcon{font-size:16px;line-height:1}
 
   .controls{
+    position:relative;
     display:grid; grid-template-columns:360px minmax(0,1fr);
     gap:12px; padding:10px 14px 0; align-items:start;
+    transition:grid-template-columns .18s ease;
   }
+  .controls.collapsed{ grid-template-columns:minmax(0,1fr); }
   @media(max-width:960px){.controls{grid-template-columns:1fr}}
 
   .left-col{display:grid;gap:10px;align-self:start;position:sticky;top:54px;max-height:calc(100vh - 66px)}
+  .controls.collapsed .left-col{ display:none; }
+
   .panel{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:8px}
   input[type=file]{width:100%;background:transparent;border:1px dashed var(--border);color:var(--muted);padding:8px;border-radius:6px}
 
   .searchbox{display:flex;gap:6px;margin:6px 0;flex-wrap:wrap}
   .searchbox input{flex:1 1 160px;background:transparent;border:1px solid var(--border);color:var(--text);padding:6px;border-radius:6px}
 
-  /* unified buttons; toggles go accent when active */
   .btn{
     border:1px solid var(--border);
     background:transparent; color:var(--text);
@@ -57,10 +61,9 @@
   main{padding:0 14px 16px}
   .chart{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:6px;min-height:70vh;margin:10px 0}
   .chart.small{min-height:42vh}
-
   .meta{color:var(--muted);font-size:12px;margin-top:6px}
 
-  /* floating jump buttons */
+  /* Floating jump buttons */
   .jumper{
     position:fixed; right:16px; bottom:16px; display:flex; flex-direction:column; gap:8px; z-index:20;
     opacity:0; pointer-events:none; transition:opacity .15s ease;
@@ -72,6 +75,24 @@
     box-shadow:0 4px 16px rgba(0,0,0,.25);
   }
   .fab:hover{background:var(--accent); color:#fff; border-color:transparent;}
+
+  /* Border handle (chevron) */
+  .pane-handle{
+    position:fixed;
+    width:26px; height:56px;
+    display:grid; place-items:center;
+    border-radius:999px;
+    background:var(--panel);
+    color:var(--text);
+    border:1px solid var(--border);
+    box-shadow:0 4px 16px rgba(0,0,0,.25);
+    z-index:15;
+    cursor:pointer;
+    user-select:none;
+  }
+  .pane-handle:hover{ background:var(--accent); color:#fff; border-color:transparent; }
+  .pane-handle span{ font-size:16px; line-height:1; }
+  .controls.collapsed + .pane-handle span{ transform:rotate(180deg); }
 </style>
 </head>
 <body>
@@ -80,9 +101,9 @@
   <button id="themeToggle" class="btn" aria-label="Toggle theme"><span id="themeIcon">🌙</span></button>
 </header>
 
-<section class="controls">
+<section class="controls" id="controls">
   <!-- LEFT -->
-  <div class="left-col">
+  <div class="left-col" id="leftCol">
     <div class="panel">
       <strong style="font-size:13px">Load CSV</strong>
       <input id="fileInput" type="file" accept=".csv,text/csv"/>
@@ -100,7 +121,7 @@
   </div>
 
   <!-- RIGHT -->
-  <div>
+  <div id="rightCol" style="position:relative;">
     <div class="actions">
       <button id="btnPlot" class="btn">Plot</button>
       <button id="btnResetZoom" class="btn" disabled>Reset Zoom</button>
@@ -115,6 +136,9 @@
     <main><div id="charts"></div></main>
   </div>
 </section>
+
+<!-- border handle (chevron) -->
+<button id="paneHandle" class="pane-handle" aria-label="Collapse/Expand metrics"><span>❮</span></button>
 
 <!-- jumpers -->
 <div class="jumper" id="jumper">
@@ -146,6 +170,11 @@ function updateThemeIcon(){
 }
 
 /* ---------- ELEMENTS ---------- */
+const controls=document.getElementById('controls');
+const leftCol=document.getElementById('leftCol');
+const rightCol=document.getElementById('rightCol');
+const paneHandle=document.getElementById('paneHandle');
+
 const fileInput=document.getElementById('fileInput');
 const metricList=document.getElementById('metricList');
 const searchInput=document.getElementById('search');
@@ -175,9 +204,9 @@ let individualMode=false;
 let epochMode=false;
 let strictMode=false;
 
-/* Sync guards */
-let syncBlockedUntil=0;                  // time (ms) until which relayout sync is ignored
-const SYNC_COOLDOWN_MS = 160;            // short cooldown prevents feedback storms
+/* sync cooldown to avoid relayout storms */
+let syncBlockedUntil=0;
+const SYNC_COOLDOWN_MS = 160;
 function now(){ return performance.now(); }
 function suspendSync(){ syncBlockedUntil = now() + SYNC_COOLDOWN_MS; }
 function canSync(){ return now() > syncBlockedUntil; }
@@ -185,7 +214,6 @@ function canSync(){ return now() > syncBlockedUntil; }
 /* ---------- UTILS ---------- */
 const debounce=(fn,ms=150)=>{let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>fn(...a),ms)}};
 function isNumeric(x){ if(x===''||x==null) return false; return isFinite(Number(x)); }
-
 function robustParseTimestamp(v){
   if(v==null||v==='') return null;
   const s=String(v).trim();
@@ -210,6 +238,41 @@ function getThemeColors(){
   return { panel: cs.getPropertyValue('--panel').trim(), text: cs.getPropertyValue('--text').trim(), grid: 'rgba(127,127,127,.2)' };
 }
 
+/* ---------- HANDLE POSITION & RESIZE HELPERS ---------- */
+function charts(){ return Array.from(chartsDiv.querySelectorAll('.chart')); }
+
+function positionHandle(){
+  const rect = rightCol.getBoundingClientRect();
+  const x = rect.left + window.scrollX - 13;
+  const y = window.scrollY + (window.innerHeight / 2);
+  paneHandle.style.left = x + 'px';
+  paneHandle.style.top  = y + 'px';
+}
+function resizeCharts(){
+  // Resize all Plotly charts to fit their new containers
+  charts().forEach(div => { try { Plotly.Plots.resize(div); } catch(_){} });
+}
+
+window.addEventListener('resize', debounce(()=>{ positionHandle(); resizeCharts(); }, 50));
+window.addEventListener('scroll', debounce(positionHandle, 50));
+controls.addEventListener('transitionend', (e)=>{
+  if(e.propertyName==='grid-template-columns'){
+    positionHandle();
+    // wait 1 frame so containers settle, then resize
+    requestAnimationFrame(resizeCharts);
+  }
+});
+
+/* collapse/expand via the handle */
+let sidebarCollapsed=false;
+paneHandle.addEventListener('click', ()=>{
+  sidebarCollapsed = !sidebarCollapsed;
+  controls.classList.toggle('collapsed', sidebarCollapsed);
+  positionHandle();
+  // Resize charts immediately after the grid change
+  requestAnimationFrame(resizeCharts);
+});
+
 /* ---------- FILE LOAD ---------- */
 fileInput.addEventListener('change',()=>{
   const f=fileInput.files?.[0]; if(!f) return;
@@ -229,6 +292,7 @@ fileInput.addEventListener('change',()=>{
     const first = metricList.querySelector('input[type="checkbox"]:not([disabled])'); if(first && !first.checked) first.checked = true;
     applyFilter();
     autoPlot();
+    positionHandle();
   }});
 });
 
@@ -278,60 +342,47 @@ function applyFilter(){
   });
 }
 
-/* ---------- SYNC & EVENTS ---------- */
-function charts(){ return Array.from(chartsDiv.querySelectorAll('.chart')); }
+/* ---------- SYNC ---------- */
 function broadcast(update){
   if(!update || Object.keys(update).length===0) return;
-  suspendSync(); // block incoming relayouts for a short burst
+  suspendSync();
   charts().forEach(div=>{ Plotly.relayout(div, update); });
 }
-
 function buildRelayoutFromEvent(ed){
   const u={};
   if(!ed) return u;
-
-  // Only propagate meaningful axis changes; ignore autosize, uirevision etc.
   if('xaxis.range[0]' in ed && 'xaxis.range[1]' in ed){ u['xaxis.range']=[ed['xaxis.range[0]'], ed['xaxis.range[1]']]; }
   else if('xaxis.autorange' in ed){ u['xaxis.autorange']=true; }
-
   if('yaxis.range[0]' in ed && 'yaxis.range[1]' in ed){ u['yaxis.range']=[ed['yaxis.range[0]'], ed['yaxis.range[1]']]; }
   else if('yaxis.autorange' in ed){ u['yaxis.autorange']=true; }
-
   return u;
 }
-
 function attachSync(gd){
-  // Custom double-click:
-  //  - dblclick => autorange both axes on all charts
-  //  - Shift + dblclick => 2x zoom-in around current center
   gd.on('plotly_doubleclick', (e)=>{
-    // prevent Plotly's default storm and do our own controlled broadcast
     e && e.event && e.event.preventDefault && e.event.preventDefault();
-
     const xa = gd._fullLayout.xaxis, ya = gd._fullLayout.yaxis;
     if(e && e.event && e.event.shiftKey && xa.range && ya.range){
       const [x0,x1]=xa.range, [y0,y1]=ya.range;
-      const xm = (new Date(x0).getTime()+new Date(x1).getTime())/2;
-      const ym = (y0+y1)/2;
+      const xm=(new Date(x0).getTime()+new Date(x1).getTime())/2;
+      const ym=(y0+y1)/2;
       const xHalf=(new Date(x1).getTime()-new Date(x0).getTime())/4;
       const yHalf=(y1-y0)/4;
-      broadcast({'xaxis.range':[new Date(xm-xHalf), new Date(xm+xHalf)], 'yaxis.range':[ym-yHalf, ym+yHalf]});
+      broadcast({'xaxis.range':[new Date(xm-xHalf),new Date(xm+xHalf)],'yaxis.range':[ym-yHalf,ym+yHalf]});
     }else{
       broadcast({'xaxis.autorange':true,'yaxis.autorange':true});
     }
     return false;
   });
-
   gd.on('plotly_relayout', (ed)=>{
-    if(!canSync()) return;            // still cooling down → ignore
+    if(!canSync()) return;
     const update = buildRelayoutFromEvent(ed);
     if(Object.keys(update).length===0) return;
-    suspendSync();                     // broadcast will set a new cooldown window
+    suspendSync();
     charts().forEach(other=>{ if(other!==gd){ Plotly.relayout(other, update); } });
   });
 }
 
-/* ---------- FLOATING JUMPERS ---------- */
+/* ---------- JUMPERS ---------- */
 function updateJumperVisibility(){
   jumper.classList.toggle('visible', charts().length > 1);
 }
@@ -342,17 +393,12 @@ jumpBottom.addEventListener('click', ()=>{
 });
 
 /* ---------- PLOTLY CONFIG ---------- */
-const PLOTLY_CONFIG = {
-  responsive:true,
-  displaylogo:false,
-  scrollZoom:true,
-  doubleClick:'reset', // allow dblclick but we intercept & return false; keeps UX consistent
-};
+const PLOTLY_CONFIG = { responsive:true, displaylogo:false, scrollZoom:true, doubleClick:'reset' };
 
 /* ---------- PLOTTING ---------- */
 btnPlot.addEventListener('click', ()=>autoPlot());
 btnClear.addEventListener('click', ()=>{
-  chartsDiv.innerHTML=""; btnResetZoom.disabled=true; updateJumperVisibility();
+  chartsDiv.innerHTML=""; btnResetZoom.disabled=true; updateJumperVisibility(); resizeCharts();
 });
 btnResetZoom.addEventListener('click', ()=>{
   broadcast({'xaxis.autorange':true,'yaxis.autorange':true});
@@ -379,9 +425,9 @@ btnStrict.addEventListener('click', ()=>{
 });
 
 function autoPlot(){
-  if(!parsed){ return; }
+  if(!parsed){ positionHandle(); return; }
   const selected = [...metricList.querySelectorAll('input[type="checkbox"]:checked')].map(cb=>cb.closest('label').dataset.metric);
-  if(selected.length===0){ chartsDiv.innerHTML = ""; btnResetZoom.disabled = true; updateJumperVisibility(); return; }
+  if(selected.length===0){ chartsDiv.innerHTML = ""; btnResetZoom.disabled = true; updateJumperVisibility(); positionHandle(); resizeCharts(); return; }
 
   const {rows, tsKey} = parsed;
   const xs = rows.map(r => r[tsKey] instanceof Date ? r[tsKey] : parseTimestamp(r[tsKey]));
@@ -406,6 +452,9 @@ function autoPlot(){
   }
   btnResetZoom.disabled = false;
   updateJumperVisibility();
+  positionHandle();
+  // Make sure fresh plots fill the available width
+  requestAnimationFrame(resizeCharts);
 }
 
 function layoutWithLegend(title, x){
@@ -421,6 +470,7 @@ function layoutWithLegend(title, x){
   };
 }
 
+document.addEventListener('DOMContentLoaded', ()=>{ positionHandle(); resizeCharts(); });
 document.addEventListener('keydown', e=>{ if(e.key==='Enter' && parsed) autoPlot(); });
 </script>
 </body>
