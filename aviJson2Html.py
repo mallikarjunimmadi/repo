@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# json2html.py — JSON → interactive HTML graphs (Plotly) + WIDE CSV export
+# json2html.py — JSON → interactive HTML graphs (Plotly) + WIDE CSV export + collapsible metrics pane (chevrons)
 #
 # - Accepts multiple JSON files or directories
 # - Validates JSON; ignores non-JSON
@@ -10,6 +10,7 @@
 # - Floating jump-to-top/bottom
 # - Dark/Light theme
 # - CSV export in WIDE format: time + one column per metric
+# - Collapse/Expand the left metrics pane via small chevrons (persists; hotkey: M)
 
 import argparse
 import json
@@ -42,8 +43,8 @@ ${plotly_js}
     --bg:#f9fafb; --fg:#1f2937; --fg-muted:#6b7280; --border:#e5e7eb;
     --pill:#e5e7eb; --card-bg:#ffffff; --shadow:0 4px 6px -1px rgba(0,0,0,.08),0 2px 4px -2px rgba(0,0,0,.04);
     --primary:#2563eb; --primary-hover:#1d4ed8;
-    /* Adjust to avoid page scrollbar: header + meta + controls */
-    --chrome-height: 190px;
+    /* Tweak so outer page scrollbar is avoided; panes scroll internally */
+    --chrome-height: 170px;
   }
   [data-theme="dark"] {
     --bg:#111827; --fg:#f3f4f6; --fg-muted:#9ca3af; --border:#374151;
@@ -54,7 +55,7 @@ ${plotly_js}
   body{
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
     color:var(--fg); background:var(--bg); transition:background .3s,color .3s; font-size:14px;
-    overflow:hidden; /* panes scroll internally; no page scroll */
+    overflow:hidden; /* no outer page scrollbar */
   }
   h1{font-size:20px;margin:0;font-weight:600} h2{font-size:16px;margin:0 0 10px;font-weight:600}
   .header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border)}
@@ -87,12 +88,31 @@ ${plotly_js}
 
   /* Work area */
   .main-container{
+    position:relative; /* anchor for reveal chevron */
     display:flex; gap:16px; padding:16px;
     height: calc(100dvh - var(--chrome-height));
     box-sizing:border-box;
   }
   .left-pane{flex:0 0 360px;border-radius:12px;padding:16px;background:var(--card-bg);box-shadow:var(--shadow);overflow:hidden;display:flex;flex-direction:column}
   .right-pane{flex:1 1 auto;border-radius:12px;padding:16px;background:var(--card-bg);box-shadow:var(--shadow);overflow:auto}
+
+  /* Collapse left metrics pane */
+  .main-container.is-left-collapsed .left-pane { display: none !important; }
+  .main-container.is-left-collapsed { gap: 0; }
+
+  /* Tiny chevrons */
+  .pane-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+  .pane-toggle{
+    width:28px;height:28px;min-width:28px;min-height:28px;
+    line-height:26px;text-align:center;border-radius:999px;
+    border:1px solid var(--border); background:var(--card-bg); color:var(--fg);
+    cursor:pointer; font-size:16px; padding:0;
+  }
+  .pane-toggle:hover{ background:var(--bg); }
+
+  /* Reveal chevron (visible only when collapsed) */
+  .reveal{position:absolute; left:8px; top:8px; display:none; z-index:1000}
+  .main-container.is-left-collapsed .reveal{ display:inline-block; }
 
   .btn{appearance:none;border:1px solid var(--border);background:var(--card-bg);color:var(--fg);padding:6px 10px;border-radius:8px;cursor:pointer;transition:all .15s ease;font-size:12px}
   .btn:hover{background:var(--bg)}
@@ -164,8 +184,14 @@ ${plotly_js}
   </div>
 
   <div class="main-container">
-    <div class="left-pane content-panel" id="panel-interactive" style="display:block">
-      <h2>Select Metrics</h2>
+    <!-- reveal chevron shown only when collapsed -->
+    <button id="left-reveal" class="pane-toggle reveal" title="Show metrics">›</button>
+
+    <div class="left-pane content-panel" id="panel-interactive">
+      <div class="pane-head">
+        <h2>Select Metrics</h2>
+        <button id="left-collapse" class="pane-toggle" title="Hide metrics">‹</button>
+      </div>
       <div class="ms-list-container">
         <div class="ms-search-header">
           <input type="text" id="ms-search" class="ms-search" placeholder="Search metrics or units..."/>
@@ -210,6 +236,36 @@ var FONT_FAMILY='-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica N
 var showSelectedMode=false;
 var SHOW_UNIT_HEADERS=false; // keep false (no PER_SECOND/BITS_PER_SECOND headings)
 
+/* --------- Collapse left pane helpers (chevrons) --------- */
+var LCOL_KEY = 'left_pane_collapsed';
+function relayoutAllChartsSoon(delay){
+  setTimeout(function(){
+    var divs = document.querySelectorAll('#interactive-panels .chart-card > div[id^="chart"]');
+    for (var i=0;i<divs.length;i++){
+      var id = divs[i].id;
+      if (window.Plotly && id) { window.Plotly.relayout(id, { autosize: true }); }
+    }
+  }, delay || 80);
+}
+function setLeftCollapsed(on){
+  var container = document.querySelector('.main-container');
+  var collapseBtn = document.getElementById('left-collapse');
+  var revealBtn = document.getElementById('left-reveal');
+  if (!container) return;
+
+  container.classList.toggle('is-left-collapsed', !!on);
+  if (collapseBtn) collapseBtn.textContent = on ? '›' : '‹'; // not visible when collapsed, but keeps state
+  if (revealBtn) revealBtn.style.display = on ? 'inline-block' : 'none';
+
+  try { localStorage.setItem(LCOL_KEY, on ? '1' : '0'); } catch(e) {}
+  relayoutAllChartsSoon(80);
+}
+function getLeftCollapsed(){
+  try { return (localStorage.getItem(LCOL_KEY) || '0') === '1'; }
+  catch(e){ return false; }
+}
+
+/* --------- Misc helpers --------- */
 function debounce(fn,ms){var t;return function(){var args=arguments,ctx=this;clearTimeout(t);t=setTimeout(function(){fn.apply(ctx,args);},ms||120);};}
 
 function updatePlotlyTheme(theme){
@@ -252,6 +308,7 @@ function setupTabs(){
   if (tabs.length) activate(tabs[0].getAttribute('data-target'));
 }
 
+/* --------- Metric selection UI --------- */
 var msBody, msSearch, btnAll, btnSel, btnSelectAll, btnClear, countSpan;
 
 function escapeHTML(s){ return (s||"").replace(/[&<>'"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c];}); }
@@ -355,6 +412,7 @@ function wireMetricUI(){
   btnClear.addEventListener('click', clearAll);
 }
 
+/* --------- Plot helpers --------- */
 function truncateLabel(s,n){ if(!s) return ''; return s.length>n? s.slice(0,n-1)+'…' : s; }
 function groupByUnit(names){ var out={}; for(var i=0;i<names.length;i++){ var name=names[i]; var m=METRICS_DATA[name]; if(!m) continue; var u=m.unit||'UNKNOWN'; if(!out[u]) out[u]=[]; out[u].push(m); } return out; }
 function getLayout(xTitle,showLegend){
@@ -527,15 +585,20 @@ function resetZoomAll(){
   for (var i=0;i<divs.length;i++){ if (window.Plotly) window.Plotly.relayout(divs[i].id,{'xaxis.autorange':true,'yaxis.autorange':true}); }
 }
 
+/* --------- Init --------- */
 (function init(){
+  // Theme
   var saved=DEFAULT_THEME; try{ saved=localStorage.getItem(THEME_KEY)||DEFAULT_THEME; }catch(e){}
   setTheme(saved);
   var el=document.getElementById('theme-toggle'); if(el) el.addEventListener('click', toggleTheme);
 
+  // Tabs
   setupTabs();
+
+  // Metrics UI
   wireMetricUI();
 
-  // Toggle for "Individual graphs"
+  // Individual graphs toggle
   window.__individualMode__ = window.__individualMode__ || false;
   const indBtn = document.getElementById('chip-individual');
   function syncIndBtn(){ indBtn.setAttribute('aria-pressed', window.__individualMode__ ? 'true' : 'false'); }
@@ -556,6 +619,23 @@ function resetZoomAll(){
   var pane=document.getElementById('right-pane-interactive');
   el=document.getElementById('btn-scroll-top'); if(el) el.addEventListener('click', function(){ if (pane.scrollTo) pane.scrollTo({top:0, behavior:'smooth'}); else pane.scrollTop=0; });
   el=document.getElementById('btn-scroll-bottom'); if(el) el.addEventListener('click', function(){ if (pane.scrollTo) pane.scrollTo({top:pane.scrollHeight, behavior:'smooth'}); else pane.scrollTop=pane.scrollHeight; });
+
+  // Chevron collapse/reveal
+  var collapseBtn = document.getElementById('left-collapse');
+  var revealBtn = document.getElementById('left-reveal');
+  if (collapseBtn){ collapseBtn.addEventListener('click', function(){ setLeftCollapsed(true); }); }
+  if (revealBtn){ revealBtn.addEventListener('click', function(){ setLeftCollapsed(false); }); }
+  // Restore saved state
+  setLeftCollapsed(getLeftCollapsed());
+  // Keyboard shortcut: M
+  document.addEventListener('keydown', function(e){
+    if (e.defaultPrevented) return;
+    if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'm' || e.key === 'M')){
+      e.preventDefault();
+      var collapsed = document.querySelector('.main-container').classList.contains('is-left-collapsed');
+      setLeftCollapsed(!collapsed);
+    }
+  });
 })();
 </script>
 </body>
@@ -591,7 +671,7 @@ def parse_args():
     p.add_argument("-i","--input",nargs='+',help="Input JSON file(s) or directory path(s).")
     p.add_argument("-o","--output",help="Output path. If directory or ends with '/', writes <stem>.html inside.")
     p.add_argument("--title",help='Page title (default: "Metrics Report").')
-    p.add_argument("--inline-js",action="store_true",help="Embed Plotly JS inline (offline HTML).")
+    p.add_argument("--inline-js",action="store_true",help="Embed Plotly JS inline (works fully offline).")
     p.add_argument("--ist",action="store_true",help="Use Asia/Kolkata timestamps.")
     p.add_argument("--chart-height",type=int,default=520,help=argparse.SUPPRESS)
     p.add_argument("--interactive-columns",type=int,default=1,help=argparse.SUPPRESS)
