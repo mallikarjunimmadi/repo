@@ -9,7 +9,6 @@
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 
 <style>
-  /* THEME VARIABLES */
   :root[data-theme="dark"]{
     --accent:#2563eb; --danger:#ef4444;
     --bg:#0b1020; --panel:#121a2b; --text:#e6e9f0; --muted:#9aa3b2; --border:#1d2740;
@@ -19,72 +18,101 @@
     --bg:#f6f7fb; --panel:#ffffff; --text:#0b1020; --muted:#5b6475; --border:#d9dee8;
   }
 
-  /* BASE */
   *{box-sizing:border-box}
   body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial;background:var(--bg);color:var(--text)}
   header{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);background:var(--panel);position:sticky;top:0;z-index:10}
   h1{margin:0;font-size:16px}
-  #themeToggle{margin-left:auto;border:1px solid var(--border);background:var(--panel);color:var(--text);padding:6px 10px;border-radius:6px;cursor:pointer}
+  #themeToggle{margin-left:auto;border:1px solid var(--border);background:var(--panel);color:var(--text);padding:6px 10px;border-radius:6px;cursor:pointer;display:flex;align-items:center}
+  #themeIcon{font-size:16px;line-height:1}
 
-  /* LAYOUT */
   .controls{
-    display:grid;
-    grid-template-columns:360px minmax(0,1fr); /* prevents overlap */
-    gap:12px;
-    padding:10px 14px 0;
-    align-items:start;
+    position:relative;
+    display:grid; grid-template-columns:360px minmax(0,1fr);
+    gap:12px; padding:10px 14px 0; align-items:start;
+    transition:grid-template-columns .18s ease;
   }
+  .controls.collapsed{ grid-template-columns:minmax(0,1fr); }
   @media(max-width:960px){.controls{grid-template-columns:1fr}}
 
   .left-col{display:grid;gap:10px;align-self:start;position:sticky;top:54px;max-height:calc(100vh - 66px)}
-  .panel{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:8px}
+  .controls.collapsed .left-col{ display:none; }
 
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:8px}
   input[type=file]{width:100%;background:transparent;border:1px dashed var(--border);color:var(--muted);padding:8px;border-radius:6px}
 
   .searchbox{display:flex;gap:6px;margin:6px 0;flex-wrap:wrap}
   .searchbox input{flex:1 1 160px;background:transparent;border:1px solid var(--border);color:var(--text);padding:6px;border-radius:6px}
 
-  .btn{border:1px solid #2a375a;background:#182037;padding:6px 10px;border-radius:6px;cursor:pointer;color:#e6e9f0;font-size:12px;font-weight:600;white-space:nowrap}
-  .btn.secondary{background:transparent;color:var(--text)}
-  .btn-primary{background:var(--accent);border-color:transparent;color:#fff}
-  .btn-danger{background:var(--danger);border-color:transparent;color:#fff}
+  .btn{
+    border:1px solid var(--border);
+    background:transparent; color:var(--text);
+    padding:6px 10px; border-radius:6px; cursor:pointer;
+    font-size:12px;font-weight:600;white-space:nowrap
+  }
   .btn:disabled{opacity:.6;cursor:not-allowed}
+  .btn-toggle.active{background:var(--accent);color:#fff;border-color:transparent}
 
   .select-wrap{height:56vh;overflow:auto;border:1px solid var(--border);border-radius:6px}
   .select-wrap label{display:flex;align-items:center;gap:6px;padding:6px 8px;border-bottom:1px solid var(--border);font-size:13px;cursor:pointer}
   .badge{margin-left:auto;font-size:11px;padding:1px 6px;border-radius:999px;background:rgba(127,127,127,.12);color:var(--muted)}
 
-  .actions{
-    display:flex;gap:8px;align-items:center;margin:10px 14px;
-    flex-wrap:wrap; overflow-x:auto;
-  }
+  .actions{display:flex;gap:8px;align-items:center;margin:10px 14px;flex-wrap:wrap;overflow-x:auto}
 
   main{padding:0 14px 16px}
   .chart{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:6px;min-height:70vh;margin:10px 0}
   .chart.small{min-height:42vh}
-
   .meta{color:var(--muted);font-size:12px;margin-top:6px}
+
+  /* Floating jump buttons */
+  .jumper{
+    position:fixed; right:16px; bottom:16px; display:flex; flex-direction:column; gap:8px; z-index:20;
+    opacity:0; pointer-events:none; transition:opacity .15s ease;
+  }
+  .jumper.visible{opacity:1; pointer-events:auto;}
+  .fab{
+    border:1px solid var(--border); background:var(--panel); color:var(--text);
+    width:38px; height:38px; border-radius:999px; display:grid; place-items:center; cursor:pointer;
+    box-shadow:0 4px 16px rgba(0,0,0,.25);
+  }
+  .fab:hover{background:var(--accent); color:#fff; border-color:transparent;}
+
+  /* Border handle (chevron) */
+  .pane-handle{
+    position:fixed;
+    width:26px; height:56px;
+    display:grid; place-items:center;
+    border-radius:999px;
+    background:var(--panel);
+    color:var(--text);
+    border:1px solid var(--border);
+    box-shadow:0 4px 16px rgba(0,0,0,.25);
+    z-index:15;
+    cursor:pointer;
+    user-select:none;
+  }
+  .pane-handle:hover{ background:var(--accent); color:#fff; border-color:transparent; }
+  .pane-handle span{ font-size:16px; line-height:1; }
+  .controls.collapsed + .pane-handle span{ transform:rotate(180deg); }
 </style>
 </head>
 <body>
 <header>
   <h1>CSV → Interactive Grapher</h1>
-  <button id="themeToggle">Toggle theme</button>
+  <button id="themeToggle" class="btn" aria-label="Toggle theme"><span id="themeIcon">🌙</span></button>
 </header>
 
-<section class="controls">
-  <!-- LEFT SIDEBAR -->
-  <div class="left-col">
+<section class="controls" id="controls">
+  <!-- LEFT -->
+  <div class="left-col" id="leftCol">
     <div class="panel">
       <strong style="font-size:13px">Load CSV</strong>
       <input id="fileInput" type="file" accept=".csv,text/csv"/>
       <div id="fileInfo" class="meta"></div>
     </div>
-
     <div class="panel">
       <div class="searchbox">
         <input id="search" placeholder="Filter metrics…"/>
-        <button class="btn secondary" id="btnToggleFilter" title="Toggle: show selected vs all">Show Selected</button>
+        <button class="btn" id="btnToggleFilter" title="Toggle: show selected vs all">Show Selected</button>
         <button class="btn" id="btnSelectAll" title="Check all metrics">Select all</button>
         <button class="btn" id="btnClearMetrics" title="Uncheck all metrics">Clear metrics</button>
       </div>
@@ -92,27 +120,31 @@
     </div>
   </div>
 
-  <!-- RIGHT: actions + charts -->
-  <div>
+  <!-- RIGHT -->
+  <div id="rightCol" style="position:relative;">
     <div class="actions">
-      <button id="btnPlot" class="btn btn-primary">Plot</button>
-      <button id="btnResetZoom" class="btn">Reset Zoom</button>
-      <button id="btnClear" class="btn btn-danger">Clear Charts</button>
+      <button id="btnPlot" class="btn">Plot</button>
+      <button id="btnResetZoom" class="btn" disabled>Reset Zoom</button>
+      <button id="btnClear" class="btn" disabled>Clear Charts</button>
 
-      <label class="btn secondary" style="display:flex;align-items:center;gap:6px;">
-        <input type="checkbox" id="chkIndividual"/> Individual
-      </label>
-      <label class="btn secondary" style="display:flex;align-items:center;gap:6px;">
-        <input type="checkbox" id="chkEpoch"/> Epoch?
-      </label>
-      <label class="btn secondary" style="display:flex;align-items:center;gap:6px;">
-        <input type="checkbox" id="chkStrict"/> Strict rows
-      </label>
+      <!-- toggles -->
+      <button id="btnIndividual" class="btn btn-toggle" title="Toggle: individual charts vs combined">Individual</button>
+      <button id="btnEpoch" class="btn btn-toggle" title="Toggle: parse timestamps as epoch">Epoch</button>
+      <button id="btnStrict" class="btn btn-toggle" title="Toggle: keep only rows where all selected metrics are numeric">Strict rows</button>
     </div>
 
     <main><div id="charts"></div></main>
   </div>
 </section>
+
+<!-- border handle (chevron) -->
+<button id="paneHandle" class="pane-handle" aria-label="Collapse/Expand metrics"><span>❮</span></button>
+
+<!-- jumpers -->
+<div class="jumper" id="jumper">
+  <button id="jumpTop" class="fab" title="Jump to top">▲</button>
+  <button id="jumpBottom" class="fab" title="Jump to bottom">▼</button>
+</div>
 
 <script>
 /* ---------- THEME ---------- */
@@ -121,16 +153,28 @@
   const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
   const initial = saved || (prefersDark ? 'dark' : 'light');
   document.documentElement.setAttribute('data-theme', initial);
+  updateThemeIcon();
   document.getElementById('themeToggle').addEventListener('click', ()=>{
     const cur = document.documentElement.getAttribute('data-theme') || 'light';
     const next = cur === 'dark' ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', next);
     localStorage.setItem('csvgrapher-theme', next);
-    if (parsed) autoPlot(); // re-render with new colors
+    updateThemeIcon();
+    if (parsed) autoPlot();
   });
 })();
+function updateThemeIcon(){
+  const icon = document.getElementById('themeIcon');
+  const cur = document.documentElement.getAttribute('data-theme') || 'light';
+  icon.textContent = (cur === 'dark') ? '🌞' : '🌙';
+}
 
 /* ---------- ELEMENTS ---------- */
+const controls=document.getElementById('controls');
+const leftCol=document.getElementById('leftCol');
+const rightCol=document.getElementById('rightCol');
+const paneHandle=document.getElementById('paneHandle');
+
 const fileInput=document.getElementById('fileInput');
 const metricList=document.getElementById('metricList');
 const searchInput=document.getElementById('search');
@@ -141,21 +185,35 @@ const btnClearMetrics=document.getElementById('btnClearMetrics');
 const btnPlot=document.getElementById('btnPlot');
 const btnClear=document.getElementById('btnClear');
 const btnResetZoom=document.getElementById('btnResetZoom');
-const chkIndividual=document.getElementById('chkIndividual');
-const chkEpoch=document.getElementById('chkEpoch');
-const chkStrict=document.getElementById('chkStrict');
+
+const btnIndividual=document.getElementById('btnIndividual');
+const btnEpoch=document.getElementById('btnEpoch');
+const btnStrict=document.getElementById('btnStrict');
 
 const chartsDiv=document.getElementById('charts');
 const fileInfo=document.getElementById('fileInfo');
 
+const jumper=document.getElementById('jumper');
+const jumpTop=document.getElementById('jumpTop');
+const jumpBottom=document.getElementById('jumpBottom');
+
+/* ---------- STATE ---------- */
 let parsed=null;
-let lastRanges=[]; // [{x:[min,max]||null, y:[min,max]||null}, ...]
-let showSelectedMode=false; // false=show all (default), true=show only checked
+let showSelectedMode=false;
+let individualMode=false;
+let epochMode=false;
+let strictMode=false;
+
+/* sync cooldown to avoid relayout storms */
+let syncBlockedUntil=0;
+const SYNC_COOLDOWN_MS = 160;
+function now(){ return performance.now(); }
+function suspendSync(){ syncBlockedUntil = now() + SYNC_COOLDOWN_MS; }
+function canSync(){ return now() > syncBlockedUntil; }
 
 /* ---------- UTILS ---------- */
 const debounce=(fn,ms=150)=>{let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>fn(...a),ms)}};
 function isNumeric(x){ if(x===''||x==null) return false; return isFinite(Number(x)); }
-
 function robustParseTimestamp(v){
   if(v==null||v==='') return null;
   const s=String(v).trim();
@@ -165,16 +223,55 @@ function robustParseTimestamp(v){
   const m=/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(s); if(m){ const now=new Date(); now.setHours(+m[1],+m[2],+(m[3]||0),0); return now; }
   return null;
 }
-function parseTimestamp(v){ if(chkEpoch.checked){ const s=String(v||'').trim(); if(/^\d+$/.test(s)){ const x=Number(s); if(x>1e12) return new Date(x); if(x>1e9) return new Date(x*1000); } } return robustParseTimestamp(v); }
-
+function parseTimestamp(v){
+  const s=String(v||'').trim();
+  if(epochMode && /^\d+$/.test(s)){
+    const x=Number(s);
+    if(x>1e12) return new Date(x);
+    if(x>1e9)  return new Date(x*1000);
+    return new Date(x);
+  }
+  return robustParseTimestamp(v);
+}
 function getThemeColors(){
   const cs = getComputedStyle(document.documentElement);
-  return {
-    panel: cs.getPropertyValue('--panel').trim(),
-    text: cs.getPropertyValue('--text').trim(),
-    grid: 'rgba(127,127,127,.2)'
-  };
+  return { panel: cs.getPropertyValue('--panel').trim(), text: cs.getPropertyValue('--text').trim(), grid: 'rgba(127,127,127,.2)' };
 }
+
+/* ---------- HANDLE POSITION & RESIZE HELPERS ---------- */
+function charts(){ return Array.from(chartsDiv.querySelectorAll('.chart')); }
+
+function positionHandle(){
+  const rect = rightCol.getBoundingClientRect();
+  const x = rect.left + window.scrollX - 13;
+  const y = window.scrollY + (window.innerHeight / 2);
+  paneHandle.style.left = x + 'px';
+  paneHandle.style.top  = y + 'px';
+}
+function resizeCharts(){
+  // Resize all Plotly charts to fit their new containers
+  charts().forEach(div => { try { Plotly.Plots.resize(div); } catch(_){} });
+}
+
+window.addEventListener('resize', debounce(()=>{ positionHandle(); resizeCharts(); }, 50));
+window.addEventListener('scroll', debounce(positionHandle, 50));
+controls.addEventListener('transitionend', (e)=>{
+  if(e.propertyName==='grid-template-columns'){
+    positionHandle();
+    // wait 1 frame so containers settle, then resize
+    requestAnimationFrame(resizeCharts);
+  }
+});
+
+/* collapse/expand via the handle */
+let sidebarCollapsed=false;
+paneHandle.addEventListener('click', ()=>{
+  sidebarCollapsed = !sidebarCollapsed;
+  controls.classList.toggle('collapsed', sidebarCollapsed);
+  positionHandle();
+  // Resize charts immediately after the grid change
+  requestAnimationFrame(resizeCharts);
+});
 
 /* ---------- FILE LOAD ---------- */
 fileInput.addEventListener('change',()=>{
@@ -193,8 +290,9 @@ fileInput.addEventListener('change',()=>{
     fileInfo.textContent=`${f.name} · ${rows.length} rows · ${h.length} cols`;
     btnClear.disabled=false; btnResetZoom.disabled=true;
     const first = metricList.querySelector('input[type="checkbox"]:not([disabled])'); if(first && !first.checked) first.checked = true;
-    applyFilter(); // respect current filter mode (default: all)
+    applyFilter();
     autoPlot();
+    positionHandle();
   }});
 });
 
@@ -216,30 +314,26 @@ function buildMetricList(){
   });
   metricList.addEventListener('change', debounce(()=>{ applyFilter(); autoPlot(); }, 120), { once:false });
 }
-
-// Search + Toggle All/Selected
 searchInput.addEventListener('input', ()=>applyFilter());
-
 btnToggleFilter.addEventListener('click', ()=>{
   showSelectedMode = !showSelectedMode;
   btnToggleFilter.textContent = showSelectedMode ? 'Show All' : 'Show Selected';
   applyFilter();
 });
-
 btnSelectAll.addEventListener('click', ()=>{
-  const visibleBoxes=[...metricList.querySelectorAll('label')].filter(l=>l.style.display!== 'none').map(l=>l.querySelector('input[type="checkbox"]:not([disabled])'));
-  visibleBoxes.forEach(cb=>{ if(cb) cb.checked=true; });
+  const visible=[...metricList.querySelectorAll('label')]
+    .filter(l=>l.style.display!=='none')
+    .map(l=>l.querySelector('input[type="checkbox"]:not([disabled])'));
+  visible.forEach(cb=>{ if(cb) cb.checked=true; });
   autoPlot();
 });
 btnClearMetrics.addEventListener('click', ()=>{
   [...metricList.querySelectorAll('input[type="checkbox"]')].forEach(cb=>cb.checked=false);
-  autoPlot(); // clears charts
+  autoPlot();
 });
-
 function applyFilter(){
   const q=searchInput.value.trim().toLowerCase();
-  const labels=[...metricList.children];
-  labels.forEach(l=>{
+  [...metricList.children].forEach(l=>{
     const name=l.dataset.metric.toLowerCase();
     const passesSearch = q ? name.includes(q) : true;
     const checked = l.querySelector('input').checked;
@@ -248,52 +342,119 @@ function applyFilter(){
   });
 }
 
+/* ---------- SYNC ---------- */
+function broadcast(update){
+  if(!update || Object.keys(update).length===0) return;
+  suspendSync();
+  charts().forEach(div=>{ Plotly.relayout(div, update); });
+}
+function buildRelayoutFromEvent(ed){
+  const u={};
+  if(!ed) return u;
+  if('xaxis.range[0]' in ed && 'xaxis.range[1]' in ed){ u['xaxis.range']=[ed['xaxis.range[0]'], ed['xaxis.range[1]']]; }
+  else if('xaxis.autorange' in ed){ u['xaxis.autorange']=true; }
+  if('yaxis.range[0]' in ed && 'yaxis.range[1]' in ed){ u['yaxis.range']=[ed['yaxis.range[0]'], ed['yaxis.range[1]']]; }
+  else if('yaxis.autorange' in ed){ u['yaxis.autorange']=true; }
+  return u;
+}
+function attachSync(gd){
+  gd.on('plotly_doubleclick', (e)=>{
+    e && e.event && e.event.preventDefault && e.event.preventDefault();
+    const xa = gd._fullLayout.xaxis, ya = gd._fullLayout.yaxis;
+    if(e && e.event && e.event.shiftKey && xa.range && ya.range){
+      const [x0,x1]=xa.range, [y0,y1]=ya.range;
+      const xm=(new Date(x0).getTime()+new Date(x1).getTime())/2;
+      const ym=(y0+y1)/2;
+      const xHalf=(new Date(x1).getTime()-new Date(x0).getTime())/4;
+      const yHalf=(y1-y0)/4;
+      broadcast({'xaxis.range':[new Date(xm-xHalf),new Date(xm+xHalf)],'yaxis.range':[ym-yHalf,ym+yHalf]});
+    }else{
+      broadcast({'xaxis.autorange':true,'yaxis.autorange':true});
+    }
+    return false;
+  });
+  gd.on('plotly_relayout', (ed)=>{
+    if(!canSync()) return;
+    const update = buildRelayoutFromEvent(ed);
+    if(Object.keys(update).length===0) return;
+    suspendSync();
+    charts().forEach(other=>{ if(other!==gd){ Plotly.relayout(other, update); } });
+  });
+}
+
+/* ---------- JUMPERS ---------- */
+function updateJumperVisibility(){
+  jumper.classList.toggle('visible', charts().length > 1);
+}
+jumpTop.addEventListener('click', ()=>window.scrollTo({top:0,behavior:'smooth'}));
+jumpBottom.addEventListener('click', ()=>{
+  const last = charts().at(-1);
+  if(last){ last.scrollIntoView({behavior:'smooth',block:'end'}); }
+});
+
+/* ---------- PLOTLY CONFIG ---------- */
+const PLOTLY_CONFIG = { responsive:true, displaylogo:false, scrollZoom:true, doubleClick:'reset' };
+
 /* ---------- PLOTTING ---------- */
 btnPlot.addEventListener('click', ()=>autoPlot());
-btnClear.addEventListener('click', ()=>{ chartsDiv.innerHTML=""; lastRanges=[]; btnResetZoom.disabled=true; });
-btnResetZoom.addEventListener('click', ()=>{
-  chartsDiv.querySelectorAll('.chart').forEach((div,i)=>{
-    const r=lastRanges[i];
-    if (r && r.x && r.y) {
-      Plotly.relayout(div, {'xaxis.range':[r.x[0],r.x[1]], 'yaxis.range':[r.y[0],r.y[1]]});
-    } else {
-      Plotly.relayout(div, {'xaxis.autorange':true, 'yaxis.autorange':true});
-    }
-  });
+btnClear.addEventListener('click', ()=>{
+  chartsDiv.innerHTML=""; btnResetZoom.disabled=true; updateJumperVisibility(); resizeCharts();
 });
-[chkIndividual,chkEpoch,chkStrict].forEach(el=>el.addEventListener('change', debounce(()=>{
-  if(el===chkEpoch && parsed){
-    const {rows,tsKey}=parsed; rows.forEach(r=>{ const d=parseTimestamp(r[tsKey]); if(d) r[tsKey]=d; });
+btnResetZoom.addEventListener('click', ()=>{
+  broadcast({'xaxis.autorange':true,'yaxis.autorange':true});
+});
+
+btnIndividual.addEventListener('click', ()=>{
+  individualMode = !individualMode;
+  btnIndividual.classList.toggle('active', individualMode);
+  autoPlot();
+});
+btnEpoch.addEventListener('click', ()=>{
+  epochMode = !epochMode;
+  btnEpoch.classList.toggle('active', epochMode);
+  if(parsed){
+    const {rows,tsKey}=parsed;
+    rows.forEach(r=>{ const d=parseTimestamp(r[tsKey]); if(d) r[tsKey]=d; });
   }
   autoPlot();
-},120)));
+});
+btnStrict.addEventListener('click', ()=>{
+  strictMode = !strictMode;
+  btnStrict.classList.toggle('active', strictMode);
+  autoPlot();
+});
 
 function autoPlot(){
-  if(!parsed){ return; }
+  if(!parsed){ positionHandle(); return; }
   const selected = [...metricList.querySelectorAll('input[type="checkbox"]:checked')].map(cb=>cb.closest('label').dataset.metric);
-  if(selected.length===0){ chartsDiv.innerHTML = ""; btnResetZoom.disabled = true; return; }
+  if(selected.length===0){ chartsDiv.innerHTML = ""; btnResetZoom.disabled = true; updateJumperVisibility(); positionHandle(); resizeCharts(); return; }
+
   const {rows, tsKey} = parsed;
   const xs = rows.map(r => r[tsKey] instanceof Date ? r[tsKey] : parseTimestamp(r[tsKey]));
   let idx = xs.map((d,i)=>({d,i})).filter(o=>o.d instanceof Date);
-  if (chkStrict.checked){ idx = idx.filter(({i}) => selected.every(m => isNumeric(rows[i][m]))); }
+  if (strictMode){ idx = idx.filter(({i}) => selected.every(m => isNumeric(rows[i][m]))); }
   const x = idx.map(o=>o.d);
   const traces = selected.map(metric=>{
     const y = idx.map(({i})=>{ const n = Number(rows[i][metric]); return isFinite(n)?n:null; });
     return { x, y, type:'scatter', mode:'lines', name:metric, hovertemplate: '%{x}<br>%{y}<extra>'+metric+'</extra>' };
   });
 
-  chartsDiv.innerHTML = ""; lastRanges = [];
+  chartsDiv.innerHTML = "";
 
-  if (chkIndividual.checked){
+  if (individualMode){
     selected.forEach((metric,k)=>{
       const div=document.createElement('div'); div.className='chart small'; chartsDiv.appendChild(div);
-      Plotly.newPlot(div, [traces[k]], layoutWithLegend(metric, x), {responsive:true, displaylogo:false}).then(()=>cacheInitialXY(div));
+      Plotly.newPlot(div, [traces[k]], layoutWithLegend(metric, x), PLOTLY_CONFIG).then(gd=>attachSync(gd));
     });
   } else {
     const div=document.createElement('div'); div.className='chart'; chartsDiv.appendChild(div);
-    Plotly.newPlot(div, traces, layoutWithLegend('Compare: '+selected.join(' vs '), x), {responsive:true, displaylogo:false}).then(()=>cacheInitialXY(div));
+    Plotly.newPlot(div, traces, layoutWithLegend('Compare: '+selected.join(' vs '), x), PLOTLY_CONFIG).then(gd=>attachSync(gd));
   }
   btnResetZoom.disabled = false;
+  updateJumperVisibility();
+  positionHandle();
+  // Make sure fresh plots fill the available width
+  requestAnimationFrame(resizeCharts);
 }
 
 function layoutWithLegend(title, x){
@@ -309,16 +470,7 @@ function layoutWithLegend(title, x){
   };
 }
 
-function cacheInitialXY(div){
-  const lx = div.layout?.xaxis?.range;
-  const ly = div.layout?.yaxis?.range;
-  lastRanges.push({
-    x: (lx && lx.length===2) ? [lx[0], lx[1]] : null,
-    y: (ly && ly.length===2) ? [ly[0], ly[1]] : null
-  });
-}
-
-/* keyboard nicety */
+document.addEventListener('DOMContentLoaded', ()=>{ positionHandle(); resizeCharts(); });
 document.addEventListener('keydown', e=>{ if(e.key==='Enter' && parsed) autoPlot(); });
 </script>
 </body>
