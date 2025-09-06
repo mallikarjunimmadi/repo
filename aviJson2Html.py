@@ -1,35 +1,20 @@
 #!/usr/bin/env python3
-# json2html.py — JSON → interactive HTML graphs (Plotly) + WIDE CSV export + collapsible metrics pane (chevrons)
+# json2html.py — JSON → interactive HTML graphs (Plotly)
 #
-# - Accepts multiple JSON files or directories
-# - Validates JSON; ignores non-JSON
-# - Per-file HTML report
-# - Two-pane UI (metric select + charts)
-# - Auto plot/remove on checkbox change
-# - Unified buttons (Plot/Clear/Reset/Individual/Export)
-# - Floating jump-to-top/bottom
-# - Dark/Light theme
-# - CSV export in WIDE format: time + one column per metric
-# - Collapse/Expand the left metrics pane via small chevrons (persists; hotkey: M)
+# - Multiple JSON files or directories; ignores non-JSON.
+# - Validates/loads JSON; one HTML per JSON.
+# - Top-level entity fields supported.
+# - Interactive select; live plot/unplot by checking items.
+# - Chevron collapse for left pane (handle stays visible, centered on divider).
+# - Global & per-chart Legend toggle; synced zoom across charts; Reset Zoom.
+# - Export CSV (global + per-chart) with "timestamp" + metric columns.
+# - Jump to Top/Bottom (prefers right pane scroll).
+# - Light/Dark theme + relayout of existing charts on toggle.
 
-import argparse
-import json
-import logging
-import sys
+import argparse, json, logging, sys
 from pathlib import Path
-from typing import Optional, List
-
 import pandas as pd
-import plotly.graph_objects as go  # noqa: F401
-
-try:
-    from plotly.offline.offline import get_plotlyjs as _get_plotlyjs
-except Exception:
-    try:
-        from plotly.offline import get_plotlyjs as _get_plotlyjs
-    except Exception:
-        _get_plotlyjs = None
-
+from plotly.offline import get_plotlyjs
 
 HTML_TEMPLATE = r"""<!doctype html>
 <html lang="en">
@@ -39,613 +24,491 @@ HTML_TEMPLATE = r"""<!doctype html>
 <title>${title}</title>
 ${plotly_js}
 <style>
-  :root {
-    --bg:#f9fafb; --fg:#1f2937; --fg-muted:#6b7280; --border:#e5e7eb;
-    --pill:#e5e7eb; --card-bg:#ffffff; --shadow:0 4px 6px -1px rgba(0,0,0,.08),0 2px 4px -2px rgba(0,0,0,.04);
-    --primary:#2563eb; --primary-hover:#1d4ed8;
-    /* Tweak so outer page scrollbar is avoided; panes scroll internally */
-    --chrome-height: 170px;
+  :root{
+    --left-pane-width: 420px;   /* adjust to widen/narrow the selector */
+    --gap: 16px;
+
+    /* light */
+    --bg:#f7f8fb; --card:#ffffff; --text:#0b1020; --muted:#5b6475; --border:#d9dee8;
+    --chip:#eef2f8; --chip-text:#0b1020; --chip-border:#d9dee8;
+    --chip-active:#2563eb; --chip-active-text:#ffffff; --chip-active-border:#2563eb;
+    --pill:#eef2f8; --pill-text:#0b1020; --shadow:0 6px 16px rgba(0,0,0,.08);
   }
-  [data-theme="dark"] {
-    --bg:#111827; --fg:#f3f4f6; --fg-muted:#9ca3af; --border:#374151;
-    --pill:#374151; --card-bg:#1f2937; --shadow:0 4px 6px -1px rgba(0,0,0,.10),0 2px 4px -2px rgba(0,0,0,.08);
-    --primary:#60a5fa; --primary-hover:#3b82f6;
+  [data-theme="dark"]{
+    --bg:#0b1020; --card:#111a2d; --text:#e6e9f0; --muted:#98a3b8; --border:#1d2740;
+    --chip:#182037; --chip-text:#e6e9f0; --chip-border:#263255;
+    --chip-active:#2b66f8; --chip-active-text:#ffffff; --chip-active-border:#2b66f8;
+    --pill:#1a233b; --pill-text:#e6e9f0; --shadow:0 6px 16px rgba(0,0,0,.25);
   }
-  html,body{width:100%;height:100%;margin:0;padding:0}
-  body{
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
-    color:var(--fg); background:var(--bg); transition:background .3s,color .3s; font-size:14px;
-    overflow:hidden; /* no outer page scrollbar */
+  html,body{height:100%;margin:0}
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial;background:var(--bg);color:var(--text)}
+
+  .header{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--card);position:sticky;top:0;z-index:50}
+  h1{margin:0;font-size:18px}
+  .meta{font-size:12px;color:var(--muted)}
+  .meta b{color:var(--text)}
+  .theme-toggle{
+    margin-left:auto;border:1px solid var(--chip-border);background:var(--chip);color:var(--chip-text);
+    width:36px;height:36px;border-radius:10px;display:grid;place-items:center;cursor:pointer;
   }
-  h1{font-size:20px;margin:0;font-weight:600} h2{font-size:16px;margin:0 0 10px;font-weight:600}
-  .header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border)}
-  .theme-toggle{background:transparent;border:1px solid var(--border);border-radius:10px;padding:6px;cursor:pointer;color:var(--fg)}
-  .theme-toggle:hover{background:var(--card-bg)}
-  .meta{color:var(--fg-muted);font-size:12px;margin:10px 16px}
 
-  .top-controls-bar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:10px 16px;border-bottom:1px solid var(--border)}
-  .tabs{display:flex;gap:8px}
-  .tab-btn{padding:8px 12px;border:1px solid var(--border);border-radius:999px;cursor:pointer;background:#f8fafc;font-weight:600;font-size:13px}
-  .tab-btn:hover{background:#eef2ff} .tab-btn.active{background:#e9f3ff;border-color:#bcd6ff}
-  [data-theme="dark"] .tab-btn{background:#1f2937;border-color:#374151;color:#d1d5db}
-  [data-theme="dark"] .tab-btn.active{background:#163e71;border-color:#3b82f6;color:#fff}
-
-  /* Unified command buttons (Plot/Clear/Reset/Individual/Export) */
-  .cmd-btn{
-    display:inline-flex; align-items:center; justify-content:center;
-    gap:8px; padding:8px 14px;
-    border:1px solid var(--border); border-radius:10px;
-    background:var(--card-bg); color:var(--fg);
-    min-height:36px; font-weight:600; font-size:13px;
-    cursor:pointer; transition:background .15s, border-color .15s, color .15s, box-shadow .15s;
-    box-shadow:none; min-width:130px;
+  .top-controls{
+    display:flex;gap:10px;align-items:center;flex-wrap:wrap;
+    padding:10px 16px;border-bottom:1px solid var(--border);background:var(--card);position:sticky;top:50px;z-index:40
   }
-  .cmd-btn:hover{ background:var(--bg); }
-  .cmd-btn.is-toggle[aria-pressed="true"]{
-    background:var(--primary); border-color:var(--primary); color:#fff;
+  .spacer{flex:1}
+
+  .chip-btn{
+    appearance:none;border:1px solid var(--chip-border);background:var(--chip);color:var(--chip-text);
+    padding:8px 14px;border-radius:22px;font-size:13px;font-weight:600;cursor:pointer;transition:filter .15s ease;
   }
-  .cmd-btn:active{ transform: translateY(0.5px); }
+  .chip-btn:hover{filter:brightness(0.97)}
+  .chip-btn.is-active{background:var(--chip-active);border-color:var(--chip-active-border);color:var(--chip-active-text)}
 
-  /* Work area */
-  .main-container{
-    position:relative; /* anchor for reveal chevron */
-    display:flex; gap:16px; padding:16px;
-    height: calc(100dvh - var(--chrome-height));
-    box-sizing:border-box;
+  /* MAIN GRID */
+  .main{
+    --lp: var(--left-pane-width);
+    position:relative;
+    display:grid;
+    grid-template-columns: var(--lp) minmax(0,1fr);
+    gap:var(--gap); padding:var(--gap)
   }
-  .left-pane{flex:0 0 360px;border-radius:12px;padding:16px;background:var(--card-bg);box-shadow:var(--shadow);overflow:hidden;display:flex;flex-direction:column}
-  .right-pane{flex:1 1 auto;border-radius:12px;padding:16px;background:var(--card-bg);box-shadow:var(--shadow);overflow:auto}
+  .main.collapsed{ --lp: 0px; grid-template-columns: minmax(0,1fr); }
+  .main.collapsed #left-pane{ display:none; }
 
-  /* Collapse left metrics pane */
-  .main-container.is-left-collapsed .left-pane { display: none !important; }
-  .main-container.is-left-collapsed { gap: 0; }
+  .pane{background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow)}
+  .left{min-height:60vh;max-height:calc(100vh - 170px);overflow:auto}
+  .right{min-height:60vh;max-height:calc(100vh - 170px);overflow:auto}
 
-  /* Tiny chevrons */
-  .pane-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
-  .pane-toggle{
-    width:28px;height:28px;min-width:28px;min-height:28px;
-    line-height:26px;text-align:center;border-radius:999px;
-    border:1px solid var(--border); background:var(--card-bg); color:var(--fg);
-    cursor:pointer; font-size:16px; padding:0;
+  /* Chevron handle: positioned on the divider; always visible */
+  .chevron{
+    position:absolute; top:50%; transform:translateY(-50%);
+    left: calc(var(--gap) + var(--lp) - 12px);   /* center on divider; visible even when collapsed */
+    width:42px;height:64px;border-radius:14px;border:1px solid var(--border);
+    background:var(--card); color:var(--text); display:grid; place-items:center; cursor:pointer;
+    box-shadow:var(--shadow); z-index:60; user-select:none;
   }
-  .pane-toggle:hover{ background:var(--bg); }
+  .chevron span{font-size:20px;line-height:1}
 
-  /* Reveal chevron (visible only when collapsed) */
-  .reveal{position:absolute; left:8px; top:8px; display:none; z-index:1000}
-  .main-container.is-left-collapsed .reveal{ display:inline-block; }
+  .section-title{padding:12px 14px;border-bottom:1px solid var(--border);font-weight:700}
+  .controls-row{display:flex;gap:10px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+  .search{flex:1 1 260px;border:1px solid var(--border);border-radius:8px;padding:8px 10px;background:transparent;color:var(--text)}
+  .list{padding:0 6px 10px 6px}
 
-  .btn{appearance:none;border:1px solid var(--border);background:var(--card-bg);color:var(--fg);padding:6px 10px;border-radius:8px;cursor:pointer;transition:all .15s ease;font-size:12px}
-  .btn:hover{background:var(--bg)}
-  .btn-filter.active{background:var(--primary);border-color:var(--primary);color:#fff}
+  .row{display:grid;grid-template-columns:20px 1fr auto;column-gap:10px;align-items:start;padding:9px 6px;border-bottom:1px solid var(--border);cursor:pointer;user-select:none}
+  .row:last-child{border-bottom:none}
+  .row input[type="checkbox"]{margin-top:3px}
+  .row > div{min-width:0}
+  .name{font-size:13px;font-weight:400;line-height:1.25;overflow-wrap:anywhere}
+  .desc{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid var(--border);background:var(--pill);color:var(--pill-text);font-size:11px;white-space:nowrap;margin-top:2px}
 
-  .ms-list-container{height:100%;display:flex;flex-direction:column}
-  .ms-search-header{display:flex;flex-direction:column;gap:10px;margin-bottom:12px}
-  .ms-search{width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--fg)}
-  .ms-list-body{flex:1;overflow-y:auto;border:0;border-radius:0}
-  .ms-group-title{position:sticky;top:0;background:var(--card-bg);font-weight:600;font-size:12px;padding:6px 0;color:var(--fg-muted);border-bottom:1px solid var(--border);z-index:1}
-  .ms-item{display:flex;gap:10px;padding:8px;border-bottom:1px solid var(--border);cursor:pointer;user-select:none;align-items:flex-start}
-  .ms-item:last-of-type{border-bottom:none}
-  .ms-item input{margin-top:3px}
-  .ms-item-text{line-height:1.35}.ms-item-text .main-text{font-weight:600}.ms-item-text .sub-text{font-size:12px;color:var(--fg-muted)}
-  .badge{margin-left:auto;font-size:11px;padding:1px 6px;border-radius:999px;background:rgba(127,127,127,.12);color:var(--fg-muted)}
+  .warn{display:none;margin:8px 14px;padding:6px 10px;border:1px solid #f4cf7b;border-radius:8px;background:#fff7e0;color:#664d03}
+  [data-theme="dark"] .warn{border-color:#8b6d2d;background:#2a2210;color:#f6e7b0}
+
+  .chart-card{padding:14px;border-top:1px dashed var(--border)}
+  .chart-title{display:flex;gap:8px;align-items:center;font-size:14px;font-weight:600;margin-bottom:6px}
+  .title-actions{margin-left:auto;display:flex;gap:6px}
+  .mini-btn{border:1px solid var(--chip-border);background:var(--chip);color:var(--chip-text);padding:4px 8px;border-radius:999px;font-size:12px;cursor:pointer}
+  .mini-btn.is-active{background:var(--chip-active);border-color:var(--chip-active-border);color:#fff}
+
+  .jump{position:fixed;right:18px;bottom:22px;display:flex;flex-direction:column;gap:10px;z-index:70}
+  .jump button{border:1px solid var(--chip-border);background:var(--chip);color:var(--chip-text);width:38px;height:38px;border-radius:10px;display:grid;place-items:center;cursor:pointer}
 
   table{border-collapse:collapse;width:100%;font-size:13px}
   th,td{border:1px solid var(--border);padding:6px 8px;text-align:left}
-  [data-theme="dark"] th{background:#1f2937}
-
-  .charts-wrap{display:grid;grid-template-columns:1fr;gap:16px}
-  .chart-card{padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--card-bg);box-shadow:var(--shadow)}
-  .chart-title{font-weight:600;margin-bottom:6px;font-size:14px;display:flex;gap:8px;align-items:center}
-  .chart-title .spacer{flex:1}
-  .pill{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid var(--border);font-size:12px;background:var(--pill)}
-
-  .mini-btn{
-    border:1px solid var(--border); background:var(--card-bg); color:var(--fg);
-    border-radius:8px; padding:4px 8px; font-size:12px; cursor:pointer;
-  }
-  .mini-btn:hover{ background:var(--bg); }
-
-  .fab{position:fixed;right:16px;bottom:16px;display:none;flex-direction:column;gap:8px;z-index:2000}
-  .fab-btn{width:44px;height:44px;border-radius:999px;border:1px solid var(--border);background:var(--primary);color:#fff;box-shadow:var(--shadow);cursor:pointer;font-size:18px;line-height:44px;text-align:center}
-  .fab-btn:hover{background:var(--primary-hover)}
+  th{background:var(--chip)}
 </style>
 </head>
 <body data-theme="light">
   <div class="header">
     <h1>${title}</h1>
-    <button id="theme-toggle" class="theme-toggle" title="Toggle theme">🌞/🌙</button>
-  </div>
-
-  <div class="meta">
-    <div><b>Entity:</b> ${entity_display}</div>
-    <div><b>Window:</b> ${start} → ${stop} | <b>Step:</b> ${step}s | <b>Time Zone:</b> ${tz_label}</div>
-  </div>
-
-  <div class="top-controls-bar">
-    <div class="tabs" id="tabs">
-      <div class="tab-btn active" data-target="panel-interactive">Interactive Select</div>
-      <div class="tab-btn" data-target="panel-summary">Summary</div>
+    <div class="meta">
+      <div><b>Entity:</b> ${entity_uuid} (${metric_entity})</div>
+      <div><b>Window:</b> ${start} → ${stop} &nbsp; | &nbsp; <b>Step:</b> ${step}s &nbsp; | &nbsp; <b>Time Zone:</b> ${tz_label}</div>
     </div>
-
-    <div class="chip-bar">
-      <button id="btn-plot" class="cmd-btn" type="button">Plot</button>
-      <button id="btn-clear" class="cmd-btn" type="button">Clear Charts</button>
-      <button id="btn-reset-range" class="cmd-btn" type="button">Reset Zoom</button>
-
-      <button id="chip-individual" class="cmd-btn is-toggle" type="button"
-              aria-pressed="false" title="Toggle: Individual graphs">
-        Individual graphs
-      </button>
-
-      <button id="btn-export-csv" class="cmd-btn" type="button" title="Export selected metrics (wide CSV)">
-        Export CSV
-      </button>
-    </div>
+    <button id="theme-toggle" class="theme-toggle" title="Toggle theme">🌓</button>
   </div>
 
-  <div class="main-container">
-    <!-- reveal chevron shown only when collapsed -->
-    <button id="left-reveal" class="pane-toggle reveal" title="Show metrics">›</button>
+  <div class="top-controls">
+    <button id="tab-interactive" class="chip-btn is-active" type="button">Interactive Select</button>
+    <button id="tab-summary"     class="chip-btn"           type="button">Summary</button>
 
-    <div class="left-pane content-panel" id="panel-interactive">
-      <div class="pane-head">
-        <h2>Select Metrics</h2>
-        <button id="left-collapse" class="pane-toggle" title="Hide metrics">‹</button>
+    <button id="btn-plot"       class="chip-btn" type="button">Plot</button>
+    <button id="btn-clear"      class="chip-btn" type="button">Clear Charts</button>
+    <button id="btn-reset"      class="chip-btn" type="button">Reset Zoom</button>
+    <button id="btn-individual" class="chip-btn" type="button">Individual graphs</button>
+
+    <span class="spacer"></span>
+
+    <button id="btn-legend"  class="chip-btn is-active" type="button">Legend</button>
+    <button id="btn-export"  class="chip-btn"           type="button">Export CSV</button>
+  </div>
+
+  <div id="interactive-main" class="main">
+    <div class="pane left" id="left-pane">
+      <div class="section-title">Select Metrics</div>
+
+      <div class="controls-row">
+        <input id="search" class="search" placeholder="Search metrics or units..."/>
       </div>
-      <div class="ms-list-container">
-        <div class="ms-search-header">
-          <input type="text" id="ms-search" class="ms-search" placeholder="Search metrics or units..."/>
-          <div class="ms-actions" style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn" id="ms-select-all" type="button">Select All</button>
-            <button class="btn" id="ms-clear" type="button">Clear</button>
-            <button class="btn btn-filter active" id="btn-show-all" data-filter="all" type="button">Show All</button>
-            <button class="btn btn-filter" id="btn-show-selected" data-filter="selected" type="button">Show Selected (<span id="ms-count">0</span>)</button>
-          </div>
-        </div>
-        <div class="ms-list-body" id="ms-body"></div>
+
+      <div class="controls-row" style="border-bottom:none">
+        <button id="btn-select-all"    class="chip-btn" type="button">Select All</button>
+        <button id="btn-clear-metrics" class="chip-btn" type="button">Clear</button>
+        <button id="btn-show-all"      class="chip-btn is-active" type="button">Show All</button>
+        <button id="btn-show-selected" class="chip-btn" type="button">Show Selected (0)</button>
+        <div style="margin-left:auto;color:var(--muted);font-size:12px"><span id="sel-count">0</span> selected</div>
+      </div>
+
+      <div id="warn" class="warn"></div>
+      <div class="list" id="ms-body"></div>
+    </div>
+
+    <!-- Chevron handle on the divider (always visible) -->
+    <div id="chevron" class="chevron" title="Hide/Show metrics"><span>❮</span></div>
+
+    <div class="pane right" id="right-pane">
+      <div class="chart-card" style="border-top:none">
+        <div id="interactive-panels"></div>
       </div>
     </div>
+  </div>
 
-    <div class="right-pane content-panel" id="right-pane-interactive" style="display:block">
-      <div class="charts-wrap" id="interactive-panels"></div>
-    </div>
-
-    <div class="right-pane content-panel" id="panel-summary" style="display:none">
-      <h2>Summary Statistics</h2>
+  <div id="summary-main" class="main" style="display:none">
+    <div class="pane" style="grid-column:1 / -1; padding:14px">
+      <h3 style="margin:4px 0 10px">Summary Statistics</h3>
       ${summary_table}
     </div>
   </div>
 
-  <div id="fab-nav" class="fab">
-    <button id="btn-scroll-top" class="fab-btn" title="Jump to top">↑</button>
-    <button id="btn-scroll-bottom" class="fab-btn" title="Jump to bottom">↓</button>
+  <div class="jump">
+    <button id="jump-up" title="Go to top">▲</button>
+    <button id="jump-down" title="Go to bottom">▼</button>
   </div>
 
 <script>
-if (!Element.prototype.matches) {
-  Element.prototype.matches = Element.prototype.msMatchesSelector || Element.prototype.webkitMatchesSelector;
+const METRICS_DATA = ${metrics_json};
+const METRIC_NAMES = Object.keys(METRICS_DATA).sort((a,b)=> a.localeCompare(b));
+const THEME_KEY = 'json2html-theme';
+const PlotH = ${chart_height};
+
+let legendDefaultOn = true;   // global legend baseline
+let currentCharts = [];       // ids of currently-rendered Plotly divs
+
+/* Helpers */
+function esc(s){ return (s||'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
+function themeColors(){
+  const cs = getComputedStyle(document.body);
+  const panel = cs.getPropertyValue('--card').trim();
+  const text  = cs.getPropertyValue('--text').trim();
+  const grid  = document.body.getAttribute('data-theme')==='dark' ? '#2d3a5d' : '#e3e7f3';
+  return {panel,text,grid};
 }
-if (!Element.prototype.closest) {
-  Element.prototype.closest = function (s) { var el=this; if(!document.documentElement.contains(el)) return null; do{ if(el.matches(s)) return el; el=el.parentElement||el.parentNode; }while(el&&el.nodeType===1); return null; };
-}
-
-var METRICS_DATA = ${metrics_json};
-var METRIC_NAMES = Object.keys(METRICS_DATA).sort(function(a,b){ return a.localeCompare(b); });
-var THEME_KEY='plot_theme', DEFAULT_THEME='light';
-var FONT_FAMILY='-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif';
-var showSelectedMode=false;
-var SHOW_UNIT_HEADERS=false; // keep false (no PER_SECOND/BITS_PER_SECOND headings)
-
-/* --------- Collapse left pane helpers (chevrons) --------- */
-var LCOL_KEY = 'left_pane_collapsed';
-function relayoutAllChartsSoon(delay){
-  setTimeout(function(){
-    var divs = document.querySelectorAll('#interactive-panels .chart-card > div[id^="chart"]');
-    for (var i=0;i<divs.length;i++){
-      var id = divs[i].id;
-      if (window.Plotly && id) { window.Plotly.relayout(id, { autosize: true }); }
-    }
-  }, delay || 80);
-}
-function setLeftCollapsed(on){
-  var container = document.querySelector('.main-container');
-  var collapseBtn = document.getElementById('left-collapse');
-  var revealBtn = document.getElementById('left-reveal');
-  if (!container) return;
-
-  container.classList.toggle('is-left-collapsed', !!on);
-  if (collapseBtn) collapseBtn.textContent = on ? '›' : '‹'; // not visible when collapsed, but keeps state
-  if (revealBtn) revealBtn.style.display = on ? 'inline-block' : 'none';
-
-  try { localStorage.setItem(LCOL_KEY, on ? '1' : '0'); } catch(e) {}
-  relayoutAllChartsSoon(80);
-}
-function getLeftCollapsed(){
-  try { return (localStorage.getItem(LCOL_KEY) || '0') === '1'; }
-  catch(e){ return false; }
-}
-
-/* --------- Misc helpers --------- */
-function debounce(fn,ms){var t;return function(){var args=arguments,ctx=this;clearTimeout(t);t=setTimeout(function(){fn.apply(ctx,args);},ms||120);};}
-
-function updatePlotlyTheme(theme){
-  var isDark = theme==='dark';
-  var fontColor = isDark?'#f3f4f6':'#1f2937';
-  var gridColor = isDark?'#374151':'#e5e7eb';
-  var paperBg  = isDark?'#1f2937':'#ffffff';
-  var plotBg   = isDark?'#111827':'#f9fafb';
-  var divs = document.querySelectorAll('#interactive-panels .chart-card > div[id^="chart"]');
-  for (var i=0;i<divs.length;i++){
-    var id=divs[i].id;
-    if (window.Plotly && id) {
-      window.Plotly.relayout(id,{
-        paper_bgcolor:paperBg, plot_bgcolor:plotBg,
-        font:{color:fontColor,family:FONT_FAMILY},
-        'xaxis.gridcolor':gridColor,'yaxis.gridcolor':gridColor
-      });
-    }
-  }
-}
-function setTheme(t){ document.body.setAttribute('data-theme',t); try{localStorage.setItem(THEME_KEY,t);}catch(e){} updatePlotlyTheme(t); }
-function toggleTheme(){ setTheme(document.body.getAttribute('data-theme')==='light'?'dark':'light'); }
-
-function setupTabs(){
-  var tabs=document.querySelectorAll('.tab-btn');
-  var left=document.getElementById('panel-interactive');
-  var rightInt=document.getElementById('right-pane-interactive');
-  var rightSum=document.getElementById('panel-summary');
-  function activate(id){
-    for (var i=0;i<tabs.length;i++){ var t=tabs[i]; t.classList.toggle('active', t.getAttribute('data-target')===id); }
-    left.style.display='block';
-    if(id==='panel-interactive'){ rightInt.style.display='block'; rightSum.style.display='none'; }
-    else { rightInt.style.display='none'; rightSum.style.display='block'; }
-    setTimeout(function(){
-      var divs=document.querySelectorAll('#interactive-panels .chart-card > div[id^="chart"]');
-      for (var j=0;j<divs.length;j++){ if (window.Plotly) window.Plotly.relayout(divs[j].id,{autosize:true}); }
-    },80);
-  }
-  for (var i=0;i<tabs.length;i++){ tabs[i].addEventListener('click', function(){ activate(this.getAttribute('data-target')); }); }
-  if (tabs.length) activate(tabs[0].getAttribute('data-target'));
-}
-
-/* --------- Metric selection UI --------- */
-var msBody, msSearch, btnAll, btnSel, btnSelectAll, btnClear, countSpan;
-
-function escapeHTML(s){ return (s||"").replace(/[&<>'"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c];}); }
-
-function buildMetricList(){
-  msBody.innerHTML="";
-  var currentUnit=null;
-
-  for (var i=0;i<METRIC_NAMES.length;i++){
-    var name=METRIC_NAMES[i];
-    var m=METRICS_DATA[name]||{};
-    var unit=m.unit||'UNKNOWN';
-
-    if (unit!==currentUnit){
-      currentUnit=unit;
-      if (SHOW_UNIT_HEADERS) {
-        var gt=document.createElement('div'); gt.className='ms-group-title'; gt.textContent=unit; msBody.appendChild(gt);
-      }
-    }
-
-    var lab=document.createElement('label'); lab.className='ms-item'; lab.setAttribute('data-metric', name);
-    var cb=document.createElement('input'); cb.type='checkbox'; cb.setAttribute('data-name', name);
-    var txt=document.createElement('div'); txt.className='ms-item-text';
-    txt.innerHTML="<div class='main-text'>"+escapeHTML(name)+"</div><div class='sub-text'>"+escapeHTML(m.label||m.metric||'')+"</div>";
-    var badge=document.createElement('span'); badge.className='badge'; badge.textContent=unit;
-
-    lab.appendChild(cb); lab.appendChild(txt); lab.appendChild(badge);
-    msBody.appendChild(lab);
-  }
-
-  var onChange = debounce(function(){
-    updateSelectedCount();
-    if (showSelectedMode) applyFilter();
-    renderInteractive();  // Auto plot/remove on check/uncheck
-  }, 120);
-
-  msBody.addEventListener('change', function(e){
-    if (e.target && e.target.matches('input[type="checkbox"][data-name]')) onChange();
+function applyThemeToCharts(){
+  const t = themeColors();
+  (currentCharts || []).forEach(id => {
+    Plotly.relayout(id, {
+      'paper_bgcolor': t.panel,
+      'plot_bgcolor' : t.panel,
+      'font.color'   : t.text,
+      'legend.font.color': t.text,
+      'xaxis.gridcolor': t.grid,
+      'yaxis.gridcolor': t.grid,
+      'xaxis.title.font.color': t.text,
+      'yaxis.title.font.color': t.text,
+      'xaxis.tickfont.color'  : t.text,
+      'yaxis.tickfont.color'  : t.text
+    });
   });
 }
 
-function getCheckedMetricNames(){
-  var out=[], boxes=msBody.querySelectorAll('input[type="checkbox"][data-name]:checked');
-  for (var i=0;i<boxes.length;i++){ out.push(boxes[i].getAttribute('data-name')); }
-  return out;
+/* THEME BOOTSTRAP */
+function setTheme(t){ document.body.setAttribute('data-theme',t); localStorage.setItem(THEME_KEY,t); }
+(function(){
+  setTheme(localStorage.getItem(THEME_KEY) || 'light');
+  const btn = document.getElementById('theme-toggle');
+  btn.onclick = () => {
+    const next = document.body.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+    applyThemeToCharts(); // reflect instantly on existing charts
+  };
+})();
+
+/* TABS */
+document.getElementById('tab-interactive').onclick = ()=> setActiveTab(true);
+document.getElementById('tab-summary').onclick     = ()=> setActiveTab(false);
+function setActiveTab(toInteractive){
+  const a = document.getElementById('tab-interactive');
+  const b = document.getElementById('tab-summary');
+  a.classList.toggle('is-active', toInteractive);
+  b.classList.toggle('is-active', !toInteractive);
+  document.getElementById('interactive-main').style.display = toInteractive ? '' : 'none';
+  document.getElementById('summary-main').style.display     = toInteractive ? 'none' : '';
 }
-function updateSelectedCount(){
-  var n = msBody.querySelectorAll('input[type="checkbox"][data-name]:checked').length;
-  countSpan.textContent = String(n);
+
+/* CHEVRON (collapse) */
+(function(){
+  const main = document.getElementById('interactive-main');
+  const chev = document.getElementById('chevron');
+  function setArrow(){ chev.querySelector('span').textContent = main.classList.contains('collapsed') ? '❯' : '❮'; }
+  chev.onclick = ()=>{ main.classList.toggle('collapsed'); setArrow(); };
+  setArrow();
+})();
+
+/* JUMP buttons (prefer right pane, else page) */
+function scrollTarget(){
+  const rp = document.getElementById('right-pane');
+  if (rp && rp.scrollHeight > rp.clientHeight) return rp;
+  return document.scrollingElement || document.documentElement;
 }
-function applyFilter(){
-  var q=(msSearch.value||"").trim().toLowerCase();
-  var rows=msBody.querySelectorAll('.ms-item');
-  for (var i=0;i<rows.length;i++){
-    var row=rows[i];
-    var name=row.getAttribute('data-metric')||"";
-    var checked=row.querySelector('input[type="checkbox"]').checked;
-    var matchesSearch = !q || name.toLowerCase().indexOf(q)!==-1;
-    var passes = matchesSearch && (showSelectedMode ? checked : true);
-    row.style.display = passes ? 'flex' : 'none';
-  }
-  if (SHOW_UNIT_HEADERS) {
-    var headers=msBody.querySelectorAll('.ms-group-title');
-    for (var h=0; h<headers.length; h++){
-      var header=headers[h], next=header.nextElementSibling, anyVisible=false;
-      while(next && !next.classList.contains('ms-group-title')){
-        if (next.style.display !== 'none'){ anyVisible=true; break; }
-        next=next.nextElementSibling;
-      }
-      header.style.display = anyVisible ? 'block' : 'none';
+document.getElementById('jump-up').onclick   = ()=>{ const t=scrollTarget(); t.scrollTo({top:0,behavior:'smooth'}); };
+document.getElementById('jump-down').onclick = ()=>{ const t=scrollTarget(); t.scrollTo({top:t.scrollHeight,behavior:'smooth'}); };
+
+/* Left multi-select */
+const MS = (() => {
+  const state = { selected:new Set(), showOnlySelected:false, els:{} };
+  const qs = id=>document.getElementById(id);
+
+  function renderList(){
+    const body = state.els.body; body.innerHTML='';
+    const q = (state.els.search.value||'').toLowerCase();
+
+    const names = METRIC_NAMES.filter(name=>{
+      const m = METRICS_DATA[name]; const unit=(m.unit||'').toLowerCase();
+      const hay=(name+' '+(m.label||'')+' '+unit).toLowerCase();
+      const passQ=!q || hay.includes(q);
+      const passSel = state.showOnlySelected ? state.selected.has(name) : true;
+      return passQ && passSel;
+    });
+
+    for(const name of names){
+      const m = METRICS_DATA[name];
+      const row = document.createElement('div'); row.className='row';
+      row.innerHTML =
+        '<input type="checkbox" '+(state.selected.has(name)?'checked':'')+' data-name="'+name+'"/>' +
+        '<div><div class="name">'+esc(name)+'</div><div class="desc">'+esc(m.label||m.metric||'')+'</div></div>' +
+        '<span class="pill">'+esc(m.unit||'')+'</span>';
+
+      row.addEventListener('click', (ev)=>{ if(ev.target.tagName==='INPUT') return; const cb=row.querySelector('input'); cb.checked=!cb.checked; toggle(name, cb.checked); });
+      row.querySelector('input').addEventListener('change', e=> toggle(name, e.target.checked));
+      body.appendChild(row);
     }
   }
-}
-function selectAllVisible(){
-  var rows=msBody.querySelectorAll('.ms-item');
-  for (var i=0;i<rows.length;i++){
-    var r=rows[i]; if (r.style.display==='none') continue;
-    var cb=r.querySelector('input[type="checkbox"]'); if (cb) cb.checked=true;
+
+  function toggle(name, checked){
+    if(checked) state.selected.add(name); else state.selected.delete(name);
+    updateCounts(); renderInteractive(); // live plot/unplot
   }
-  updateSelectedCount(); renderInteractive();
-}
-function clearAll(){
-  var boxes=msBody.querySelectorAll('input[type="checkbox"]');
-  for (var i=0;i<boxes.length;i++){ boxes[i].checked=false; }
-  updateSelectedCount(); if (showSelectedMode) applyFilter(); renderInteractive();
-}
-function wireMetricUI(){
-  msBody = document.getElementById('ms-body');
-  msSearch = document.getElementById('ms-search');
-  btnAll = document.getElementById('btn-show-all');
-  btnSel = document.getElementById('btn-show-selected');
-  btnSelectAll = document.getElementById('ms-select-all');
-  btnClear = document.getElementById('ms-clear');
-  countSpan = document.getElementById('ms-count');
 
-  buildMetricList(); updateSelectedCount(); applyFilter();
-  msSearch.addEventListener('input', applyFilter);
-  btnAll.addEventListener('click', function(){ showSelectedMode=false; btnAll.classList.add('active'); btnSel.classList.remove('active'); applyFilter(); });
-  btnSel.addEventListener('click', function(){ showSelectedMode=true;  btnSel.classList.add('active'); btnAll.classList.remove('active'); applyFilter(); });
-  btnSelectAll.addEventListener('click', selectAllVisible);
-  btnClear.addEventListener('click', clearAll);
+  function updateCounts(){
+    qs('sel-count').textContent = state.selected.size;
+    qs('btn-show-selected').textContent = `Show Selected (${state.selected.size})`;
+  }
+
+  function selectAllVisible(){
+    state.els.body.querySelectorAll('input[type="checkbox"]').forEach(cb=>{ cb.checked=true; state.selected.add(cb.getAttribute('data-name')); });
+    updateCounts(); renderInteractive();
+  }
+  function clearAll(){
+    state.selected.clear();
+    state.els.body.querySelectorAll('input[type="checkbox"]').forEach(cb=> cb.checked=false);
+    updateCounts(); renderInteractive();
+  }
+
+  function init(){
+    state.els = { body:qs('ms-body'), search:qs('search') };
+    state.els.search.addEventListener('input', renderList);
+
+    qs('btn-select-all').onclick    = selectAllVisible;
+    qs('btn-clear-metrics').onclick = clearAll;
+    qs('btn-show-all').onclick      = ()=>{ state.showOnlySelected=false; qs('btn-show-all').classList.add('is-active'); qs('btn-show-selected').classList.remove('is-active'); renderList(); };
+    qs('btn-show-selected').onclick = ()=>{ state.showOnlySelected=!state.showOnlySelected; qs('btn-show-selected').classList.toggle('is-active',state.showOnlySelected); qs('btn-show-all').classList.toggle('is-active', !state.showOnlySelected); renderList(); };
+
+    renderList(); updateCounts();
+  }
+
+  function getSelected(){ return Array.from(state.selected); }
+  return { init, getSelected, _render:renderList };
+})();
+MS.init();
+
+/* Plotly layout helpers */
+function baseLayout(xTitle, showLegend, legendRows){
+  const t = themeColors();
+  const b = showLegend ? (legendRows>1?120:80) : 60;
+  return {
+    paper_bgcolor:t.panel, plot_bgcolor:t.panel, font:{color:t.text},
+    margin:{t:24,r:18,b:b,l:54},
+    xaxis:{title:xTitle, gridcolor:t.grid, automargin:true, titlefont:{color:t.text}, tickfont:{color:t.text}},
+    yaxis:{title:'', gridcolor:t.grid, automargin:true, titlefont:{color:t.text}, tickfont:{color:t.text}},
+    showlegend:showLegend,
+    legend:{orientation:'h', x:0, xanchor:'left', y:-0.25, yanchor:'top', font:{size:11, color:t.text}}
+  };
 }
 
-/* --------- Plot helpers --------- */
-function truncateLabel(s,n){ if(!s) return ''; return s.length>n? s.slice(0,n-1)+'…' : s; }
-function groupByUnit(names){ var out={}; for(var i=0;i<names.length;i++){ var name=names[i]; var m=METRICS_DATA[name]; if(!m) continue; var u=m.unit||'UNKNOWN'; if(!out[u]) out[u]=[]; out[u].push(m); } return out; }
-function getLayout(xTitle,showLegend){
-  var isDark = document.body.getAttribute('data-theme')==='dark';
-  var fontColor=isDark?'#f3f4f6':'#1f2937', gridColor=isDark?'#374151':'#e5e7eb';
-  var paperBg=isDark?'#1f2937':'#ffffff', plotBg=isDark?'#111827':'#f9fafb';
-  return {paper_bgcolor:paperBg,plot_bgcolor:plotBg,title:'',
-    xaxis:{title:xTitle,gridcolor:gridColor,automargin:true}, yaxis:{title:'',gridcolor:gridColor,automargin:true},
-    font:{family:FONT_FAMILY,color:fontColor,size:12}, hovermode:'x unified', showlegend:showLegend,
-    legend:{orientation:'h',x:0,xanchor:'left',y:-0.25,yanchor:'top',font:{size:11}},
-    margin:{t:40,r:30,b:showLegend?150:60,l:60}, height:${chart_height}, autosize:true};
-}
+/* Sync X-range across all charts */
 function setupRangeSync(ids){
-  var suppress=false;
+  if(ids.length<=1) return;
+  let suppress = false;
+
+  function parse(ev){
+    let r0=null,r1=null,auto=null,changed=false;
+    if(ev && Object.prototype.hasOwnProperty.call(ev,'xaxis.autorange')){ auto=!!ev['xaxis.autorange']; changed=true; return {r0,r1,auto,changed}; }
+    if(Array.isArray(ev?.['xaxis.range'])){ r0=ev['xaxis.range'][0]; r1=ev['xaxis.range'][1]; changed=true; }
+    else if('xaxis.range[0]' in (ev||{}) && 'xaxis.range[1]' in (ev||{})){ r0=ev['xaxis.range[0]']; r1=ev['xaxis.range[1]']; changed=true; }
+    return {r0,r1,auto,changed};
+  }
   function apply(src,r0,r1,auto){
     suppress=true;
-    for (var i=0;i<ids.length;i++){ var id=ids[i]; if(id===src) continue;
-      if(auto) window.Plotly.relayout(id,{'xaxis.autorange':true});
-      else window.Plotly.relayout(id,{'xaxis.range':[r0,r1],'xaxis.autorange':false});
+    for(const id of ids){ if(id===src) continue;
+      if(auto) Plotly.relayout(id, {'xaxis.autorange':true});
+      else if(r0!=null && r1!=null) Plotly.relayout(id, {'xaxis.range':[r0,r1],'xaxis.autorange':false});
     }
-    setTimeout(function(){suppress=false;},0);
+    setTimeout(()=>{suppress=false;},0);
   }
-  for (var j=0;j<ids.length;j++){
-    var id=ids[j]; var div=document.getElementById(id); if(!div || !div.on) continue;
-    div.on('plotly_relayout',function(ev){
-      if(suppress) return;
-      var auto = Object.prototype.hasOwnProperty.call(ev,'xaxis.autorange') ? !!ev['xaxis.autorange'] : false;
-      var r0=null,r1=null;
-      if(Array.isArray(ev['xaxis.range'])){ r0=ev['xaxis.range'][0]; r1=ev['xaxis.range'][1]; }
-      else if(Object.prototype.hasOwnProperty.call(ev,'xaxis.range[0]')){ r0=ev['xaxis.range[0]']; r1=ev['xaxis.range[1]']; }
-      if(auto || (r0!=null && r1!=null)) apply(this.id,r0,r1,auto);
-    });
+
+  for(const id of ids){
+    const el=document.getElementById(id);
+    el.on('plotly_relayout', ev => { if(suppress) return; const {r0,r1,auto,changed}=parse(ev); if(!changed) return; apply(id,r0,r1,auto); });
+    el.on('plotly_doubleclick', () => { if(suppress) return; apply(id,null,null,true); });
   }
-}
-function updateFabVisibility(){
-  var wrap=document.getElementById('interactive-panels');
-  var many = wrap.querySelectorAll('.chart-card').length > 1;
-  var fab=document.getElementById('fab-nav');
-  fab.style.display = many ? 'flex' : 'none';
 }
 
-/* ---------- CSV helpers (WIDE format) ---------- */
-function csvEscape(val){
-  if (val === null || val === undefined) return '';
-  var s = String(val);
-  if (/[",\n]/.test(s)) return '"' + s.replace(/"/g,'""') + '"';
-  return s;
-}
-function buildWideCSVRowsForMetrics(metricNames){
-  if (!metricNames || !metricNames.length) return [["time"]];
-  // Union of timestamps
-  var timesSet = new Set();
-  for (var i=0;i<metricNames.length;i++){
-    var nm=metricNames[i], m=METRICS_DATA[nm]; if(!m) continue;
-    var xs=m.x||[]; for (var j=0;j<xs.length;j++){ timesSet.add(xs[j]); }
-  }
-  var times = Array.from(timesSet).sort(function(a,b){ return a.localeCompare(b); });
-  // Build lookups per metric
-  var lookups = {};
-  for (var k=0;k<metricNames.length;k++){
-    var name=metricNames[k], m2=METRICS_DATA[name]||{};
-    var xs2=m2.x||[], ys2=m2.y||[];
-    var map=Object.create(null);
-    for (var t=0;t<xs2.length;t++){ map[xs2[t]] = ys2[t]; }
-    lookups[name]=map;
-  }
-  // Rows
-  var header=["time"].concat(metricNames);
-  var rows=[header];
-  for (var r=0;r<times.length;r++){
-    var time=times[r], row=[time];
-    for (var c=0;c<metricNames.length;c++){
-      var col=metricNames[c];
-      var val = lookups[col][time];
-      row.push(val !== undefined ? val : "");
+/* Render charts (called on selection changes, plot button, layout toggles) */
+function renderInteractive(){
+  const names = MS.getSelected();
+  const wrap = document.getElementById('interactive-panels');
+  wrap.innerHTML=''; currentCharts=[];
+
+  if(!names.length) return;
+
+  const individual = document.getElementById('btn-individual').classList.contains('is-active');
+
+  if(individual){
+    for(const metric of names){
+      const m = METRICS_DATA[metric]; if(!m) continue;
+
+      const card=document.createElement('div'); card.className='chart-card';
+      const title=document.createElement('div'); title.className='chart-title';
+      title.innerHTML = esc(metric)+' <span class="pill">'+esc(m.unit||'')+'</span>';
+      const actions=document.createElement('div'); actions.className='title-actions';
+      const btnCSV=document.createElement('button'); btnCSV.className='mini-btn'; btnCSV.textContent='CSV'; btnCSV.dataset.metrics=metric;
+      const btnLeg=document.createElement('button'); btnLeg.className='mini-btn legend-mini'; btnLeg.textContent='Legend'; btnLeg.classList.toggle('is-active', legendDefaultOn);
+      actions.appendChild(btnCSV); actions.appendChild(btnLeg); title.appendChild(actions);
+
+      const div=document.createElement('div'); div.id='chart-'+Math.random().toString(36).slice(2,8); div.className='chart-host';
+      card.appendChild(title); card.appendChild(div); wrap.appendChild(card);
+
+      const traces=[{type:'scatter', mode:'lines+markers', x:m.x, y:m.y, name:metric, hovertemplate:(m.label||m.metric)+'<br>%{x}<br>%{y}<extra></extra>'}];
+      Plotly.newPlot(div.id, traces, baseLayout(m.label||m.metric, legendDefaultOn, 1), {responsive:true,displaylogo:false}).then(()=>{
+        Plotly.relayout(div.id,{height:PlotH}); currentCharts.push(div.id);
+        if(currentCharts.length === names.length) { setupRangeSync(currentCharts); applyThemeToCharts(); }
+      });
     }
+  }else{
+    const traces = names.map(n=>{
+      const m = METRICS_DATA[n]; if(!m) return null;
+      return {type:'scatter', mode:'lines+markers', x:m.x, y:m.y, name:n, hovertemplate:(m.label||m.metric)+'<br>%{x}<br>%{y}<extra></extra>'};
+    }).filter(Boolean);
+
+    const card=document.createElement('div'); card.className='chart-card';
+    const title=document.createElement('div'); title.className='chart-title'; title.innerHTML='Selected Metrics';
+    const actions=document.createElement('div'); actions.className='title-actions';
+    const btnCSV=document.createElement('button'); btnCSV.className='mini-btn'; btnCSV.textContent='CSV'; btnCSV.dataset.metrics=names.join('|');
+    const btnLeg=document.createElement('button'); btnLeg.className='mini-btn legend-mini'; btnLeg.textContent='Legend'; btnLeg.classList.toggle('is-active', legendDefaultOn);
+    actions.appendChild(btnCSV); actions.appendChild(btnLeg); title.appendChild(actions);
+
+    const div=document.createElement('div'); div.id='chart-'+Math.random().toString(36).slice(2,8); div.className='chart-host';
+    card.appendChild(title); card.appendChild(div); wrap.appendChild(card);
+
+    const rows = Math.ceil(traces.length/6);
+    Plotly.newPlot(div.id, traces, baseLayout('', legendDefaultOn, rows), {responsive:true,displaylogo:false}).then(()=>{
+      Plotly.relayout(div.id,{height:PlotH}); currentCharts.push(div.id);
+      setupRangeSync(currentCharts); applyThemeToCharts();
+    });
+  }
+
+  // per-chart CSV & per-chart legend buttons
+  wrap.querySelectorAll('.mini-btn').forEach(btn=>{
+    if(btn.dataset.metrics){
+      btn.onclick = ()=> exportCSV(btn.dataset.metrics.split('|'));
+    }else if(btn.classList.contains('legend-mini')){
+      btn.onclick = (e)=>{
+        const host = e.target.closest('.chart-card').querySelector('.chart-host').id;
+        const makeOn = !(e.target.classList.contains('is-active'));
+        e.target.classList.toggle('is-active', makeOn);
+        Plotly.relayout(host, {'showlegend': makeOn});
+      };
+    }
+  });
+}
+
+/* Top bar buttons */
+document.getElementById('btn-plot').onclick  = renderInteractive;
+document.getElementById('btn-clear').onclick = ()=>{ document.getElementById('interactive-panels').innerHTML=''; currentCharts=[]; };
+document.getElementById('btn-reset').onclick = ()=>{ currentCharts.forEach(id => Plotly.relayout(id, {'xaxis.autorange':true, 'yaxis.autorange':true})); };
+document.getElementById('btn-individual').onclick = (e)=>{ e.currentTarget.classList.toggle('is-active'); renderInteractive(); };
+
+/* Global legend: sets baseline for current charts; mini toggles still allow per-chart changes after */
+document.getElementById('btn-legend').onclick = (e)=>{
+  legendDefaultOn = !legendDefaultOn;
+  e.currentTarget.classList.toggle('is-active', legendDefaultOn);
+  currentCharts.forEach(id => Plotly.relayout(id, {'showlegend': legendDefaultOn}));
+  document.querySelectorAll('.legend-mini').forEach(b => b.classList.toggle('is-active', legendDefaultOn));
+};
+
+/* Global CSV */
+document.getElementById('btn-export').onclick = ()=>{
+  const names = MS.getSelected();
+  if(!names.length){ alert('Select at least one metric to export.'); return; }
+  exportCSV(names);
+};
+
+/* CSV helpers (timestamp + metric columns) */
+function buildAlignedTable(metricNames){
+  const ts = new Set(), map={};
+  for(const name of metricNames){
+    const m = METRICS_DATA[name]; if(!m) continue;
+    const mp={}; for(let i=0;i<m.x.length;i++){ mp[m.x[i]] = m.y[i]; ts.add(m.x[i]); }
+    map[name]=mp;
+  }
+  const timestamps = Array.from(ts).sort((a,b)=> new Date(a)-new Date(b));
+  const header = ['timestamp', ...metricNames];
+  const rows=[header];
+  for(const t of timestamps){
+    const row=[t];
+    for(const name of metricNames){ const v = map[name]?.[t]; row.push((v==null||!isFinite(v))?'':v); }
     rows.push(row);
   }
   return rows;
 }
-function rowsToCSV(rows){
-  var out=[];
-  for (var i=0;i<rows.length;i++){
-    var r=rows[i], line=[];
-    for (var j=0;j<r.length;j++){ line.push(csvEscape(r[j])); }
-    out.push(line.join(','));
-  }
-  return '\ufeff' + out.join('\n'); // UTF-8 BOM for Excel
+function toCSV(rows){
+  return rows.map(r => r.map(cell => {
+    if (cell == null) return '';
+    const s = String(cell);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+  }).join(',')).join('\n');
 }
-function downloadCSV(filename, csvText){
-  try{
-    var blob=new Blob([csvText],{type:'text/csv;charset=utf-8;'});
-    var url=URL.createObjectURL(blob);
-    var a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click();
-    setTimeout(function(){ URL.revokeObjectURL(url); document.body.removeChild(a); }, 0);
-  }catch(e){
-    var a2=document.createElement('a'); a2.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csvText);
-    a2.download=filename; document.body.appendChild(a2); a2.click(); document.body.removeChild(a2);
-  }
+function downloadCSV(csv, base='metrics'){
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const ts = new Date().toISOString().replace(/[:T]/g,'-').slice(0,19);
+  a.href = url; a.download = `${base}_${ts}.csv`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
 }
-function exportMetricsToCSVWide(metricNames, fileLabel){
-  if (!metricNames || !metricNames.length) return;
-  var rows = buildWideCSVRowsForMetrics(metricNames);
-  var csv = rowsToCSV(rows);
-  var ts = new Date().toISOString().replace(/[:.]/g,'-');
-  var name = (fileLabel || 'metrics') + '_' + ts + '.csv';
-  downloadCSV(name, csv);
+function exportCSV(metricNames){
+  if(!metricNames || !metricNames.length){ alert('No metrics selected/visible to export.'); return; }
+  const csv = toCSV(buildAlignedTable(metricNames));
+  downloadCSV(csv, 'metrics');
 }
-/* ---------- end CSV helpers ---------- */
-
-function renderPerMetric(names,wrap){
-  var ids=[];
-  for (var i=0;i<names.length;i++){
-    var metricName=names[i]; var m=METRICS_DATA[metricName]; if(!m) continue;
-    var unit=m.unit||'UNKNOWN', xTitle=truncateLabel(m.label||m.metric||metricName,140);
-    var card=document.createElement('div'); card.className='chart-card';
-    var title=document.createElement('div'); title.className='chart-title';
-    var left=document.createElement('div');
-    left.innerHTML=escapeHTML(metricName)+' <span class="pill">'+escapeHTML(unit)+'</span>';
-    var spacer=document.createElement('div'); spacer.className='spacer';
-    var exp=document.createElement('button'); exp.className='mini-btn'; exp.textContent='Export CSV';
-    exp.addEventListener('click', function(name){
-      return function(){ exportMetricsToCSVWide([name], name); };
-    }(metricName));
-    title.appendChild(left); title.appendChild(spacer); title.appendChild(exp);
-
-    var div=document.createElement('div'); var cid='chart-'+metricName.replace(/[^a-zA-Z0-9_-]/g,'_')+'-'+Math.random().toString(36).slice(2,7);
-    div.id=cid; card.appendChild(title); card.appendChild(div); wrap.appendChild(card);
-    var traces=[{type:'scatter',mode:'lines+markers',x:m.x,y:m.y,name:metricName,hovertemplate:'Metric: '+(m.label||m.metric||metricName)+'<br>Time: %{x}<br>Value: %{y}<extra></extra>'}];
-    window.Plotly.newPlot(cid,traces,getLayout(xTitle,false),{responsive:true}); ids.push(cid);
-  }
-  if(ids.length>1) setupRangeSync(ids);
-}
-function renderGroupedByUnit(names,wrap){
-  var byU=groupByUnit(names), ids=[], units=Object.keys(byU);
-  for (var ui=0; ui<units.length; ui++){
-    var unit=units[ui]; var metrics=byU[unit]; if(!metrics || !metrics.length) continue;
-    var card=document.createElement('div'); card.className='chart-card';
-    var title=document.createElement('div'); title.className='chart-title';
-    var left=document.createElement('div'); left.innerHTML='Selected Metrics <span class="pill">'+escapeHTML(unit)+'</span>';
-    var spacer=document.createElement('div'); spacer.className='spacer';
-    var exp=document.createElement('button'); exp.className='mini-btn'; exp.textContent='Export CSV';
-    var metricNamesForUnit = metrics.map(function(mm){ return mm.metric; });
-    exp.addEventListener('click', function(list){
-      return function(){ exportMetricsToCSVWide(list, 'metrics_'+unit); };
-    }(metricNamesForUnit));
-    title.appendChild(left); title.appendChild(spacer); title.appendChild(exp);
-
-    var div=document.createElement('div'); var cid='chart-unit-'+unit.replace(/[^a-zA-Z0-9_-]/g,'_')+'-'+Math.random().toString(36).slice(2,7);
-    div.id=cid; card.appendChild(title); card.appendChild(div); wrap.appendChild(card);
-    var traces=[]; for (var mi=0; mi<metrics.length; mi++){ var m=metrics[mi];
-      traces.push({type:'scatter',mode:'lines+markers',x:m.x,y:m.y,name:m.metric,
-        hovertemplate:'Metric: '+(m.label||m.metric)+'<br>Time: %{x}<br>Value: %{y}<extra></extra>'});
-    }
-    window.Plotly.newPlot(cid,traces,getLayout('',true),{responsive:true}); ids.push(cid);
-  }
-  if(ids.length>1) setupRangeSync(ids);
-}
-function renderInteractive(){
-  var names=getCheckedMetricNames();
-  var wrap=document.getElementById('interactive-panels'); if(!wrap) return;
-  wrap.innerHTML='';
-  if(!names.length){ updateFabVisibility(); return; }
-  if(window.__individualMode__) renderPerMetric(names,wrap); else renderGroupedByUnit(names,wrap);
-  updatePlotlyTheme(document.body.getAttribute('data-theme'));
-  updateFabVisibility();
-}
-function resetZoomAll(){
-  var divs=document.querySelectorAll('#interactive-panels .chart-card > div[id^="chart"]');
-  for (var i=0;i<divs.length;i++){ if (window.Plotly) window.Plotly.relayout(divs[i].id,{'xaxis.autorange':true,'yaxis.autorange':true}); }
-}
-
-/* --------- Init --------- */
-(function init(){
-  // Theme
-  var saved=DEFAULT_THEME; try{ saved=localStorage.getItem(THEME_KEY)||DEFAULT_THEME; }catch(e){}
-  setTheme(saved);
-  var el=document.getElementById('theme-toggle'); if(el) el.addEventListener('click', toggleTheme);
-
-  // Tabs
-  setupTabs();
-
-  // Metrics UI
-  wireMetricUI();
-
-  // Individual graphs toggle
-  window.__individualMode__ = window.__individualMode__ || false;
-  const indBtn = document.getElementById('chip-individual');
-  function syncIndBtn(){ indBtn.setAttribute('aria-pressed', window.__individualMode__ ? 'true' : 'false'); }
-  if (indBtn){
-    indBtn.addEventListener('click', () => { window.__individualMode__ = !window.__individualMode__; syncIndBtn(); renderInteractive(); });
-    syncIndBtn();
-  }
-
-  // Actions
-  el=document.getElementById('btn-plot'); if(el) el.addEventListener('click', renderInteractive);
-  el=document.getElementById('btn-clear'); if(el) el.addEventListener('click', function(){ document.getElementById('interactive-panels').innerHTML=''; updateFabVisibility(); });
-  el=document.getElementById('btn-reset-range'); if(el) el.addEventListener('click', resetZoomAll);
-  el=document.getElementById('btn-export-csv'); if(el) el.addEventListener('click', function(){
-    var names = getCheckedMetricNames(); if (!names.length) return; exportMetricsToCSVWide(names, 'metrics_selected');
-  });
-
-  // Floating nav
-  var pane=document.getElementById('right-pane-interactive');
-  el=document.getElementById('btn-scroll-top'); if(el) el.addEventListener('click', function(){ if (pane.scrollTo) pane.scrollTo({top:0, behavior:'smooth'}); else pane.scrollTop=0; });
-  el=document.getElementById('btn-scroll-bottom'); if(el) el.addEventListener('click', function(){ if (pane.scrollTo) pane.scrollTo({top:pane.scrollHeight, behavior:'smooth'}); else pane.scrollTop=pane.scrollHeight; });
-
-  // Chevron collapse/reveal
-  var collapseBtn = document.getElementById('left-collapse');
-  var revealBtn = document.getElementById('left-reveal');
-  if (collapseBtn){ collapseBtn.addEventListener('click', function(){ setLeftCollapsed(true); }); }
-  if (revealBtn){ revealBtn.addEventListener('click', function(){ setLeftCollapsed(false); }); }
-  // Restore saved state
-  setLeftCollapsed(getLeftCollapsed());
-  // Keyboard shortcut: M
-  document.addEventListener('keydown', function(e){
-    if (e.defaultPrevented) return;
-    if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'm' || e.key === 'M')){
-      e.preventDefault();
-      var collapsed = document.querySelector('.main-container').classList.contains('is-left-collapsed');
-      setLeftCollapsed(!collapsed);
-    }
-  });
-})();
 </script>
 </body>
 </html>
 """
 
-# ---------------- Python helpers ----------------
-
-def render_html(template: str, mapping: dict) -> str:
-    out = template
+def render_html(tmpl: str, mapping: dict) -> str:
+    out = tmpl
     for k, v in mapping.items():
         out = out.replace("${" + k + "}", str(v))
     return out
@@ -664,20 +527,17 @@ def prompt_yes_no(prompt: str, default_yes: bool = True) -> bool:
     return ans.startswith("y")
 
 def parse_args():
-    p = argparse.ArgumentParser(
-        description="Convert metrics JSON → interactive HTML (Summary + Interactive Select).",
-        formatter_class=argparse.RawTextHelpFormatter, add_help=True,
-    )
-    p.add_argument("-i","--input",nargs='+',help="Input JSON file(s) or directory path(s).")
-    p.add_argument("-o","--output",help="Output path. If directory or ends with '/', writes <stem>.html inside.")
-    p.add_argument("--title",help='Page title (default: "Metrics Report").')
-    p.add_argument("--inline-js",action="store_true",help="Embed Plotly JS inline (works fully offline).")
-    p.add_argument("--ist",action="store_true",help="Use Asia/Kolkata timestamps.")
-    p.add_argument("--chart-height",type=int,default=520,help=argparse.SUPPRESS)
-    p.add_argument("--interactive-columns",type=int,default=1,help=argparse.SUPPRESS)
-    p.add_argument("--narrow",action="store_true",help=argparse.SUPPRESS)
-    p.add_argument("--timezone","--tz",dest="timezone",default=None,help=argparse.SUPPRESS)
-    p.add_argument("-v","--verbose",action="store_true",help="Verbose logging.")
+    p = argparse.ArgumentParser(description="JSON → interactive HTML graphs (Summary + Interactive Select).",
+                                formatter_class=argparse.RawTextHelpFormatter, add_help=True)
+    p.add_argument("-i","--input", nargs="+", help="Input .json files or directories.")
+    p.add_argument("-o","--output", help="Output HTML path (optional). Defaults to input stem.")
+    p.add_argument("--title", help='Page title (default: "Metrics Report").')
+    p.add_argument("--inline-js", action="store_true", help="Embed Plotly JS for offline HTML.")
+    p.add_argument("--ist", action="store_true", help="Use Asia/Kolkata timezone.")
+    # hidden
+    p.add_argument("--chart-height", type=int, default=520, help=argparse.SUPPRESS)
+    p.add_argument("--timezone", "--tz", dest="timezone", default=None, help=argparse.SUPPRESS)
+    p.add_argument("-v","--verbose", action="store_true", help="Verbose logging.")
     args = p.parse_args()
 
     if not args.input:
@@ -692,42 +552,28 @@ def parse_args():
         args.ist = prompt_yes_no("Render times in IST (Asia/Kolkata)?", default_yes=True)
     if "--inline-js" not in sys.argv:
         args.inline_js = prompt_yes_no("Embed Plotly JS in the HTML (works fully offline)?", default_yes=True)
-
     args.timezone = "Asia/Kolkata" if args.ist else "UTC"
     return args
 
-def find_json_files(paths: List[str]) -> List[Path]:
-    out: List[Path] = []
+def find_json_files(paths):
+    files=[]
     for raw in paths:
-        p = Path(raw).expanduser()
+        p=Path(raw).expanduser()
         if p.is_dir():
             logging.info(f"Searching for JSON files in directory: {p}")
-            out.extend(list(p.rglob("*.json")))
+            files.extend(p.rglob("*.json"))
         elif p.is_file():
-            if p.suffix.lower()==".json": out.append(p)
+            if p.suffix.lower()==".json": files.append(p)
             else: logging.warning(f"Skipping non-JSON: {p}")
         else:
             logging.error(f"Path does not exist: {p}")
-    return sorted({q.resolve() for q in out})
+    return sorted({f.resolve() for f in files})
 
-def _looks_like_dir_string(raw_out: str) -> bool:
-    return raw_out.endswith("/") or raw_out.endswith("\\") or raw_out.strip() in (".","./",".\\")
-
-def resolve_output_path(input_path: Path, raw_out: Optional[str], multi_inputs: bool) -> Path:
-    if not raw_out:
-        return input_path.with_suffix(".html").resolve()
-    out = Path(raw_out).expanduser()
-    if out.exists() and out.is_dir():
-        return (out / f"{input_path.stem}.html").resolve()
-    if _looks_like_dir_string(raw_out):
-        return (out / f"{input_path.stem}.html").resolve()
-    if out.suffix.lower() not in (".html",".htm"):
-        out = out.with_suffix(".html")
-    if multi_inputs:
-        parent = out.parent if out.parent != Path("") else Path.cwd()
-        parent.mkdir(parents=True, exist_ok=True)
-        return (parent / f"{input_path.stem}.html").resolve()
-    out.parent.mkdir(parents=True, exist_ok=True)
+def resolve_output_path(input_path: Path, raw_out: str|None) -> Path:
+    if not raw_out: return input_path.with_suffix(".html").resolve()
+    out=Path(raw_out).expanduser()
+    if out.parent == Path(""): out = Path.cwd()/out.name
+    if out.suffix.lower() not in (".html",".htm"): out = out.with_suffix(".html")
     return out.resolve()
 
 def load_json(path: Path):
@@ -735,210 +581,138 @@ def load_json(path: Path):
         with path.open("r", encoding="utf-8") as f:
             return json.load(f)
     except (IOError, json.JSONDecodeError) as e:
-        logging.error(f"Failed to read or decode JSON from {path}: {e}")
+        logging.error(f"Failed to read/parse {path}: {e}")
         return None
-
-def _parse_timestamp_series(ts: pd.Series) -> pd.Series:
-    dt = pd.to_datetime(ts, utc=True, errors="coerce")
-    if dt.isna().all():
-        nums = pd.to_numeric(ts, errors="coerce")
-        if nums.notna().any():
-            mx = nums.max()
-            unit = "ms" if mx >= 1e11 else "s"
-            dt = pd.to_datetime(nums, unit=unit, utc=True, errors="coerce")
-    return dt
-
-def _to_tz_series(s: pd.Series, tz: str) -> pd.Series:
-    if hasattr(s, "dt"):
-        try:
-            return s.dt.tz_convert(tz)
-        except Exception:
-            return pd.to_datetime(s, errors="coerce", utc=True).dt.tz_convert(tz)
-    return pd.to_datetime(s, errors="coerce", utc=True).dt.tz_convert(tz)
 
 def make_dataframe(series_entry):
     header = series_entry.get("header", {}) or {}
-    name = header.get("name", "unknown")
-    units = header.get("units", "UNKNOWN")
-    desc  = header.get("metric_description", "") or name
-    data  = series_entry.get("data", []) or []
+    name = header.get("name","unknown")
+    units= header.get("units","UNKNOWN")
+    desc = header.get("metric_description","") or name
+    data = series_entry.get("data", []) or []
 
     df = pd.DataFrame(data)
-    if df.empty or "timestamp" not in df.columns or "value" not in df.columns:
+    if df.empty:
+        logging.warning(f"Empty data for metric '{name}'")
         return pd.DataFrame(columns=["time","value","metric","units","description"])
 
-    df["time"] = _parse_timestamp_series(df["timestamp"])
+    df["time"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
     df.drop(columns=["timestamp"], inplace=True, errors="ignore")
     df["value"] = pd.to_numeric(df["value"], errors="coerce")
-    df["metric"] = name; df["units"] = units; df["description"] = desc
-    df = df.sort_values("time").reset_index(drop=True)
+    df["metric"] = name; df["units"]=units; df["description"]=desc
+    df.sort_values("time", inplace=True); df.reset_index(drop=True, inplace=True)
     return df[["time","value","metric","units","description"]]
 
 def collect_stats(series_list):
     rows=[]
     for s in series_list:
         h=s.get("header",{}) or {}; st=h.get("statistics",{}) or {}
-        rows.append({"metric":h.get("name",""),"units":h.get("units",""),
-                     "description":h.get("metric_description","") or h.get("name",""),
-                     "mean":st.get("mean"),"min":st.get("min"),"min_ts":st.get("min_ts"),
-                     "max":st.get("max"),"max_ts":st.get("max_ts"),"sum":st.get("sum"),
-                     "trend":st.get("trend"),"num_samples":st.get("num_samples")})
+        rows.append({
+            "metric":h.get("name",""), "units":h.get("units",""),
+            "description":h.get("metric_description","") or h.get("name",""),
+            "mean":st.get("mean"), "min":st.get("min"), "min_ts":st.get("min_ts"),
+            "max":st.get("max"), "max_ts":st.get("max_ts"), "sum":st.get("sum"),
+            "trend":st.get("trend"), "num_samples":st.get("num_samples")
+        })
     df=pd.DataFrame(rows)
-    if not df.empty: df=df.sort_values(["units","metric"],kind="stable")
+    if not df.empty: df.sort_values(["units","metric"], kind="stable", inplace=True)
     return df
+
+def _fmt_ts(ts_str: str, tz: str) -> str:
+    if not ts_str: return ""
+    t=pd.to_datetime(ts_str, utc=True, errors="coerce")
+    if pd.isna(t): return str(ts_str)
+    return t.tz_convert(tz).strftime('%Y-%m-%d %H:%M:%S')
 
 def _human_number(x):
     if pd.isna(x): return ""
     try: x=float(x)
     except Exception: return str(x)
-    neg=x<0; ax=abs(x)
-    for unit,th in [("T",1e12),("B",1e9),("M",1e6),("K",1e3)]:
-        if ax>=th:
-            s=f"{ax/th:,.2f}".rstrip("0").rstrip(".")+unit
-            return "-"+s if neg else s
+    neg = x<0; x=abs(x)
+    for u,th in [("T",1e12),("B",1e9),("M",1e6),("K",1e3)]:
+        if x>=th: s=f"{x/th:,.2f}".rstrip("0").rstrip(".")+u; return ("-" if neg else "")+s
     s=f"{x:,.6f}".rstrip("0").rstrip(".") if x!=int(x) else f"{int(x):,d}"
-    return "-"+s if neg else s
+    return ("-" if neg else "")+s
 
-def _fmt_ts(ts_str: str, tz_name: str) -> str:
-    if not ts_str: return ""
-    try:
-        t=pd.to_datetime(ts_str, utc=True, errors="coerce")
-        if pd.isna(t): return str(ts_str)
-        return t.tz_convert(tz_name).strftime('%Y-%m-%d %H:%M:%S')
-    except Exception:
-        return str(ts_str)
-
-def extract_entity_meta(data, series):
-    root=data if isinstance(data,dict) else {}
-    top=data.get("header") or {}
-    series_headers=[]
-    if isinstance(series,list):
-        for s in series:
-            h=(s or {}).get("header") or {}
-            if isinstance(h,dict) and h: series_headers.append(h)
-    metric_names={(h.get("name") or "").strip() for h in series_headers if isinstance(h.get("name"),str)}
-    metric_names.discard("")
-    def first_nonempty(dicts, keys, disallow=()):
-        for d in dicts:
-            for k in keys:
-                if k in d:
-                    v=d[k]
-                    if v not in (None,"","N/A"):
-                        if isinstance(v,str) and v.strip() in disallow: continue
-                        return v
-        return ""
-    entity_uuid = first_nonempty([root,top]+series_headers, ["entity_uuid","entityUuid","uuid","vs_uuid","pool_uuid","se_uuid"])
-    metric_entity = first_nonempty([root,top]+series_headers, ["metric_entity","metricEntity","entity_type","entityType","type"])
-    entity_name = (first_nonempty([root],["entity_name","entityName","display_name","name","vs_name","pool_name","se_name"],metric_names)
-                   or first_nonempty([top],["entity_name","entityName","display_name","vs_name","pool_name","se_name"],metric_names)
-                   or first_nonempty(series_headers,["entity_name","entityName","display_name","vs_name","pool_name","se_name"],metric_names))
-    return {"entity_uuid":entity_uuid,"metric_entity":metric_entity,"entity_name":entity_name}
-
-def build_entity_display(meta: dict) -> str:
-    name=meta.get("entity_name") or ""; uuid=meta.get("entity_uuid") or ""; et=meta.get("metric_entity") or ""
-    parts=[]
-    if name: parts.append(str(name))
-    if uuid: parts.append(f"({uuid})")
-    if et: parts.append(("– " if (name or uuid) else "")+et)
-    return " ".join(parts) if parts else "N/A"
-
-def process_file(file_path: Path, args, multi_inputs: bool):
+def process_file(file_path: Path, args):
     logging.info(f"Processing: {file_path}")
     data=load_json(file_path)
-    if data is None: return
+    if not data: return
+
+    entity_uuid=data.get("entity_uuid","N/A")
+    metric_entity=data.get("metric_entity","N/A")
     series=data.get("series",[])
     if not isinstance(series,list):
-        logging.warning(f"'series' is not a list in {file_path}. Skipping.")
+        logging.warning(f"Series in {file_path} is not a list; skipping.")
         return
 
-    meta=extract_entity_meta(data,series)
-    entity_display=build_entity_display(meta)
-
-    frames=[make_dataframe(s) for s in series]
-    frames=[f for f in frames if not f.empty]
-    if not frames:
-        logging.error(f"No usable data rows in {file_path}.")
-        return
-    all_df=pd.concat(frames, ignore_index=True)
+    dfs=[make_dataframe(s) for s in series]
+    all_df=pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame(columns=["time","value","metric","units","description"])
     all_df.dropna(subset=["time","value"], inplace=True)
     all_df.sort_values("time", inplace=True)
     if all_df.empty:
-        logging.error(f"All rows are NaN after parsing in {file_path}.")
+        logging.error(f"No data found in {file_path}; skipping.")
         return
 
     metrics_json={}
-    for metric_id, group in all_df.groupby('metric'):
-        group=group.sort_values('time')
-        # Convert timestamps to chosen TZ
-        try:
-            t_local = group['time'].dt.tz_convert(args.timezone)
-        except Exception:
-            t_local = pd.to_datetime(group['time'], errors="coerce", utc=True).dt.tz_convert(args.timezone)
-        times = t_local.dt.strftime('%Y-%m-%d %H:%M:%S').tolist()
-        metrics_json[str(metric_id)] = {
-            "metric": str(metric_id),
-            "unit": str(group['units'].iloc[0]) if not group.empty else "",
-            "label": str(group['description'].iloc[0]) if not group.empty else str(metric_id),
-            "x": times,
-            "y": group['value'].tolist()
+    for metric_id, g in all_df.groupby("metric"):
+        g=g.sort_values("time")
+        times=g["time"].dt.tz_convert(args.timezone).dt.strftime('%Y-%m-%d %H:%M:%S').tolist()
+        metrics_json[metric_id]={
+            "metric":metric_id,
+            "unit":g["units"].iloc[0],
+            "label":g["description"].iloc[0],
+            "x":times,
+            "y":g["value"].tolist()
         }
 
     stats_df=collect_stats(series)
     if not stats_df.empty:
-        stats_df['min_ts']=stats_df['min_ts'].apply(lambda x:_fmt_ts(x,args.timezone))
-        stats_df['max_ts']=stats_df['max_ts'].apply(lambda x:_fmt_ts(x,args.timezone))
-        stats_html=stats_df.to_html(index=False, classes='metrics-table', na_rep="",
-                                    float_format=lambda x:f"{x:,.2f}",
-                                    formatters={'min':_human_number,'max':_human_number,'mean':_human_number,'sum':_human_number,
-                                                'num_samples':'{:,}'.format})
+        stats_df["min_ts"]=stats_df["min_ts"].apply(lambda x:_fmt_ts(x,args.timezone))
+        stats_df["max_ts"]=stats_df["max_ts"].apply(lambda x:_fmt_ts(x,args.timezone))
+        stats_html=stats_df.to_html(index=False, na_rep="",
+                                    float_format=lambda v:f"{v:,.2f}",
+                                    formatters={"min":_human_number,"max":_human_number,
+                                                "mean":_human_number,"sum":_human_number,
+                                                "num_samples":"{:,.0f}".format})
     else:
         stats_html="<table><tr><td>No summary statistics available.</td></tr></table>"
 
-    if args.inline_js and _get_plotlyjs:
-        plotly_js="<script>"+_get_plotlyjs()+"</script>"
-    else:
-        plotly_js='<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>'
-
-    start_time=_to_tz_series(all_df['time'], args.timezone).min().strftime('%Y-%m-%d %H:%M:%S')
-    stop_time =_to_tz_series(all_df['time'], args.timezone).max().strftime('%Y-%m-%d %H:%M:%S')
+    start=all_df["time"].min().tz_convert(args.timezone).strftime('%Y-%m-%d %H:%M:%S')
+    stop =all_df["time"].max().tz_convert(args.timezone).strftime('%Y-%m-%d %H:%M:%S')
     if len(all_df)>1:
-        diffs=all_df['time'].diff().dropna()
+        diffs=all_df["time"].diff().dropna()
         diffs=diffs[diffs.dt.total_seconds()>0]
-        step_sec=diffs.median().total_seconds() if not diffs.empty else "N/A"
+        step=diffs.median().total_seconds() if not diffs.empty else "N/A"
     else:
-        step_sec="N/A"
+        step="N/A"
 
-    mapping={
-        "title": args.title,
-        "entity_display": entity_display,
-        "start": start_time, "stop": stop_time,
-        "step": f"{step_sec:.0f}" if isinstance(step_sec,(float,int)) else step_sec,
-        "tz_label": args.timezone,
-        "summary_table": stats_html,
-        "metrics_json": json.dumps(metrics_json, ensure_ascii=False),
-        "plotly_js": plotly_js,
-        "chart_height": args.chart_height,
+    plotly_js = get_plotlyjs() if args.inline_js else None
+    replacements={
+        "title":args.title,
+        "entity_uuid":entity_uuid,
+        "metric_entity":metric_entity,
+        "start":start,"stop":stop,
+        "step": f"{step:.0f}" if isinstance(step,(float,int)) else step,
+        "tz_label":args.timezone,
+        "summary_table":stats_html,
+        "metrics_json":json.dumps(metrics_json, indent=2),
+        "plotly_js": f"<script>{plotly_js}</script>" if plotly_js else '<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>',
+        "chart_height":args.chart_height
     }
-    html=render_html(HTML_TEMPLATE, mapping)
-    out_path=resolve_output_path(file_path, args.output, multi_inputs)
-    try:
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(html, encoding="utf-8")
-        logging.info(f"Wrote: {out_path}")
-    except IOError as e:
-        logging.error(f"Write failed for {out_path}: {e}")
+    html=render_html(HTML_TEMPLATE, replacements)
+    out=resolve_output_path(file_path, args.output)
+    out.write_text(html, encoding="utf-8")
+    logging.info(f"✔ wrote {out}")
 
 def main():
     args=parse_args()
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, format='[%(levelname)s] %(message)s')
-    inputs=find_json_files(args.input)
-    if not inputs:
-        logging.error("No valid JSON files found.")
-        sys.exit(1)
-    logging.info(f"Found {len(inputs)} JSON file(s).")
-    multi=len(inputs)>1
-    for p in inputs:
-        process_file(p, args, multi_inputs=multi)
+    files=find_json_files(args.input)
+    if not files:
+        logging.error("No JSON files found."); sys.exit(1)
+    logging.info(f"Found {len(files)} JSON file(s).")
+    for p in files: process_file(p, args)
 
 if __name__=="__main__":
     main()
