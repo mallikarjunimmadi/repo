@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-# json2html.py — JSON → interactive HTML graphs (Plotly)
+# json2html.py — JSON → interactive HTML graphs (Plotly) + WIDE CSV export
 #
-# This drop-in version:
-# - Uniform design for Plot / Clear Charts / Reset Zoom / Individual graphs.
-# - Individual graphs is a toggle (same look, colored when active).
-# - Auto-plots / removes charts on metric check/uncheck.
-# - Left + right panes handle their own scrolling; page scrollbar avoided.
-# - Accepts multiple JSON files or directories; validates JSON; extended logging.
+# - Accepts multiple JSON files or directories
+# - Validates JSON; ignores non-JSON
+# - Per-file HTML report
+# - Two-pane UI (metric select + charts)
+# - Auto plot/remove on checkbox change
+# - Unified buttons (Plot/Clear/Reset/Individual/Export)
+# - Floating jump-to-top/bottom
+# - Dark/Light theme
+# - CSV export in WIDE format: time + one column per metric
 
 import argparse
 import json
@@ -39,7 +42,7 @@ ${plotly_js}
     --bg:#f9fafb; --fg:#1f2937; --fg-muted:#6b7280; --border:#e5e7eb;
     --pill:#e5e7eb; --card-bg:#ffffff; --shadow:0 4px 6px -1px rgba(0,0,0,.08),0 2px 4px -2px rgba(0,0,0,.04);
     --primary:#2563eb; --primary-hover:#1d4ed8;
-    /* Space for header/meta/controls; tweak to avoid page scrollbar */
+    /* Adjust to avoid page scrollbar: header + meta + controls */
     --chrome-height: 190px;
   }
   [data-theme="dark"] {
@@ -51,7 +54,7 @@ ${plotly_js}
   body{
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
     color:var(--fg); background:var(--bg); transition:background .3s,color .3s; font-size:14px;
-    overflow:hidden; /* panes will scroll */
+    overflow:hidden; /* panes scroll internally; no page scroll */
   }
   h1{font-size:20px;margin:0;font-weight:600} h2{font-size:16px;margin:0 0 10px;font-weight:600}
   .header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border)}
@@ -66,7 +69,7 @@ ${plotly_js}
   [data-theme="dark"] .tab-btn{background:#1f2937;border-color:#374151;color:#d1d5db}
   [data-theme="dark"] .tab-btn.active{background:#163e71;border-color:#3b82f6;color:#fff}
 
-  /* --- Unified command buttons (Plot/Clear/Reset/Individual) --- */
+  /* Unified command buttons (Plot/Clear/Reset/Individual/Export) */
   .cmd-btn{
     display:inline-flex; align-items:center; justify-content:center;
     gap:8px; padding:8px 14px;
@@ -82,13 +85,13 @@ ${plotly_js}
   }
   .cmd-btn:active{ transform: translateY(0.5px); }
 
-  /* Working area */
+  /* Work area */
   .main-container{
     display:flex; gap:16px; padding:16px;
     height: calc(100dvh - var(--chrome-height));
     box-sizing:border-box;
   }
-  .left-pane{flex:0 0 360px;border-radius:12px;padding:16px;background:var(--card-bg);box-shadow:var(--shadow);overflow:hidden}
+  .left-pane{flex:0 0 360px;border-radius:12px;padding:16px;background:var(--card-bg);box-shadow:var(--shadow);overflow:hidden;display:flex;flex-direction:column}
   .right-pane{flex:1 1 auto;border-radius:12px;padding:16px;background:var(--card-bg);box-shadow:var(--shadow);overflow:auto}
 
   .btn{appearance:none;border:1px solid var(--border);background:var(--card-bg);color:var(--fg);padding:6px 10px;border-radius:8px;cursor:pointer;transition:all .15s ease;font-size:12px}
@@ -99,6 +102,7 @@ ${plotly_js}
   .ms-search-header{display:flex;flex-direction:column;gap:10px;margin-bottom:12px}
   .ms-search{width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--fg)}
   .ms-list-body{flex:1;overflow-y:auto;border:0;border-radius:0}
+  .ms-group-title{position:sticky;top:0;background:var(--card-bg);font-weight:600;font-size:12px;padding:6px 0;color:var(--fg-muted);border-bottom:1px solid var(--border);z-index:1}
   .ms-item{display:flex;gap:10px;padding:8px;border-bottom:1px solid var(--border);cursor:pointer;user-select:none;align-items:flex-start}
   .ms-item:last-of-type{border-bottom:none}
   .ms-item input{margin-top:3px}
@@ -112,7 +116,14 @@ ${plotly_js}
   .charts-wrap{display:grid;grid-template-columns:1fr;gap:16px}
   .chart-card{padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--card-bg);box-shadow:var(--shadow)}
   .chart-title{font-weight:600;margin-bottom:6px;font-size:14px;display:flex;gap:8px;align-items:center}
+  .chart-title .spacer{flex:1}
   .pill{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid var(--border);font-size:12px;background:var(--pill)}
+
+  .mini-btn{
+    border:1px solid var(--border); background:var(--card-bg); color:var(--fg);
+    border-radius:8px; padding:4px 8px; font-size:12px; cursor:pointer;
+  }
+  .mini-btn:hover{ background:var(--bg); }
 
   .fab{position:fixed;right:16px;bottom:16px;display:none;flex-direction:column;gap:8px;z-index:2000}
   .fab-btn{width:44px;height:44px;border-radius:999px;border:1px solid var(--border);background:var(--primary);color:#fff;box-shadow:var(--shadow);cursor:pointer;font-size:18px;line-height:44px;text-align:center}
@@ -141,10 +152,13 @@ ${plotly_js}
       <button id="btn-clear" class="cmd-btn" type="button">Clear Charts</button>
       <button id="btn-reset-range" class="cmd-btn" type="button">Reset Zoom</button>
 
-      <!-- Toggle -->
       <button id="chip-individual" class="cmd-btn is-toggle" type="button"
               aria-pressed="false" title="Toggle: Individual graphs">
         Individual graphs
+      </button>
+
+      <button id="btn-export-csv" class="cmd-btn" type="button" title="Export selected metrics (wide CSV)">
+        Export CSV
       </button>
     </div>
   </div>
@@ -194,7 +208,7 @@ var METRIC_NAMES = Object.keys(METRICS_DATA).sort(function(a,b){ return a.locale
 var THEME_KEY='plot_theme', DEFAULT_THEME='light';
 var FONT_FAMILY='-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif';
 var showSelectedMode=false;
-var SHOW_UNIT_HEADERS=false;
+var SHOW_UNIT_HEADERS=false; // keep false (no PER_SECOND/BITS_PER_SECOND headings)
 
 function debounce(fn,ms){var t;return function(){var args=arguments,ctx=this;clearTimeout(t);t=setTimeout(function(){fn.apply(ctx,args);},ms||120);};}
 
@@ -258,7 +272,6 @@ function buildMetricList(){
       }
     }
 
-    // Use native label-toggle behavior (no extra click handler)
     var lab=document.createElement('label'); lab.className='ms-item'; lab.setAttribute('data-metric', name);
     var cb=document.createElement('input'); cb.type='checkbox'; cb.setAttribute('data-name', name);
     var txt=document.createElement('div'); txt.className='ms-item-text';
@@ -272,10 +285,9 @@ function buildMetricList(){
   var onChange = debounce(function(){
     updateSelectedCount();
     if (showSelectedMode) applyFilter();
-    renderInteractive();  // Auto plot/remove
+    renderInteractive();  // Auto plot/remove on check/uncheck
   }, 120);
 
-  // Only listen to checkbox changes; label click toggles natively
   msBody.addEventListener('change', function(e){
     if (e.target && e.target.matches('input[type="checkbox"][data-name]')) onChange();
   });
@@ -383,13 +395,92 @@ function updateFabVisibility(){
   var fab=document.getElementById('fab-nav');
   fab.style.display = many ? 'flex' : 'none';
 }
+
+/* ---------- CSV helpers (WIDE format) ---------- */
+function csvEscape(val){
+  if (val === null || val === undefined) return '';
+  var s = String(val);
+  if (/[",\n]/.test(s)) return '"' + s.replace(/"/g,'""') + '"';
+  return s;
+}
+function buildWideCSVRowsForMetrics(metricNames){
+  if (!metricNames || !metricNames.length) return [["time"]];
+  // Union of timestamps
+  var timesSet = new Set();
+  for (var i=0;i<metricNames.length;i++){
+    var nm=metricNames[i], m=METRICS_DATA[nm]; if(!m) continue;
+    var xs=m.x||[]; for (var j=0;j<xs.length;j++){ timesSet.add(xs[j]); }
+  }
+  var times = Array.from(timesSet).sort(function(a,b){ return a.localeCompare(b); });
+  // Build lookups per metric
+  var lookups = {};
+  for (var k=0;k<metricNames.length;k++){
+    var name=metricNames[k], m2=METRICS_DATA[name]||{};
+    var xs2=m2.x||[], ys2=m2.y||[];
+    var map=Object.create(null);
+    for (var t=0;t<xs2.length;t++){ map[xs2[t]] = ys2[t]; }
+    lookups[name]=map;
+  }
+  // Rows
+  var header=["time"].concat(metricNames);
+  var rows=[header];
+  for (var r=0;r<times.length;r++){
+    var time=times[r], row=[time];
+    for (var c=0;c<metricNames.length;c++){
+      var col=metricNames[c];
+      var val = lookups[col][time];
+      row.push(val !== undefined ? val : "");
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+function rowsToCSV(rows){
+  var out=[];
+  for (var i=0;i<rows.length;i++){
+    var r=rows[i], line=[];
+    for (var j=0;j<r.length;j++){ line.push(csvEscape(r[j])); }
+    out.push(line.join(','));
+  }
+  return '\ufeff' + out.join('\n'); // UTF-8 BOM for Excel
+}
+function downloadCSV(filename, csvText){
+  try{
+    var blob=new Blob([csvText],{type:'text/csv;charset=utf-8;'});
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click();
+    setTimeout(function(){ URL.revokeObjectURL(url); document.body.removeChild(a); }, 0);
+  }catch(e){
+    var a2=document.createElement('a'); a2.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csvText);
+    a2.download=filename; document.body.appendChild(a2); a2.click(); document.body.removeChild(a2);
+  }
+}
+function exportMetricsToCSVWide(metricNames, fileLabel){
+  if (!metricNames || !metricNames.length) return;
+  var rows = buildWideCSVRowsForMetrics(metricNames);
+  var csv = rowsToCSV(rows);
+  var ts = new Date().toISOString().replace(/[:.]/g,'-');
+  var name = (fileLabel || 'metrics') + '_' + ts + '.csv';
+  downloadCSV(name, csv);
+}
+/* ---------- end CSV helpers ---------- */
+
 function renderPerMetric(names,wrap){
   var ids=[];
   for (var i=0;i<names.length;i++){
     var metricName=names[i]; var m=METRICS_DATA[metricName]; if(!m) continue;
     var unit=m.unit||'UNKNOWN', xTitle=truncateLabel(m.label||m.metric||metricName,140);
     var card=document.createElement('div'); card.className='chart-card';
-    var title=document.createElement('div'); title.className='chart-title'; title.innerHTML=metricName+' <span class="pill">'+unit+'</span>';
+    var title=document.createElement('div'); title.className='chart-title';
+    var left=document.createElement('div');
+    left.innerHTML=escapeHTML(metricName)+' <span class="pill">'+escapeHTML(unit)+'</span>';
+    var spacer=document.createElement('div'); spacer.className='spacer';
+    var exp=document.createElement('button'); exp.className='mini-btn'; exp.textContent='Export CSV';
+    exp.addEventListener('click', function(name){
+      return function(){ exportMetricsToCSVWide([name], name); };
+    }(metricName));
+    title.appendChild(left); title.appendChild(spacer); title.appendChild(exp);
+
     var div=document.createElement('div'); var cid='chart-'+metricName.replace(/[^a-zA-Z0-9_-]/g,'_')+'-'+Math.random().toString(36).slice(2,7);
     div.id=cid; card.appendChild(title); card.appendChild(div); wrap.appendChild(card);
     var traces=[{type:'scatter',mode:'lines+markers',x:m.x,y:m.y,name:metricName,hovertemplate:'Metric: '+(m.label||m.metric||metricName)+'<br>Time: %{x}<br>Value: %{y}<extra></extra>'}];
@@ -402,7 +493,16 @@ function renderGroupedByUnit(names,wrap){
   for (var ui=0; ui<units.length; ui++){
     var unit=units[ui]; var metrics=byU[unit]; if(!metrics || !metrics.length) continue;
     var card=document.createElement('div'); card.className='chart-card';
-    var title=document.createElement('div'); title.className='chart-title'; title.innerHTML='Selected Metrics <span class="pill">'+unit+'</span>';
+    var title=document.createElement('div'); title.className='chart-title';
+    var left=document.createElement('div'); left.innerHTML='Selected Metrics <span class="pill">'+escapeHTML(unit)+'</span>';
+    var spacer=document.createElement('div'); spacer.className='spacer';
+    var exp=document.createElement('button'); exp.className='mini-btn'; exp.textContent='Export CSV';
+    var metricNamesForUnit = metrics.map(function(mm){ return mm.metric; });
+    exp.addEventListener('click', function(list){
+      return function(){ exportMetricsToCSVWide(list, 'metrics_'+unit); };
+    }(metricNamesForUnit));
+    title.appendChild(left); title.appendChild(spacer); title.appendChild(exp);
+
     var div=document.createElement('div'); var cid='chart-unit-'+unit.replace(/[^a-zA-Z0-9_-]/g,'_')+'-'+Math.random().toString(36).slice(2,7);
     div.id=cid; card.appendChild(title); card.appendChild(div); wrap.appendChild(card);
     var traces=[]; for (var mi=0; mi<metrics.length; mi++){ var m=metrics[mi];
@@ -435,7 +535,7 @@ function resetZoomAll(){
   setupTabs();
   wireMetricUI();
 
-  // Unified toggle button wiring for "Individual graphs"
+  // Toggle for "Individual graphs"
   window.__individualMode__ = window.__individualMode__ || false;
   const indBtn = document.getElementById('chip-individual');
   function syncIndBtn(){ indBtn.setAttribute('aria-pressed', window.__individualMode__ ? 'true' : 'false'); }
@@ -444,10 +544,13 @@ function resetZoomAll(){
     syncIndBtn();
   }
 
-  // Action buttons
+  // Actions
   el=document.getElementById('btn-plot'); if(el) el.addEventListener('click', renderInteractive);
   el=document.getElementById('btn-clear'); if(el) el.addEventListener('click', function(){ document.getElementById('interactive-panels').innerHTML=''; updateFabVisibility(); });
   el=document.getElementById('btn-reset-range'); if(el) el.addEventListener('click', resetZoomAll);
+  el=document.getElementById('btn-export-csv'); if(el) el.addEventListener('click', function(){
+    var names = getCheckedMetricNames(); if (!names.length) return; exportMetricsToCSVWide(names, 'metrics_selected');
+  });
 
   // Floating nav
   var pane=document.getElementById('right-pane-interactive');
@@ -686,7 +789,11 @@ def process_file(file_path: Path, args, multi_inputs: bool):
     metrics_json={}
     for metric_id, group in all_df.groupby('metric'):
         group=group.sort_values('time')
-        t_local = _to_tz_series(group['time'], args.timezone)
+        # Convert timestamps to chosen TZ
+        try:
+            t_local = group['time'].dt.tz_convert(args.timezone)
+        except Exception:
+            t_local = pd.to_datetime(group['time'], errors="coerce", utc=True).dt.tz_convert(args.timezone)
         times = t_local.dt.strftime('%Y-%m-%d %H:%M:%S').tolist()
         metrics_json[str(metric_id)] = {
             "metric": str(metric_id),
