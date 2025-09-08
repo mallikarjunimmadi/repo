@@ -10,6 +10,7 @@
 # - UI: chevron collapse, search/select, live plot/unplot, sync zoom,
 #       global/per-chart legend, global/per-chart CSV (timestamp + metric columns),
 #       jump top/bottom, light/dark theme (charts update).
+# - ✅ FIX: Charts now resize on chevron collapse/expand and other layout changes.
 
 import argparse, json, logging, sys
 from collections import defaultdict
@@ -75,6 +76,9 @@ ${plotly_js}
     display:grid;
     grid-template-columns: var(--lp) minmax(0,1fr);
     gap:var(--gap); padding:var(--gap)
+    /* optional smoothness:
+    transition: grid-template-columns .18s ease;
+    */
   }
   .main.collapsed{ --lp: 0px; grid-template-columns: minmax(0,1fr); }
   .main.collapsed #left-pane{ display:none; }
@@ -83,6 +87,9 @@ ${plotly_js}
   .left{min-height:60vh;max-height:calc(100vh - 170px);overflow:auto}
   .right{min-height:60vh;max-height:calc(100vh - 170px);overflow:auto}
 
+  /* Ensure chart hosts fill their container width */
+  .chart-host{width:100%}
+
   /* Chevron handle */
   .chevron{
     position:absolute; top:50%; transform:translateY(-50%);
@@ -90,6 +97,9 @@ ${plotly_js}
     width:42px;height:64px;border-radius:14px;border:1px solid var(--border);
     background:var(--card); color:var(--text); display:grid; place-items:center; cursor:pointer;
     box-shadow:var(--shadow); z-index:60; user-select:none;
+    /* optional smoothness:
+    transition: left .18s ease;
+    */
   }
   .chevron span{font-size:20px;line-height:1}
 
@@ -197,7 +207,7 @@ const THEME_KEY = 'json2html-theme';
 const PlotH = ${chart_height};
 
 let legendDefaultOn = true;
-let currentCharts = [];
+let currentCharts = []; // array of chart div ids
 
 /* Utils */
 function esc(s){ return (s||'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
@@ -211,7 +221,9 @@ function themeColors(){
 function applyThemeToCharts(){
   const t = themeColors();
   (currentCharts || []).forEach(id => {
-    Plotly.relayout(id, {
+    const el = document.getElementById(id);
+    if(!el) return;
+    Plotly.relayout(el, {
       'paper_bgcolor': t.panel,
       'plot_bgcolor' : t.panel,
       'font.color'   : t.text,
@@ -226,6 +238,28 @@ function applyThemeToCharts(){
   });
 }
 
+/* === Robust resizing === */
+function fitChartsToHosts(){
+  (currentCharts || []).forEach(id => {
+    const el = document.getElementById(id);
+    if(!el) return;
+    const host = el.parentElement; // .chart-host
+    if(!host) return;
+    const w = Math.floor(host.getBoundingClientRect().width);
+    if(w > 0){
+      Plotly.relayout(el, {autosize: true, width: w}).then(() => {
+        Plotly.Plots.resize(el);
+      }).catch(() => {
+        try { Plotly.Plots.resize(el); } catch(e){}
+      });
+    }
+  });
+}
+function resizeCharts(){
+  cancelAnimationFrame(resizeCharts._raf || 0);
+  resizeCharts._raf = requestAnimationFrame(fitChartsToHosts);
+}
+
 /* THEME */
 function setTheme(t){ document.body.setAttribute('data-theme',t); localStorage.setItem(THEME_KEY,t); }
 (function(){
@@ -234,12 +268,13 @@ function setTheme(t){ document.body.setAttribute('data-theme',t); localStorage.s
     const next = document.body.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
     setTheme(next);
     applyThemeToCharts();
+    resizeCharts();
   };
 })();
 
 /* TABS */
-document.getElementById('tab-interactive').onclick = ()=> setActiveTab(true);
-document.getElementById('tab-summary').onclick     = ()=> setActiveTab(false);
+document.getElementById('tab-interactive').onclick = ()=> { setActiveTab(true); resizeCharts(); };
+document.getElementById('tab-summary').onclick     = ()=> { setActiveTab(false); };
 function setActiveTab(toInteractive){
   const a = document.getElementById('tab-interactive');
   const b = document.getElementById('tab-summary');
@@ -254,8 +289,30 @@ function setActiveTab(toInteractive){
   const main = document.getElementById('interactive-main');
   const chev = document.getElementById('chevron');
   function setArrow(){ chev.querySelector('span').textContent = main.classList.contains('collapsed') ? '❯' : '❮'; }
-  chev.onclick = ()=>{ main.classList.toggle('collapsed'); setArrow(); };
+  chev.onclick = ()=>{
+    main.classList.toggle('collapsed');
+    setArrow();
+    // Resize after grid reflows
+    requestAnimationFrame(resizeCharts);
+    setTimeout(resizeCharts, 150);
+  };
   setArrow();
+})();
+
+/* Observe layout changes to trigger resizes */
+(function(){
+  const rp = document.getElementById('right-pane');
+  if ('ResizeObserver' in window && rp){
+    let t=null;
+    const ro = new ResizeObserver(() => { clearTimeout(t); t=setTimeout(resizeCharts, 60); });
+    ro.observe(rp);
+  }
+  const grid = document.getElementById('interactive-main');
+  if (grid && 'MutationObserver' in window){
+    const mo = new MutationObserver(() => resizeCharts());
+    mo.observe(grid, {attributes:true, attributeFilter:['class']});
+  }
+  window.addEventListener('resize', resizeCharts);
 })();
 
 /* Jump controls */
@@ -300,7 +357,7 @@ const MS = (() => {
 
   function toggle(name, checked){
     if(checked) state.selected.add(name); else state.selected.delete(name);
-    updateCounts(); renderInteractive();
+    updateCounts(); renderInteractive(); // live plot/unplot
   }
 
   function updateCounts(){
@@ -340,6 +397,7 @@ function baseLayout(xTitle, showLegend, legendRows){
   const t = themeColors();
   const b = showLegend ? (legendRows>1?120:80) : 60;
   return {
+    autosize:true,  // important for responsive width
     paper_bgcolor:t.panel, plot_bgcolor:t.panel, font:{color:t.text},
     margin:{t:24,r:18,b:b,l:54},
     xaxis:{title:xTitle, gridcolor:t.grid, automargin:true, titlefont:{color:t.text}, tickfont:{color:t.text}},
@@ -364,8 +422,10 @@ function setupRangeSync(ids){
   function apply(src,r0,r1,auto){
     suppress=true;
     for(const id of ids){ if(id===src) continue;
-      if(auto) Plotly.relayout(id, {'xaxis.autorange':true});
-      else if(r0!=null && r1!=null) Plotly.relayout(id, {'xaxis.range':[r0,r1],'xaxis.autorange':false});
+      const el = document.getElementById(id);
+      if(!el) continue;
+      if(auto) Plotly.relayout(el, {'xaxis.autorange':true});
+      else if(r0!=null && r1!=null) Plotly.relayout(el, {'xaxis.range':[r0,r1],'xaxis.autorange':false});
     }
     setTimeout(()=>{suppress=false;},0);
   }
@@ -383,7 +443,7 @@ function renderInteractive(){
   const wrap = document.getElementById('interactive-panels');
   wrap.innerHTML=''; currentCharts=[];
 
-  if(!names.length) return;
+  if(!names.length){ resizeCharts(); return; }
 
   const individual = document.getElementById('btn-individual').classList.contains('is-active');
 
@@ -405,7 +465,7 @@ function renderInteractive(){
       const traces=[{type:'scatter', mode:'lines+markers', x:m.x, y:m.y, name:metric, hovertemplate:(m.label||m.metric)+'<br>%{x}<br>%{y}<extra></extra>'}];
       Plotly.newPlot(div.id, traces, baseLayout(m.label||m.metric, legendDefaultOn, 1), {responsive:true,displaylogo:false}).then(()=>{
         Plotly.relayout(div.id,{height:PlotH}); currentCharts.push(div.id);
-        if(currentCharts.length === names.length) { setupRangeSync(currentCharts); applyThemeToCharts(); }
+        if(currentCharts.length === names.length) { setupRangeSync(currentCharts); applyThemeToCharts(); resizeCharts(); }
       });
     }
   }else{
@@ -427,7 +487,7 @@ function renderInteractive(){
     const rows = Math.ceil(traces.length/6);
     Plotly.newPlot(div.id, traces, baseLayout('', legendDefaultOn, rows), {responsive:true,displaylogo:false}).then(()=>{
       Plotly.relayout(div.id,{height:PlotH}); currentCharts.push(div.id);
-      setupRangeSync(currentCharts); applyThemeToCharts();
+      setupRangeSync(currentCharts); applyThemeToCharts(); resizeCharts();
     });
   }
 
@@ -447,16 +507,16 @@ function renderInteractive(){
 }
 
 /* Top bar buttons */
-document.getElementById('btn-plot').onclick  = renderInteractive;
-document.getElementById('btn-clear').onclick = ()=>{ document.getElementById('interactive-panels').innerHTML=''; currentCharts=[]; };
-document.getElementById('btn-reset').onclick = ()=>{ currentCharts.forEach(id => Plotly.relayout(id, {'xaxis.autorange':true, 'yaxis.autorange':true})); };
+document.getElementById('btn-plot').onclick  = ()=> { renderInteractive(); resizeCharts(); };
+document.getElementById('btn-clear').onclick = ()=>{ document.getElementById('interactive-panels').innerHTML=''; currentCharts=[]; resizeCharts(); };
+document.getElementById('btn-reset').onclick = ()=>{ currentCharts.forEach(id => { const el=document.getElementById(id); if(el){ Plotly.relayout(el, {'xaxis.autorange':true, 'yaxis.autorange':true}); }}); };
 document.getElementById('btn-individual').onclick = (e)=>{ e.currentTarget.classList.toggle('is-active'); renderInteractive(); };
 
 /* Global legend baseline (mini toggles remain independent after) */
 document.getElementById('btn-legend').onclick = (e)=>{
   legendDefaultOn = !legendDefaultOn;
   e.currentTarget.classList.toggle('is-active', legendDefaultOn);
-  currentCharts.forEach(id => Plotly.relayout(id, {'showlegend': legendDefaultOn}));
+  currentCharts.forEach(id => { const el=document.getElementById(id); if(el){ Plotly.relayout(el, {'showlegend': legendDefaultOn}); }});
   document.querySelectorAll('.legend-mini').forEach(b => b.classList.toggle('is-active', legendDefaultOn));
 };
 
@@ -660,6 +720,7 @@ def build_merged_metrics(paths, tz_name):
         g = g.drop_duplicates(subset=["time"], keep="last").reset_index(drop=True)  # keep newest mtime per timestamp
         g = g.sort_values("time")
         frames.append(g.assign(metric=name, units=meta["unit"], description=meta["label"]))
+
         # Convert times to selected tz for HTML payload
         times = g["time"].dt.tz_convert(tz_name).dt.strftime('%Y-%m-%d %H:%M:%S').tolist()
         metrics_map[name] = {
