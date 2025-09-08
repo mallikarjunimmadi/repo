@@ -10,6 +10,7 @@
 # - Export CSV (global + per-chart) with "timestamp" + metric columns.
 # - Jump to Top/Bottom (prefers right pane scroll).
 # - Light/Dark theme + relayout of existing charts on toggle.
+# - ✅ FIX: Charts now resize on chevron collapse/expand (ResizeObserver + MutationObserver + explicit relayout/resize).
 
 import argparse, json, logging, sys
 from pathlib import Path
@@ -25,7 +26,7 @@ HTML_TEMPLATE = r"""<!doctype html>
 ${plotly_js}
 <style>
   :root{
-    --left-pane-width: 420px;   /* adjust to widen/narrow the selector */
+    --left-pane-width: 420px;
     --gap: 16px;
 
     /* light */
@@ -80,10 +81,13 @@ ${plotly_js}
   .left{min-height:60vh;max-height:calc(100vh - 170px);overflow:auto}
   .right{min-height:60vh;max-height:calc(100vh - 170px);overflow:auto}
 
+  /* Ensure chart hosts fill their container width */
+  .chart-host{width:100%}
+
   /* Chevron handle: positioned on the divider; always visible */
   .chevron{
     position:absolute; top:50%; transform:translateY(-50%);
-    left: calc(var(--gap) + var(--lp) - 12px);   /* center on divider; visible even when collapsed */
+    left: calc(var(--gap) + var(--lp) - 12px);
     width:42px;height:64px;border-radius:14px;border:1px solid var(--border);
     background:var(--card); color:var(--text); display:grid; place-items:center; cursor:pointer;
     box-shadow:var(--shadow); z-index:60; user-select:none;
@@ -223,6 +227,31 @@ function applyThemeToCharts(){
   });
 }
 
+/* === Robust resizing === */
+function fitChartsToHosts(){
+  (currentCharts || []).forEach(id => {
+    const el = document.getElementById(id);
+    if(!el) return;
+    const host = el.parentElement;               // .chart-host lives directly under card
+    if(!host) return;
+    const w = Math.floor(host.getBoundingClientRect().width);
+    if(w > 0){
+      // Force width, then let Plotly compute everything else
+      Plotly.relayout(el, {autosize: true, width: w}).then(()=> {
+        Plotly.Plots.resize(el);
+      }).catch(()=> {
+        // Fallback if relayout rejected
+        try { Plotly.Plots.resize(el); } catch(e){}
+      });
+    }
+  });
+}
+function resizeCharts(){
+  // slight debounce via rAF to coalesce multiple triggers
+  cancelAnimationFrame(resizeCharts._raf || 0);
+  resizeCharts._raf = requestAnimationFrame(fitChartsToHosts);
+}
+
 /* THEME BOOTSTRAP */
 function setTheme(t){ document.body.setAttribute('data-theme',t); localStorage.setItem(THEME_KEY,t); }
 (function(){
@@ -231,13 +260,14 @@ function setTheme(t){ document.body.setAttribute('data-theme',t); localStorage.s
   btn.onclick = () => {
     const next = document.body.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
     setTheme(next);
-    applyThemeToCharts(); // reflect instantly on existing charts
+    applyThemeToCharts();
+    resizeCharts();
   };
 })();
 
 /* TABS */
-document.getElementById('tab-interactive').onclick = ()=> setActiveTab(true);
-document.getElementById('tab-summary').onclick     = ()=> setActiveTab(false);
+document.getElementById('tab-interactive').onclick = ()=> { setActiveTab(true); resizeCharts(); };
+document.getElementById('tab-summary').onclick     = ()=> { setActiveTab(false); };
 function setActiveTab(toInteractive){
   const a = document.getElementById('tab-interactive');
   const b = document.getElementById('tab-summary');
@@ -252,11 +282,33 @@ function setActiveTab(toInteractive){
   const main = document.getElementById('interactive-main');
   const chev = document.getElementById('chevron');
   function setArrow(){ chev.querySelector('span').textContent = main.classList.contains('collapsed') ? '❯' : '❮'; }
-  chev.onclick = ()=>{ main.classList.toggle('collapsed'); setArrow(); };
+  chev.onclick = ()=>{
+    main.classList.toggle('collapsed');
+    setArrow();
+    // after layout flip, fit charts
+    requestAnimationFrame(resizeCharts);
+    setTimeout(resizeCharts, 150); // extra pass after paint
+  };
   setArrow();
 })();
 
-/* JUMP buttons (prefer right pane, else page) */
+/* Observers to catch layout changes */
+(function(){
+  const rp = document.getElementById('right-pane');
+  if ('ResizeObserver' in window && rp){
+    const ro = new ResizeObserver(() => resizeCharts());
+    ro.observe(rp);
+  }
+  // Watch the grid element for class changes (collapsed <-> expanded)
+  const grid = document.getElementById('interactive-main');
+  if (grid && 'MutationObserver' in window){
+    const mo = new MutationObserver(() => resizeCharts());
+    mo.observe(grid, {attributes:true, attributeFilter:['class']});
+  }
+  window.addEventListener('resize', resizeCharts);
+})();
+
+/* JUMP buttons */
 function scrollTarget(){
   const rp = document.getElementById('right-pane');
   if (rp && rp.scrollHeight > rp.clientHeight) return rp;
@@ -338,6 +390,7 @@ function baseLayout(xTitle, showLegend, legendRows){
   const t = themeColors();
   const b = showLegend ? (legendRows>1?120:80) : 60;
   return {
+    autosize:true,                                   // <— important
     paper_bgcolor:t.panel, plot_bgcolor:t.panel, font:{color:t.text},
     margin:{t:24,r:18,b:b,l:54},
     xaxis:{title:xTitle, gridcolor:t.grid, automargin:true, titlefont:{color:t.text}, tickfont:{color:t.text}},
@@ -375,13 +428,13 @@ function setupRangeSync(ids){
   }
 }
 
-/* Render charts (called on selection changes, plot button, layout toggles) */
+/* Render charts */
 function renderInteractive(){
   const names = MS.getSelected();
   const wrap = document.getElementById('interactive-panels');
   wrap.innerHTML=''; currentCharts=[];
 
-  if(!names.length) return;
+  if(!names.length){ resizeCharts(); return; }
 
   const individual = document.getElementById('btn-individual').classList.contains('is-active');
 
@@ -403,7 +456,7 @@ function renderInteractive(){
       const traces=[{type:'scatter', mode:'lines+markers', x:m.x, y:m.y, name:metric, hovertemplate:(m.label||m.metric)+'<br>%{x}<br>%{y}<extra></extra>'}];
       Plotly.newPlot(div.id, traces, baseLayout(m.label||m.metric, legendDefaultOn, 1), {responsive:true,displaylogo:false}).then(()=>{
         Plotly.relayout(div.id,{height:PlotH}); currentCharts.push(div.id);
-        if(currentCharts.length === names.length) { setupRangeSync(currentCharts); applyThemeToCharts(); }
+        if(currentCharts.length === names.length) { setupRangeSync(currentCharts); applyThemeToCharts(); resizeCharts(); }
       });
     }
   }else{
@@ -425,7 +478,7 @@ function renderInteractive(){
     const rows = Math.ceil(traces.length/6);
     Plotly.newPlot(div.id, traces, baseLayout('', legendDefaultOn, rows), {responsive:true,displaylogo:false}).then(()=>{
       Plotly.relayout(div.id,{height:PlotH}); currentCharts.push(div.id);
-      setupRangeSync(currentCharts); applyThemeToCharts();
+      setupRangeSync(currentCharts); applyThemeToCharts(); resizeCharts();
     });
   }
 
@@ -445,12 +498,12 @@ function renderInteractive(){
 }
 
 /* Top bar buttons */
-document.getElementById('btn-plot').onclick  = renderInteractive;
-document.getElementById('btn-clear').onclick = ()=>{ document.getElementById('interactive-panels').innerHTML=''; currentCharts=[]; };
+document.getElementById('btn-plot').onclick  = ()=> { renderInteractive(); resizeCharts(); };
+document.getElementById('btn-clear').onclick = ()=>{ document.getElementById('interactive-panels').innerHTML=''; currentCharts=[]; resizeCharts(); };
 document.getElementById('btn-reset').onclick = ()=>{ currentCharts.forEach(id => Plotly.relayout(id, {'xaxis.autorange':true, 'yaxis.autorange':true})); };
 document.getElementById('btn-individual').onclick = (e)=>{ e.currentTarget.classList.toggle('is-active'); renderInteractive(); };
 
-/* Global legend: sets baseline for current charts; mini toggles still allow per-chart changes after */
+/* Global legend baseline */
 document.getElementById('btn-legend').onclick = (e)=>{
   legendDefaultOn = !legendDefaultOn;
   e.currentTarget.classList.toggle('is-active', legendDefaultOn);
@@ -465,7 +518,7 @@ document.getElementById('btn-export').onclick = ()=>{
   exportCSV(names);
 };
 
-/* CSV helpers (timestamp + metric columns) */
+/* CSV helpers */
 function buildAlignedTable(metricNames){
   const ts = new Set(), map={};
   for(const name of metricNames){
