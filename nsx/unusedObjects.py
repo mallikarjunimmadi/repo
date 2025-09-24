@@ -60,7 +60,7 @@ def setup_logging(log_file: Optional[str], level: str = "INFO") -> None:
 SYSTEM_BOOL_FLAGS = (
     "is_default",
     "is_policy_default",
-    "system_owned",
+    "_system_owned",
     "is_system_owned",
     "predefined",
     "read_only",
