@@ -2,8 +2,16 @@
 # nsx_objects_where_used.py
 #
 # Inventory NSX-T Services and Groups; report where each is used (DFW/GW-FW rules).
-# Excludes system-owned/system-created Services & Groups by default.
-# Outputs auto-prefixed with the NSX host (FQDN/IP):
+# - Pass only FQDN/IP (no scheme); script uses https://<host>
+# - Prompts for missing nsx/user/password (secure getpass)
+# - verify-ssl default false
+# - Excludes system-owned Services/Groups by default (configurable)
+# - Detailed logging + rotating file support + retry/backoff with jitter
+# - Multithreaded:
+#     * Per-object GETs (Services/Groups) to read system flags (accurate)
+#     * DFW & GW policy/rule scans
+#
+# Outputs auto-prefixed with the NSX host:
 #   <host>_services_usage.csv
 #   <host>_services_unused.csv
 #   <host>_groups_usage.csv
@@ -20,7 +28,9 @@ from logging.handlers import RotatingFileHandler
 import random
 import sys
 import time
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Iterable
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 
@@ -66,7 +76,6 @@ def is_group_path(s: str) -> bool:
     return isinstance(s, str) and "/infra/domains/" in s and "/groups/" in s
 
 def ensure_value(v: Optional[str], prompt_text: str, secret: bool = False) -> str:
-    """Prompt until a non-empty value is provided. Uses getpass for secrets."""
     if v and v.strip():
         return v.strip()
     while True:
@@ -75,12 +84,16 @@ def ensure_value(v: Optional[str], prompt_text: str, secret: bool = False) -> st
             return entered.strip()
 
 def is_system_object(obj: dict) -> Tuple[bool, List[str]]:
-    """Return (is_system, reasons[]) based on common system flags across NSX versions."""
     reasons = [k for k in SYSTEM_BOOL_FLAGS if isinstance(obj.get(k), bool) and obj[k]]
     return (len(reasons) > 0, reasons)
 
+def clamp_threads(n: int) -> int:
+    if n < 1: return 1
+    if n > 10: return 10
+    return n
+
 # -----------------------------
-# NSX Client (retries, backoff)
+# NSX Client (retries, backoff, per-thread sessions)
 # -----------------------------
 
 class NSXClient:
@@ -95,7 +108,6 @@ class NSXClient:
         backoff: float = 1.5,
         jitter: float = 0.25,
     ):
-        # Always https
         self.base = f"https://{host.strip()}"
         self.host = host.strip()
         self.verify = verify_ssl
@@ -104,9 +116,8 @@ class NSXClient:
         self.backoff = backoff
         self.jitter = jitter
 
-        self.session = requests.Session()
-        self.session.auth = (username, password)
-        self.session.headers.update({"Accept": "application/json"})
+        self._auth = (username, password)
+        self._tls = threading.local()  # per-thread session
 
         if not verify_ssl:
             requests.packages.urllib3.disable_warnings(
@@ -114,6 +125,15 @@ class NSXClient:
             )
 
         self.log = logging.getLogger(self.__class__.__name__)
+
+    def _get_session(self) -> requests.Session:
+        sess = getattr(self._tls, "session", None)
+        if sess is None:
+            sess = requests.Session()
+            sess.auth = self._auth
+            sess.headers.update({"Accept": "application/json"})
+            self._tls.session = sess
+        return sess
 
     def _sleep_backoff(self, attempt: int) -> None:
         delay = (self.backoff ** attempt) + random.uniform(0, self.jitter)
@@ -125,7 +145,7 @@ class NSXClient:
         while True:
             try:
                 self.log.debug("HTTP %s %s params=%s", method, url, params)
-                r = self.session.request(
+                r = self._get_session().request(
                     method, url, params=params, timeout=self.timeout, verify=self.verify
                 )
                 if r.status_code == 401:
@@ -164,52 +184,105 @@ class NSXClient:
                 break
         return items
 
+    def get_by_policy_path(self, policy_path: str) -> dict:
+        """
+        Accepts '/infra/...' or '/policy/api/v1/infra/...'
+        Returns the full object via GET.
+        """
+        if policy_path.startswith("/policy/api/v1/"):
+            path = policy_path
+        elif policy_path.startswith("/infra/"):
+            path = "/policy/api/v1" + policy_path
+        else:
+            # Fallback: assume already a full path under policy API
+            path = policy_path
+        return self._req("GET", path)
+
 # -----------------------------
-# Collectors (with system filtering)
+# Collectors (threaded, with per-object GETs)
 # -----------------------------
 
-def list_services(nsx: NSXClient, exclude_system: bool) -> Dict[str, dict]:
-    svcs = nsx.paged_get_all("/policy/api/v1/infra/services")
-    out: Dict[str, dict] = {}
-    sys_excluded = 0
-    for s in svcs:
-        path = s.get("path")
-        if not path:
-            continue
-        if exclude_system:
-            is_sys, reasons = is_system_object(s)
-            if is_sys:
-                sys_excluded += 1
-                logging.debug("Excluding system Service id=%s name=%s reasons=%s",
-                              s.get("id"), s.get("display_name"), ",".join(reasons))
-                continue
-        out[path] = s
-    logging.info("Discovered %d Services (excluded %d system-owned)", len(out), sys_excluded)
-    return out
+def collect_all_service_paths(nsx: NSXClient) -> List[str]:
+    items = nsx.paged_get_all("/policy/api/v1/infra/services")
+    paths = [it["path"] for it in items if isinstance(it, dict) and it.get("path")]
+    logging.info("Listed %d Services (shallow)", len(paths))
+    return paths
 
-def list_domains(nsx: NSXClient) -> List[dict]:
+def collect_all_group_paths(nsx: NSXClient) -> List[str]:
+    paths: List[str] = []
     domains = nsx.paged_get_all("/policy/api/v1/infra/domains")
     logging.info("Discovered %d Domains", len(domains))
-    return domains
-
-def list_groups_for_domain(nsx: NSXClient, domain_id: str, exclude_system: bool) -> Dict[str, dict]:
-    groups = nsx.paged_get_all(f"/policy/api/v1/infra/domains/{domain_id}/groups")
-    m: Dict[str, dict] = {}
-    sys_excluded = 0
-    for g in groups:
-        path = g.get("path")
-        if not path:
+    for d in domains:
+        did = d.get("id")
+        if not did:
             continue
+        groups = nsx.paged_get_all(f"/policy/api/v1/infra/domains/{did}/groups")
+        gpaths = [g["path"] for g in groups if isinstance(g, dict) and g.get("path")]
+        logging.info("Domain '%s': %d Groups (shallow)", did, len(gpaths))
+        paths.extend(gpaths)
+    logging.info("Total Groups (shallow across domains): %d", len(paths))
+    return paths
+
+def fetch_objects_threaded(nsx: NSXClient, policy_paths: Iterable[str], threads: int) -> Dict[str, dict]:
+    """
+    Threaded GET of each policy object by path. Returns {path: full_object}.
+    """
+    results: Dict[str, dict] = {}
+    paths = list(policy_paths)
+    logging.info("Fetching %d objects in detail (threads=%d)...", len(paths), threads)
+
+    def _fetch(p: str):
+        try:
+            obj = nsx.get_by_policy_path(p)
+            return p, obj
+        except Exception as e:
+            logging.warning("Failed to fetch %s: %s", p, e)
+            return p, {}
+
+    with ThreadPoolExecutor(max_workers=threads) as ex:
+        futures = [ex.submit(_fetch, p) for p in paths]
+        for fut in as_completed(futures):
+            p, obj = fut.result()
+            if obj:
+                results[p] = obj
+    logging.info("Fetched %d/%d objects", len(results), len(paths))
+    return results
+
+def load_services_full_filtered(nsx: NSXClient, exclude_system: bool, threads: int) -> Dict[str, dict]:
+    svc_paths = collect_all_service_paths(nsx)
+    svc_map = fetch_objects_threaded(nsx, svc_paths, threads)
+    kept, excluded = {}, 0
+    for p, o in svc_map.items():
         if exclude_system:
-            is_sys, reasons = is_system_object(g)
+            is_sys, reasons = is_system_object(o)
             if is_sys:
-                sys_excluded += 1
-                logging.debug("Excluding system Group id=%s name=%s domain=%s reasons=%s",
-                              g.get("id"), g.get("display_name"), domain_id, ",".join(reasons))
+                excluded += 1
+                logging.debug("Excluding system Service id=%s name=%s reasons=%s",
+                              o.get("id"), o.get("display_name"), ",".join(reasons))
                 continue
-        m[path] = g
-    logging.info("Domain '%s': %d Groups (excluded %d system-owned)", domain_id, len(m), sys_excluded)
-    return m
+        kept[p] = o
+    logging.info("Services kept: %d (excluded system: %d)", len(kept), excluded)
+    return kept
+
+def load_groups_full_filtered(nsx: NSXClient, exclude_system: bool, threads: int) -> Dict[str, dict]:
+    grp_paths = collect_all_group_paths(nsx)
+    grp_map = fetch_objects_threaded(nsx, grp_paths, threads)
+    kept, excluded = {}, 0
+    for p, o in grp_map.items():
+        if exclude_system:
+            is_sys, reasons = is_system_object(o)
+            if is_sys:
+                excluded += 1
+                logging.debug("Excluding system Group id=%s name=%s reasons=%s",
+                              o.get("id"), o.get("display_name"), ",".join(reasons))
+                continue
+        kept[p] = o
+    logging.info("Groups kept: %d (excluded system: %d)", len(kept), excluded)
+    return kept
+
+# -----------------------------
+# Rule scanners (threaded)
+# -----------------------------
 
 def list_security_policies(nsx: NSXClient, domain_id: str) -> List[dict]:
     return nsx.paged_get_all(f"/policy/api/v1/infra/domains/{domain_id}/security-policies")
@@ -236,63 +309,68 @@ def list_gateway_policies_for_t1(nsx: NSXClient, t1_id: str) -> List[dict]:
 def list_gp_rules(nsx: NSXClient, base_path: str, policy_id: str) -> List[dict]:
     return nsx.paged_get_all(f"{base_path}/{policy_id}/rules")
 
-# -----------------------------
-# Index where-used
-# -----------------------------
+def scan_dfw_threaded(nsx: NSXClient, threads: int):
+    svc_hits, grp_hits = [], []
+    domains = nsx.paged_get_all("/policy/api/v1/infra/domains")
+    def _scan_policy(did: str, pid: str):
+        local_svc, local_grp = [], []
+        for rule in list_sp_rules(nsx, did, pid):
+            if rule.get("services"):
+                local_svc.append((did, pid, rule))
+            if rule.get("source_groups") or rule.get("destination_groups") or rule.get("scope"):
+                local_grp.append((did, pid, rule))
+        return local_svc, local_grp
 
-def index_dfw_usage(nsx: NSXClient):
-    svc_hits = []
-    grp_hits = []
-    for d in list_domains(nsx):
+    tasks = []
+    for d in domains:
         did = d.get("id")
         if not did:
             continue
         for pol in list_security_policies(nsx, did):
             pid = pol.get("id")
-            if not pid:
-                continue
-            rules = list_sp_rules(nsx, did, pid)
-            for rule in rules:
-                if rule.get("services"):
-                    svc_hits.append((did, pid, rule))
-                if rule.get("source_groups") or rule.get("destination_groups") or rule.get("scope"):
-                    grp_hits.append((did, pid, rule))
+            if pid:
+                tasks.append((did, pid))
+
+    logging.info("DFW: scheduling %d policy scans (threads=%d)", len(tasks), threads)
+    with ThreadPoolExecutor(max_workers=threads) as ex:
+        futures = [ex.submit(_scan_policy, did, pid) for (did, pid) in tasks]
+        for fut in as_completed(futures):
+            s, g = fut.result()
+            svc_hits.extend(s)
+            grp_hits.extend(g)
+
     logging.info("DFW: %d rules with Services, %d rules with Group refs", len(svc_hits), len(grp_hits))
     return svc_hits, grp_hits
 
-def index_gwfw_usage(nsx: NSXClient):
-    svc_hits = []
-    grp_hits = []
-
+def scan_gwfw_threaded(nsx: NSXClient, threads: int):
+    svc_hits, grp_hits = [], []
+    gw_tasks = []
     for t0 in list_t0s(nsx):
-        t0id = t0.get("id")
-        if not t0id:
-            continue
-        base = f"/policy/api/v1/infra/tier-0s/{t0id}/gateway-policies"
+        t0id = t0.get("id");  base = f"/policy/api/v1/infra/tier-0s/{t0id}/gateway-policies"
         for pol in list_gateway_policies_for_t0(nsx, t0id):
-            pid = pol.get("id")
-            if not pid:
-                continue
-            for rule in list_gp_rules(nsx, base, pid):
-                if rule.get("services"):
-                    svc_hits.append(("tier-0", t0id, pid, rule))
-                if rule.get("source_groups") or rule.get("destination_groups") or rule.get("scope"):
-                    grp_hits.append(("tier-0", t0id, pid, rule))
-
+            pid = pol.get("id");  pid and gw_tasks.append(("tier-0", t0id, pid, base))
     for t1 in list_t1s(nsx):
-        t1id = t1.get("id")
-        if not t1id:
-            continue
-        base = f"/policy/api/v1/infra/tier-1s/{t1id}/gateway-policies"
+        t1id = t1.get("id");  base = f"/policy/api/v1/infra/tier-1s/{t1id}/gateway-policies"
         for pol in list_gateway_policies_for_t1(nsx, t1id):
-            pid = pol.get("id")
-            if not pid:
-                continue
-            for rule in list_gp_rules(nsx, base, pid):
-                if rule.get("services"):
-                    svc_hits.append(("tier-1", t1id, pid, rule))
-                if rule.get("source_groups") or rule.get("destination_groups") or rule.get("scope"):
-                    grp_hits.append(("tier-1", t1id, pid, rule))
+            pid = pol.get("id");  pid and gw_tasks.append(("tier-1", t1id, pid, base))
+
+    logging.info("GW-FW: scheduling %d policy scans (threads=%d)", len(gw_tasks), threads)
+
+    def _scan_gw_policy(tier: str, tid: str, pid: str, base: str):
+        local_svc, local_grp = [], []
+        for rule in list_gp_rules(nsx, base, pid):
+            if rule.get("services"):
+                local_svc.append((tier, tid, pid, rule))
+            if rule.get("source_groups") or rule.get("destination_groups") or rule.get("scope"):
+                local_grp.append((tier, tid, pid, rule))
+        return local_svc, local_grp
+
+    with ThreadPoolExecutor(max_workers=threads) as ex:
+        futures = [ex.submit(_scan_gw_policy, tier, tid, pid, base) for (tier, tid, pid, base) in gw_tasks]
+        for fut in as_completed(futures):
+            s, g = fut.result()
+            svc_hits.extend(s)
+            grp_hits.extend(g)
 
     logging.info("GW-FW: %d rules with Services, %d rules with Group refs", len(svc_hits), len(grp_hits))
     return svc_hits, grp_hits
@@ -307,26 +385,17 @@ def summarize_service_entry(entry: dict):
     ports = ",".join(ports_list) if isinstance(ports_list, list) else str(ports_list)
     return proto, ports
 
-def build_reports(nsx: NSXClient, out_prefix: str, exclude_system: bool):
-    # Services (optionally excluding system)
-    services_by_path = list_services(nsx, exclude_system=exclude_system)
-
-    # Groups (optionally excluding system) across all domains
-    groups_by_path: Dict[str, dict] = {}
-    domains = list_domains(nsx)
-    for d in domains:
-        did = d.get("id")
-        if not did:
-            continue
-        groups_by_path.update(list_groups_for_domain(nsx, did, exclude_system=exclude_system))
-    logging.info("Total Groups across all domains (after filtering): %d", len(groups_by_path))
+def build_reports(nsx: NSXClient, out_prefix: str, exclude_system: bool, threads: int):
+    # Load full objects and filter by system flags using per-object GETs
+    services_by_path = load_services_full_filtered(nsx, exclude_system=exclude_system, threads=threads)
+    groups_by_path   = load_groups_full_filtered(nsx, exclude_system=exclude_system, threads=threads)
 
     # Initialize usage indexes
     svc_usage: Dict[str, List[str]] = {p: [] for p in services_by_path.keys()}
     grp_usage: Dict[str, List[str]] = {p: [] for p in groups_by_path.keys()}
 
-    # DFW references
-    dfw_svc_hits, dfw_grp_hits = index_dfw_usage(nsx)
+    # DFW references (threaded)
+    dfw_svc_hits, dfw_grp_hits = scan_dfw_threaded(nsx, threads=threads)
     for (domain_id, policy_id, rule) in dfw_svc_hits:
         rid = rule.get("id") or rule.get("display_name") or "<unnamed>"
         for sp in (rule.get("services") or []):
@@ -345,8 +414,8 @@ def build_reports(nsx: NSXClient, out_prefix: str, exclude_system: bool):
             if is_group_path(sc) and sc in grp_usage:
                 grp_usage[sc].append(f"DFW(SCOPE): domain={domain_id}, policy={policy_id}, rule={rid}")
 
-    # Gateway FW references
-    gw_svc_hits, gw_grp_hits = index_gwfw_usage(nsx)
+    # Gateway FW references (threaded)
+    gw_svc_hits, gw_grp_hits = scan_gwfw_threaded(nsx, threads=threads)
     for (tier, tier_id, policy_id, rule) in gw_svc_hits:
         rid = rule.get("id") or rule.get("display_name") or "<unnamed>"
         for sp in (rule.get("services") or []):
@@ -427,7 +496,6 @@ def build_reports(nsx: NSXClient, out_prefix: str, exclude_system: bool):
 
 def main():
     ap = argparse.ArgumentParser(description="NSX-T: List Services & Groups and where they are used (DFW/GW-FW).")
-    # Accept only host/FQDN/IP (no scheme)
     ap.add_argument("--nsx", help="NSX Manager FQDN or IP (no scheme), e.g. nsx01.acme.local")
     ap.add_argument("--user", help="Username")
     ap.add_argument("--password", help="Password (omit for secure prompt)")
@@ -438,30 +506,30 @@ def main():
     ap.add_argument("--retries", type=int, default=3, help="Max retries on transient errors (default 3)")
     ap.add_argument("--backoff", type=float, default=1.5, help="Exponential backoff base (default 1.5)")
     ap.add_argument("--jitter", type=float, default=0.25, help="Random jitter seconds added to backoff (default 0.25)")
+    ap.add_argument("--threads", type=int, default=5, help="Number of worker threads (1-10). Default 5")
     ap.add_argument("--log-file", default=None, help="Path to log file (rotating, 10MB x 5)")
     ap.add_argument("--log-level", default="INFO", help="Log level (DEBUG, INFO, WARNING, ERROR)")
     args = ap.parse_args()
 
-    # Logging first
     setup_logging(args.log_file, args.log_level)
 
-    # Prompt for any missing critical inputs
     nsx_host = ensure_value(args.nsx,    "NSX Manager FQDN/IP: ", secret=False)
     username = ensure_value(args.user,   "Username: ",            secret=False)
     password = ensure_value(args.password, "Password: ",         secret=True)
 
     verify_ssl = bool_from_str(args.verify_ssl)
     exclude_system = bool_from_str(args.exclude_system)
+    threads = clamp_threads(args.threads)
     out_prefix = args.out_prefix or nsx_host
 
-    logging.info("Starting where-used scan: nsx_host=%s verify_ssl=%s exclude_system=%s prefix=%s",
-                 nsx_host, verify_ssl, exclude_system, out_prefix)
+    logging.info("Starting where-used scan: nsx_host=%s verify_ssl=%s exclude_system=%s threads=%d prefix=%s",
+                 nsx_host, verify_ssl, exclude_system, threads, out_prefix)
 
     nsx = NSXClient(
-        host=nsx_host,                 # always host only
+        host=nsx_host,
         username=username,
-        password=password,             # captured via getpass if missing
-        verify_ssl=verify_ssl,         # FALSE by default
+        password=password,
+        verify_ssl=verify_ssl,
         timeout=args.timeout,
         max_retries=args.retries,
         backoff=args.backoff,
@@ -469,7 +537,7 @@ def main():
     )
 
     try:
-        s_usage, s_unused, g_usage, g_unused = build_reports(nsx, out_prefix, exclude_system=exclude_system)
+        s_usage, s_unused, g_usage, g_unused = build_reports(nsx, out_prefix, exclude_system=exclude_system, threads=threads)
     except Exception as e:
         logging.exception("Fatal error during report generation: %s", e)
         sys.exit(2)
