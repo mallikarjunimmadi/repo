@@ -513,7 +513,7 @@ def build_reports(nsx: NSXClient, out_prefix: str, exclude_system: bool, threads
                 w.writerow([name, gid, gp])
 
     # NEW: Groups empty by expression (fixed filename)
-    groups_empty_expr_csv = "nsxmanager_groups_empty.csv"
+    groups_empty_expr_csv = f"{out_prefix}_groups_empty.csv"
     with open(groups_empty_expr_csv, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["group_name", "group_id", "group_path"])
