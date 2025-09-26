@@ -13,6 +13,8 @@ import json
 import logging
 import sys
 from typing import Optional, Dict, Any, List
+import csv
+from datetime import datetime
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -147,6 +149,7 @@ def parse_args():
     p.add_argument("--all", action="store_true", help="Fetch all credentials")
     p.add_argument("--show", action="store_true", help="Show passwords")
     p.add_argument("--verbose", action="store_true")
+    p.add_argument("--export", nargs='?', const='__AUTO__', help="Export results to CSV. Optional filename; if omitted, defaults to <host>_credentials_<YYYYMMDD_HHMMSS>.csv")
     return p.parse_args()
 
 
@@ -155,21 +158,65 @@ def prompt_missing_args(args):
         inp = input(f"{msg}{' [' + default + ']' if default else ''}: ").strip()
         return inp if inp else default
 
+    def select_from_list(title: str, options: List[str], default: Optional[str] = None) -> str:
+        print(title)
+        for i, opt in enumerate(options, 1):
+            mark = " (default)" if default and opt.upper() == (default or "").upper() else ""
+            print(f"{i}. {opt}{mark}")
+        while True:
+            choice = ask("Enter choice number", default=str(options.index(default)+1) if default and default in options else "1")
+            try:
+                idx = int(choice)
+                if 1 <= idx <= len(options):
+                    return options[idx-1]
+            except Exception:
+                pass
+            print("Invalid choice. Try again.")
+
+    allowed_types = ["ESXI", "NSXT_MANAGER", "VCENTER", "BACKUP", "PSC"]
+
     if not args.host:
         args.host = ask("Enter SDDC Manager FQDN or IP")
     if not args.username:
         args.username = ask("Enter username")
     if not args.password:
         args.password = getpass.getpass("Enter password: ")
-    if not (args.all or args.id or args.resource_name):
-        print("Choose fetch mode:\n1. Fetch all\n2. Fetch by ID\n3. Fetch by name")
-        choice = ask("Enter choice", default="1")
-        if choice == "1":
-            args.all = True
-        elif choice == "2":
-            args.id = ask("Enter credential ID")
-        elif choice == "3":
-            args.resource_name = ask("Enter resource name (exact or partial)")
+
+    # Precedence: --all > --resource-name > --resource-type
+    if args.all:
+        return args
+
+    if args.resource_name:
+        # name wins; ignore type later
+        return args
+
+    # If --resource-type provided OR nothing specified, prompt to choose a type when needed
+    if args.resource_type:
+        # Normalize via selection menu (lets user confirm or change)
+        default = args.resource_type.upper()
+        if default not in allowed_types:
+            default = None
+        args.resource_type = select_from_list("Select resource type:", allowed_types, default=default)
+        return args
+
+    # Nothing specific given: prompt for mode
+    print("Choose fetch mode:
+1. Fetch all
+2. Fetch by ID
+3. Fetch by name
+4. Fetch by type")
+    choice = ask("Enter choice", default="1")
+    if choice == "1":
+        args.all = True
+    elif choice == "2":
+        args.id = ask("Enter credential ID")
+    elif choice == "3":
+        args.resource_name = ask("Enter resource name (exact or partial)")
+    elif choice == "4":
+        args.resource_type = select_from_list("Select resource type:", allowed_types)
+    else:
+        print("Invalid choice. Defaulting to Fetch all.")
+        args.all = True
     return args
 
 
@@ -206,6 +253,8 @@ def print_table(results: List[Dict[str, Any]], show_password=False):
         table.add_row([row_map.get(f, "") for f in fields])
 
     print(table)
+    return fields  # return fields so caller can reuse for CSV
+
 
 
 def main():
@@ -229,12 +278,19 @@ def main():
             results.append(fetch_credential_by_id(session, base_url, token, args.id))
         else:
             # Server-side filters first (if resource_name is provided, still send it; we'll also client-filter for partials)
+            # Determine effective filters per precedence rules
+            # --all => ignore name/type; --resource-name => ignore type; only type -> list all matching type
+            effective_type = None if args.all or args.resource_name else (args.resource_type or None)
+
             server_results = fetch_credentials_list(
                 session,
                 base_url,
                 token,
-                resource_name=args.resource_name or None,
-                resource_type=args.resource_type or None,
+                resource_name=args.resource_name or None,  # server-side filter if supported
+                resource_type=effective_type,
+                domain_name=args.domain_name or None,
+                fetch_all=args.all,
+            ),
                 domain_name=args.domain_name or None,
                 fetch_all=args.all,
             )
@@ -247,7 +303,39 @@ def main():
         if not results:
             LOG.warning("No credentials found. Check privileges and resource name spelling (supports partial match).")
 
-        print_table(results, show_password=args.show)
+        fields = print_table(results, show_password=args.show)
+
+        # Export if requested
+        if args.export:
+            # Determine filename
+            if args.export == '__AUTO__':
+                ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+                fname = f"{args.host}_credentials_{ts}.csv"
+            else:
+                fname = args.export
+            if not fname.lower().endswith('.csv'):
+                fname += '.csv'
+
+            try:
+                with open(fname, 'w', newline='', encoding='utf-8') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(fields)
+                    for c in results:
+                        res = c.get('resource') or {}
+                        row_map = {
+                            'id': c.get('id', ''),
+                            'resourceName': res.get('resourceName', ''),
+                            'resourceType': res.get('resourceType', ''),
+                            'resourceIp': res.get('resourceIp', ''),
+                            'username': c.get('username', ''),
+                            'credentialType': c.get('credentialType', ''),
+                            'accountType': c.get('accountType', ''),
+                            'password': c.get('password', '') if args.show else '',
+                        }
+                        writer.writerow([row_map.get(col, '') for col in fields])
+                LOG.info("Exported %d rows to %s", len(results), fname)
+            except Exception as e:
+                LOG.error("Failed to export CSV: %s", e)
 
     except Exception as e:
         LOG.error("Failed to fetch credentials: %s", e)
