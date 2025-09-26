@@ -3,7 +3,7 @@
 fetch_sddc_credentials.py
 
 Fetch credentials from VMware SDDC Manager with full prompts, secure password input,
-and optional SSL verify disablement (--insecure).
+and SSL verification disabled by default.
 """
 
 import argparse
@@ -28,7 +28,7 @@ LOG = logging.getLogger("fetch_sddc_credentials")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 
 
-def requests_session(retries: int = RETRIES, backoff: float = BACKOFF_FACTOR, verify: bool = True):
+def requests_session(retries: int = RETRIES, backoff: float = BACKOFF_FACTOR, verify: bool = False):
     s = requests.Session()
     retry = Retry(total=retries,
                   backoff_factor=backoff,
@@ -40,7 +40,7 @@ def requests_session(retries: int = RETRIES, backoff: float = BACKOFF_FACTOR, ve
         from urllib3.exceptions import InsecureRequestWarning
         import urllib3
         urllib3.disable_warnings(InsecureRequestWarning)
-        LOG.warning("\u26a0\ufe0f SSL verification disabled (insecure). Use only in trusted environments.")
+        LOG.warning("\u26a0\ufe0f SSL verification disabled (default). Use only in trusted environments.")
     return s
 
 
@@ -100,11 +100,10 @@ def parse_args():
     p.add_argument("--username", help="Username")
     p.add_argument("--password", help="Password (or prompt if omitted)")
     p.add_argument("--resource-name", help="Resource name")
-    p.add_argument("--resource-type", help="Resource type (e.g. VCENTER, NSXT_MANAGER, BACKUP)")
+    p.add_argument("--resource-type", help="Resource type (optional)")
     p.add_argument("--id", help="Fetch by credential ID")
     p.add_argument("--all", action="store_true", help="Fetch all credentials")
     p.add_argument("--show", action="store_true", help="Show passwords")
-    p.add_argument("--insecure", action="store_true", help="Disable SSL verification")
     p.add_argument("--verbose", action="store_true")
     return p.parse_args()
 
@@ -120,16 +119,15 @@ def prompt_missing_args(args):
         args.username = ask("Enter username")
     if not args.password:
         args.password = getpass.getpass("Enter password: ")
-    if not (args.all or args.id or args.resource_name or args.resource_type):
-        print("Choose fetch mode:\n1. Fetch all\n2. Fetch by ID\n3. Fetch by name/type")
+    if not (args.all or args.id or args.resource_name):
+        print("Choose fetch mode:\n1. Fetch all\n2. Fetch by ID\n3. Fetch by name")
         choice = ask("Enter choice", default="1")
         if choice == "1":
             args.all = True
         elif choice == "2":
             args.id = ask("Enter credential ID")
         elif choice == "3":
-            args.resource_name = ask("Enter resource name (optional)", default="")
-            args.resource_type = ask("Enter resource type (VCENTER, NSXT_MANAGER, etc)", default="")
+            args.resource_name = ask("Enter resource name")
     return args
 
 
@@ -140,7 +138,7 @@ def main():
         LOG.setLevel(logging.DEBUG)
 
     base_url = f"https://{args.host}"
-    session = requests_session(verify=not args.insecure)
+    session = requests_session(verify=False)
 
     try:
         token = get_token(session, base_url, args.username, args.password)
@@ -154,8 +152,8 @@ def main():
             results.append(fetch_credential_by_id(session, base_url, token, args.id))
         else:
             creds = fetch_credentials_list(session, base_url, token,
-                                           resource_name=args.resource_name,
-                                           resource_type=args.resource_type)
+                                           resource_name=args.resource_name or None,
+                                           resource_type=args.resource_type or None)
             results.extend(creds)
 
         output = []
