@@ -1,26 +1,3 @@
-Conversation opened. 1 unread message.
-
-Skip to content
-Using Broadcom Inc. Mail with screen readers
-
-1 of 30,062
-AVI External HM
-External
-Inbox
-
-
-Mallikarjun Immadi
-Attachments
-1:30 PM (1 minute ago)
-to me
-
-
-
-The information in this mail is confidential and is intended solely for addressee. Access to this mail by anyone else is unauthorized. Copying or further distribution beyond the original recipient may be unlawful. Any opinion expressed in this mail is that of sender and does not necessarily reflect that of State Bank group.
----
- One attachment
-  •  Scanned by Gmail
-from:immadimallikarjun_vmware@sbi.co.in
 #!/usr/bin/python3
 """
 External Health Monitor for VMware NSX Advanced Load Balancer (Avi)
