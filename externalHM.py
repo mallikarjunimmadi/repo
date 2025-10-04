@@ -1,8 +1,6 @@
 #!/usr/bin/python3
 """
 External Health Monitor for VMware NSX Advanced Load Balancer (Avi)
-Uses Paramiko to SSH into backend server and run 'ipcs -qa | grep 1d6c91 | wc -l'
-
 Exit 0 → healthy (output == '1')
 Exit 1 → unhealthy (any other output or error)
 """
