@@ -1,36 +1,47 @@
 #!/usr/bin/env python3
+"""
+External Health Monitor for VMware NSX Advanced Load Balancer (Avi)
+Uses Paramiko to SSH into backend server and run 'ipcs -qa | grep 1d6c91 | wc -l'
+
+Exit 0 → healthy (output == '1')
+Exit 1 → unhealthy (any other output or error)
+"""
+
+import os
+import sys
 import paramiko
-import getpass
 
-# Remote host details
-hostname = input("Enter remote host/IP: ")
-username = input("Enter username: ")
-password = getpass.getpass("Enter password: ")
+# Avi passes server details as environment variables:
+server_ip = os.environ.get('IP')      # Backend server IP
+server_port = int(os.environ.get('PORT', 22))  # Default SSH port 22
 
-# The command you want to run
-command = "ipcs -qa | grep 1d6c91 | wc -l"
+# Hard-coded credentials:
+username = "myuser"       # change this
+password = "mypassword"   # change this
+
+remote_command = "ipcs -qa | grep 1d6c91 | wc -l"
 
 try:
     # Create SSH client
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-    # Connect to remote host
-    ssh.connect(hostname, username=username, password=password)
+    ssh.connect(server_ip, port=server_port, username=username, password=password, timeout=10)
 
-    # Execute command
-    stdin, stdout, stderr = ssh.exec_command(command)
+    stdin, stdout, stderr = ssh.exec_command(remote_command, timeout=10)
 
-    # Read outputs
     output = stdout.read().decode().strip()
     error = stderr.read().decode().strip()
 
-    if error:
-        print("Error:\n", error)
-    else:
-        print(f"Output from {hostname}:\n{output}")
-
     ssh.close()
 
-except Exception as e:
-    print(f"Connection failed: {e}")
+    if error:
+        sys.exit(1)  # mark server down on error
+
+    if output == "1":
+        sys.exit(0)  # healthy
+    else:
+        sys.exit(1)  # unhealthy
+
+except Exception:
+    sys.exit(1)  # any exception → unhealthy
