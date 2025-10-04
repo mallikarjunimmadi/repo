@@ -16,8 +16,8 @@ server_ip = os.environ.get('IP')      # Backend server IP
 server_port = int(os.environ.get('PORT', 22))  # Default SSH port 22
 
 # Hard-coded credentials:
-username = "toolsuser"       # change this
-password = "toolsuser"   # change this
+username = "user"       # change this
+password = "userpassword"   # change this
 
 #remote_command = "ipcs -qa | grep 1d6c91 | wc -l"
 #remote_command = "hostname"
