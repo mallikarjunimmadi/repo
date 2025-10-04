@@ -1,38 +1,36 @@
 #!/usr/bin/env python3
-import subprocess
+import paramiko
 import getpass
 
-# Ask for connection details
+# Remote host details
 hostname = input("Enter remote host/IP: ")
 username = input("Enter username: ")
-password = getpass.getpass("Enter password (leave blank to use SSH key): ")
+password = getpass.getpass("Enter password: ")
 
-# Command to run remotely
-remote_command = "ipcs -qa | grep 1d6c91 | wc -l"
-
-# Build ssh command
-ssh_command = ["ssh", f"{username}@{hostname}", remote_command]
+# The command you want to run
+command = "ipcs -qa | grep 1d6c91 | wc -l"
 
 try:
-    if password:
-        # If a password is given, use sshpass via a here-string workaround
-        # (native python has no SSH password support without paramiko)
-        # This will prompt for password interactively.
-        print("Connecting… you’ll be prompted for the password by ssh:")
-        ssh_command = ["ssh", f"{username}@{hostname}", remote_command]
+    # Create SSH client
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-    # Run the command
-    result = subprocess.run(
-        ssh_command,
-        input=password.encode() if password else None,
-        capture_output=True,
-        text=True
-    )
+    # Connect to remote host
+    ssh.connect(hostname, username=username, password=password)
 
-    if result.stderr:
-        print("Error:\n", result.stderr)
+    # Execute command
+    stdin, stdout, stderr = ssh.exec_command(command)
+
+    # Read outputs
+    output = stdout.read().decode().strip()
+    error = stderr.read().decode().strip()
+
+    if error:
+        print("Error:\n", error)
     else:
-        print("Output:\n", result.stdout.strip())
+        print(f"Output from {hostname}:\n{output}")
+
+    ssh.close()
 
 except Exception as e:
-    print(f"Failed: {e}")
+    print(f"Connection failed: {e}")
