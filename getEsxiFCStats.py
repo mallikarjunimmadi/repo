@@ -132,11 +132,11 @@ def save_csv(data, csv_file):
     except Exception as e:
         print(f"[ERROR] CSV write failed: {e}")
 
-def main(sleep_interval, log_dir, rotation, max_size):
+def main(interval, log_dir, rotation, max_size):
     hostname = socket.gethostname()
     validate_log_dir(log_dir)
 
-    print(f"[INFO] Starting FC/FCoE stats collection on '{hostname}' every {sleep_interval}s")
+    print(f"[INFO] Starting FC/FCoE stats collection on '{hostname}' every {interval}s")
     print(f"[INFO] Log Dir: {log_dir} | Rotation: {rotation} | Max Size: {max_size}MB")
 
     while True:
@@ -149,7 +149,7 @@ def main(sleep_interval, log_dir, rotation, max_size):
                 print(f"[INFO] Stats logged at {stats['timestamp']}")
             else:
                 print(f"[WARN] Skipping log write due to directory access issues.")
-            time.sleep(sleep_interval)
+            time.sleep(interval)
         except KeyboardInterrupt:
             print("\n[INFO] Script terminated by user.")
             break
@@ -158,10 +158,10 @@ def main(sleep_interval, log_dir, rotation, max_size):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Collect FC/FCoE stats with flexible logging and rotation.")
-    parser.add_argument("--sleep", type=int, default=5, help="Sleep interval in seconds (default: 5)")
+    parser.add_argument("--interval", type=int, default=5, help="Interval between samples in seconds (default: 5)")
     parser.add_argument("--log-dir", default="logs", help="Directory to store logs (default: ./logs)")
     parser.add_argument("--rotation", choices=["daily", "size"], default="daily", help="Log rotation mode: daily or size-based (default: daily)")
     parser.add_argument("--max-size", type=int, default=5, help="Max file size in MB before rotating (only for size mode)")
 
     args = parser.parse_args()
-    main(args.sleep, args.log_dir, args.rotation, args.max_size)
+    main(args.interval, args.log_dir, args.rotation, args.max_size)
