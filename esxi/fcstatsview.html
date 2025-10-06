@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FC/FCoE Adapter Metrics Viewer</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 0; display: flex; flex-direction: column; height: 100vh; }
+    header { background: #2563eb; color: white; padding: 10px 20px; font-size: 20px; font-weight: bold; }
+    #controls { display: flex; gap: 10px; padding: 10px 20px; background: #f3f4f6; flex-wrap: wrap; }
+    #controls label { font-weight: bold; }
+    #plot { flex: 1; padding: 10px; }
+    select, button { padding: 5px; font-size: 14px; min-width: 150px; }
+  </style>
+</head>
+<body>
+  <header>FC/FCoE Adapter Metrics Viewer</header>
+
+  <div id="controls">
+    <input type="file" id="fileInput" accept=".csv,.json" />
+
+    <label for="adapterSelect">Adapter(s):</label>
+    <select id="adapterSelect" multiple size="4"></select>
+
+    <label for="metricSelect">Metric(s):</label>
+    <select id="metricSelect" multiple size="4"></select>
+  </div>
+
+  <div id="plot"></div>
+
+  <script>
+    let dataRecords = []
+
+    document.getElementById('fileInput').addEventListener('change', event => {
+      const file = event.target.files[0]
+      if (!file) return
+
+      const reader = new FileReader()
+      reader.onload = function(e) {
+        const contents = e.target.result
+
+        if (file.name.endsWith('.csv')) {
+          Papa.parse(contents, {
+            header: true,
+            dynamicTyping: true,
+            complete: function(results) {
+              dataRecords = results.data
+              populateDropdowns()
+              plotData()
+            }
+          })
+        } else if (file.name.endsWith('.json')) {
+          dataRecords = contents.trim().split('\n').map(line => JSON.parse(line))
+            .flatMap(entry => [...entry.fc_stats, ...entry.fcoe_stats].map(stat => ({
+              timestamp: entry.timestamp,
+              ...stat
+            })))
+          populateDropdowns()
+          plotData()
+        }
+      }
+      reader.readAsText(file)
+    })
+
+    document.getElementById('adapterSelect').addEventListener('change', plotData)
+    document.getElementById('metricSelect').addEventListener('change', plotData)
+
+    function populateDropdowns() {
+      const adapterSelect = document.getElementById('adapterSelect')
+      const metricSelect = document.getElementById('metricSelect')
+      const uniqueAdapters = [...new Set(dataRecords.map(d => d.Adapter).filter(Boolean))]
+
+      adapterSelect.innerHTML = uniqueAdapters.map(a => `<option value="${a}">${a}</option>`).join('')
+
+      const metrics = Object.keys(dataRecords[0] || {}).filter(k => !['timestamp', 'Adapter', 'Type'].includes(k))
+      metricSelect.innerHTML = metrics.map(m => `<option value="${m}">${m}</option>`).join('')
+    }
+
+    function getSelectedValues(selectElement) {
+      return Array.from(selectElement.selectedOptions).map(opt => opt.value)
+    }
+
+    function plotData() {
+      const selectedAdapters = getSelectedValues(document.getElementById('adapterSelect'))
+      const selectedMetrics = getSelectedValues(document.getElementById('metricSelect'))
+
+      const traces = []
+
+      selectedAdapters.forEach(adapter => {
+        const adapterData = dataRecords.filter(d => d.Adapter === adapter)
+        const timestamps = adapterData.map(d => d.timestamp)
+
+        selectedMetrics.forEach(metric => {
+          const values = adapterData.map(d => d[metric])
+          traces.push({
+            x: timestamps,
+            y: values,
+            type: 'scatter',
+            mode: 'lines+markers',
+            name: `${adapter} - ${metric}`
+          })
+        })
+      })
+
+      const layout = {
+        title: `Selected Adapter(s) and Metric(s)`,
+        xaxis: { title: 'Timestamp' },
+        yaxis: { title: 'Value' }
+      }
+
+      Plotly.newPlot('plot', traces, layout)
+    }
+  </script>
+</body>
+</html>
