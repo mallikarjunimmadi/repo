@@ -7,6 +7,7 @@ import time
 import argparse
 from datetime import datetime
 import socket
+import sys
 
 def run_command(command):
     try:
@@ -51,9 +52,30 @@ def collect_stats():
         "fcoe_stats": fcoe_stats
     }
 
-def ensure_dir(path):
-    if not os.path.exists(path):
-        os.makedirs(path)
+def validate_log_dir(path):
+    try:
+        if not os.path.exists(path):
+            os.makedirs(path)
+        testfile = os.path.join(path, ".write_test")
+        with open(testfile, "w") as f:
+            f.write("test")
+        os.remove(testfile)
+    except Exception as e:
+        print(f"[ERROR] Cannot write to log directory '{path}': {e}")
+        sys.exit(1)
+
+def is_log_dir_writable(path):
+    try:
+        if not os.path.exists(path):
+            os.makedirs(path)
+        test_file = os.path.join(path, ".testwrite")
+        with open(test_file, "w") as f:
+            f.write("test")
+        os.remove(test_file)
+        return True
+    except Exception as e:
+        print(f"[WARN] Log directory inaccessible: {e}")
+        return False
 
 def get_log_files(log_dir, rotation, hostname, max_size_mb):
     now = datetime.now()
@@ -69,7 +91,7 @@ def get_log_files(log_dir, rotation, hostname, max_size_mb):
     json_file = os.path.join(log_dir, f"{base}-{suffix}.json")
     csv_file = os.path.join(log_dir, f"{base}-{suffix}.csv")
 
-    # For "size" rotation, create a new file if the last one exceeds max_size
+    # For size-based rotation, roll over if size exceeded
     if rotation == "size":
         for ext in ["json", "csv"]:
             file = json_file if ext == "json" else csv_file
@@ -112,7 +134,7 @@ def save_csv(data, csv_file):
 
 def main(sleep_interval, log_dir, rotation, max_size):
     hostname = socket.gethostname()
-    ensure_dir(log_dir)
+    validate_log_dir(log_dir)
 
     print(f"[INFO] Starting FC/FCoE stats collection on '{hostname}' every {sleep_interval}s")
     print(f"[INFO] Log Dir: {log_dir} | Rotation: {rotation} | Max Size: {max_size}MB")
@@ -120,10 +142,13 @@ def main(sleep_interval, log_dir, rotation, max_size):
     while True:
         try:
             stats = collect_stats()
-            json_file, csv_file = get_log_files(log_dir, rotation, hostname, max_size)
-            save_json(stats, json_file)
-            save_csv(stats, csv_file)
-            print(f"[INFO] Stats logged at {stats['timestamp']}")
+            if is_log_dir_writable(log_dir):
+                json_file, csv_file = get_log_files(log_dir, rotation, hostname, max_size)
+                save_json(stats, json_file)
+                save_csv(stats, csv_file)
+                print(f"[INFO] Stats logged at {stats['timestamp']}")
+            else:
+                print(f"[WARN] Skipping log write due to directory access issues.")
             time.sleep(sleep_interval)
         except KeyboardInterrupt:
             print("\n[INFO] Script terminated by user.")
@@ -136,7 +161,7 @@ if __name__ == "__main__":
     parser.add_argument("--sleep", type=int, default=5, help="Sleep interval in seconds (default: 5)")
     parser.add_argument("--log-dir", default="logs", help="Directory to store logs (default: ./logs)")
     parser.add_argument("--rotation", choices=["daily", "size"], default="daily", help="Log rotation mode: daily or size-based (default: daily)")
-    parser.add_argument("--max-size", type=int, default=5, help="Max file size in MB before rotating (used only with --rotation size)")
+    parser.add_argument("--max-size", type=int, default=5, help="Max file size in MB before rotating (only for size mode)")
 
     args = parser.parse_args()
     main(args.sleep, args.log_dir, args.rotation, args.max_size)
