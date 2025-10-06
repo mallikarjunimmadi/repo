@@ -68,39 +68,14 @@ def is_log_dir_writable(path):
     try:
         if not os.path.exists(path):
             os.makedirs(path)
-        test_file = os.path.join(path, ".testwrite")
-        with open(test_file, "w") as f:
+        testfile = os.path.join(path, ".testwrite")
+        with open(testfile, "w") as f:
             f.write("test")
-        os.remove(test_file)
+        os.remove(testfile)
         return True
     except Exception as e:
         print(f"[WARN] Log directory inaccessible: {e}")
         return False
-
-def get_log_files(log_dir, rotation, hostname, max_size_mb):
-    now = datetime.now()
-    base = f"{hostname}_fc_fcoe_stats"
-
-    if rotation == "daily":
-        suffix = now.strftime("%Y%m%d")
-    elif rotation == "size":
-        suffix = now.strftime("%Y%m%d-%H%M%S")
-    else:
-        suffix = now.strftime("%Y%m%d")
-
-    json_file = os.path.join(log_dir, f"{base}-{suffix}.json")
-    csv_file = os.path.join(log_dir, f"{base}-{suffix}.csv")
-
-    # For size-based rotation, roll over if size exceeded
-    if rotation == "size":
-        for ext in ["json", "csv"]:
-            file = json_file if ext == "json" else csv_file
-            if os.path.exists(file) and os.path.getsize(file) > max_size_mb * 1024 * 1024:
-                suffix = now.strftime("%Y%m%d-%H%M%S")
-                json_file = os.path.join(log_dir, f"{base}-{suffix}.json")
-                csv_file = os.path.join(log_dir, f"{base}-{suffix}.csv")
-
-    return json_file, csv_file
 
 def save_json(data, json_file):
     try:
@@ -136,20 +111,49 @@ def main(interval, log_dir, rotation, max_size):
     hostname = socket.gethostname()
     validate_log_dir(log_dir)
 
-    print(f"[INFO] Starting FC/FCoE stats collection on '{hostname}' every {interval}s")
-    print(f"[INFO] Log Dir: {log_dir} | Rotation: {rotation} | Max Size: {max_size}MB")
+    print("=" * 70)
+    print(f"[INFO] Starting FC/FCoE Stats Collector on host: {hostname}")
+    print(f"[INFO] Interval       : {interval} seconds")
+    print(f"[INFO] Log Directory  : {log_dir}")
+    print(f"[INFO] Rotation Mode  : {rotation}")
+    print(f"[INFO] Max Size (MB)  : {max_size} (used only in 'size' rotation)")
+    print("=" * 70)
+
+    current_json_file = None
+    current_csv_file = None
 
     while True:
         try:
             stats = collect_stats()
+
             if is_log_dir_writable(log_dir):
-                json_file, csv_file = get_log_files(log_dir, rotation, hostname, max_size)
-                save_json(stats, json_file)
-                save_csv(stats, csv_file)
+                if rotation == "daily":
+                    date_str = datetime.now().strftime("%Y%m%d")
+                    base = f"{hostname}_fc_fcoe_stats-{date_str}"
+                    json_file = os.path.join(log_dir, f"{base}.json")
+                    csv_file = os.path.join(log_dir, f"{base}.csv")
+                    save_json(stats, json_file)
+                    save_csv(stats, csv_file)
+
+                elif rotation == "size":
+                    if (not current_json_file or
+                        not os.path.exists(current_json_file) or
+                        os.path.getsize(current_json_file) > max_size * 1024 * 1024):
+
+                        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                        base = f"{hostname}_fc_fcoe_stats-{timestamp}"
+                        current_json_file = os.path.join(log_dir, f"{base}.json")
+                        current_csv_file = os.path.join(log_dir, f"{base}.csv")
+
+                    save_json(stats, current_json_file)
+                    save_csv(stats, current_csv_file)
+
                 print(f"[INFO] Stats logged at {stats['timestamp']}")
             else:
-                print(f"[WARN] Skipping log write due to directory access issues.")
+                print("[WARN] Skipping write — log directory not accessible.")
+
             time.sleep(interval)
+
         except KeyboardInterrupt:
             print("\n[INFO] Script terminated by user.")
             break
