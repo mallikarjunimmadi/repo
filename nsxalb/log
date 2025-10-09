@@ -1,7 +1,7 @@
 [INFO] Logging initialized → ./avi_vs_create_20251009_181832.log
 [INFO] Input CSV: ./sample.csv
 [INFO] Dry-run mode: False
-[INFO] Connected to Avi Controller 'm00avientuat.corp.ad.sbi' as 'admin' (tenant=admin)
+[INFO] Connected to Avi Controller 'm00avientuat' as 'admin' (tenant=admin)
 [INFO] Discovered Clouds: Default-Cloud, NSX-T-UAT
 [INFO] Discovered 2 networks across 1 clouds.
 [INFO]
