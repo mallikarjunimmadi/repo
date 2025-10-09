@@ -1,6 +1,16 @@
-[INFO] Logging initialized → ./avi_vs_create_20251009_171906.log
-[INFO] Controller: m00avientuat, Tenant: admin
+[INFO] Logging initialized → ./avi_vs_create_20251009_173147.log
 [INFO] Input CSV: ./sample.csv
 [INFO] Dry-run mode: False
-[ERROR] Failed to connect: get_session() got an unexpected keyword argument 'controller'
-[toolsuser@m00tools01 bulk_vs_creation]$ less ./avi_vs_create_20251009_171906.log
+[INFO] Connected to Avi Controller 'm00avientuat' as 'admin' (tenant=admin)
+[INFO]
+[PROCESSING] VS='web_vs1' Pool='web_pool1'
+Warning: Object Not found for pool named web_pool1
+[ERROR] Failed to create pool 'web_pool1': {"error":"Illegal cross-cloud references network-6ff75e9c-172a-4f9b-811d-9f43082583c9"}
+[ERROR] Skipping VS 'web_vs1' due to pool creation failure.
+[INFO]
+[PROCESSING] VS='web_vs2' Pool='web_pool2'
+Warning: Object Not found for pool named web_pool2
+[ERROR] Failed to create pool 'web_pool2': {"error":"Illegal cross-cloud references network-6ff75e9c-172a-4f9b-811d-9f43082583c9"}
+[ERROR] Skipping VS 'web_vs2' due to pool creation failure.
+[INFO]
+✅ All VS & Pool processing complete.
