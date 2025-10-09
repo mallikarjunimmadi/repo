@@ -1,5 +1,5 @@
 [INFO] Logging initialized → ./avi_vs_create_20251009_171906.log
-[INFO] Controller: m00avientuat.corp.ad.sbi, Tenant: admin
+[INFO] Controller: m00avientuat, Tenant: admin
 [INFO] Input CSV: ./sample.csv
 [INFO] Dry-run mode: False
 [ERROR] Failed to connect: get_session() got an unexpected keyword argument 'controller'
