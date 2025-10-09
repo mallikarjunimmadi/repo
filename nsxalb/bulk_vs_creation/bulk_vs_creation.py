@@ -2,19 +2,18 @@
 """
 bulk_create_vs_full_placement_dryrun.py
 ----------------------------------------
-Automates creation of multiple Virtual Services (VS) and Pools in
-VMware NSX Advanced Load Balancer (Avi) using a CSV file.
+Universal Avi VS & Pool creation utility (NSX-T + vCenter compatible).
 
 Features:
-- VIP + Pool placement network support
-- SE Group assignment
-- SNAT and Auto Gateway enablement
 - Cloud-aware mapping (cloud name → UUID)
-- Network existence pre-check by Cloud
-- Live summary of networks per cloud
-- Dry-run mode (simulate without actual creation)
-- Prompts for missing controller/username/password
-- Detailed logging (console + file)
+- VIP + Pool placement networks (name or UUID)
+- Auto-fallback if placement networks invalid
+- SE Group assignment
+- SNAT and Auto Gateway enabled
+- Dry-run mode
+- Network pre-check + summary
+- Prompts for credentials
+- Full logging (console + file)
 
 Requirements:
     pip install avisdk
@@ -34,7 +33,7 @@ urllib3.disable_warnings(InsecureRequestWarning)
 
 
 # ---------------------------------------------------------------------
-# Logging setup
+# Logging
 # ---------------------------------------------------------------------
 def setup_logger(log_dir="logs"):
     os.makedirs(log_dir, exist_ok=True)
@@ -76,7 +75,7 @@ def fetch_cloud_map(api, logger):
 
 
 def fetch_networks(api, logger):
-    """Return mapping {cloud_uuid: [network_names]} and display summary."""
+    """Return mapping {cloud_uuid: [network_names]}."""
     networks_by_uuid = {}
     try:
         resp = api.get("network").json()
@@ -87,7 +86,6 @@ def fetch_networks(api, logger):
                 continue
             cloud_uuid = cloud_ref.split("/")[-1]
             networks_by_uuid.setdefault(cloud_uuid, []).append(name)
-
         total = sum(len(v) for v in networks_by_uuid.values())
         logger.info(f"Discovered {total} networks across {len(networks_by_uuid)} clouds.")
         return networks_by_uuid
@@ -97,12 +95,7 @@ def fetch_networks(api, logger):
 
 
 def display_network_summary(cloud_map, networks_by_uuid, logger):
-    """Print human-friendly summary of networks per cloud."""
     logger.info("\n📋 Networks available per Cloud:")
-    if not networks_by_uuid:
-        logger.warning("No networks discovered from Avi Controller.")
-        return
-
     reverse_map = {v: k for k, v in cloud_map.items()}
     for cloud_uuid, nets in networks_by_uuid.items():
         cloud_name = reverse_map.get(cloud_uuid, cloud_uuid)
@@ -112,24 +105,20 @@ def display_network_summary(cloud_map, networks_by_uuid, logger):
 
 
 # ---------------------------------------------------------------------
-# Validate network existence
+# Smart network reference builder
 # ---------------------------------------------------------------------
-def validate_network(name, cloud_name, cloud_map, networks_by_uuid, logger):
-    if not name:
-        return True  # blank OK
-    cloud_uuid = cloud_map.get(cloud_name)
-    if not cloud_uuid:
-        logger.error(f"Cloud '{cloud_name}' not found on controller.")
-        return False
-    nets = networks_by_uuid.get(cloud_uuid, [])
-    if name in nets:
-        return True
-    logger.error(f"Network '{name}' not found in Cloud '{cloud_name}' (uuid={cloud_uuid}).")
-    return False
+def build_network_ref(network_value, cloud_uuid):
+    """Return correct network_ref based on whether name or UUID."""
+    if not network_value:
+        return None
+    if network_value.startswith("network-"):  # UUID form
+        return f"/api/network/{network_value}"
+    else:
+        return f"/api/network?name={network_value}&cloud_ref=/api/cloud/{cloud_uuid}"
 
 
 # ---------------------------------------------------------------------
-# Pool creation
+# Pool creation (with smart fallback)
 # ---------------------------------------------------------------------
 def create_pool(api, logger, pool_name, members, pool_network=None,
                 cloud_name="Default-Cloud", cloud_uuid=None, dry_run=False):
@@ -153,25 +142,36 @@ def create_pool(api, logger, pool_name, members, pool_network=None,
     }
 
     if pool_network:
-        pool_data["placement_networks"] = [{
-            "network_ref": f"/api/network?name={pool_network}&cloud_ref=/api/cloud/{cloud_uuid}"
-        }]
+        net_ref = build_network_ref(pool_network, cloud_uuid)
+        if net_ref:
+            pool_data["placement_networks"] = [{"network_ref": net_ref}]
 
     if dry_run:
-        logger.info(f"[DRY-RUN] Would create pool '{pool_name}' with {len(servers)} members in Cloud '{cloud_name}'.")
+        logger.info(f"[DRY-RUN] Would create pool '{pool_name}' with {len(servers)} members (Cloud={cloud_name}).")
         return pool_data
 
     resp = api.post("pool", data=pool_data)
     if resp.status_code in (200, 201):
         logger.info(f"Pool created: {pool_name} (Cloud={cloud_name})")
         return resp.json()
-    else:
-        logger.error(f"Failed to create pool '{pool_name}': {resp.text}")
+
+    # Fallback on network error
+    if "network object not found" in resp.text.lower():
+        logger.warning(f"[RETRY] Pool '{pool_name}' creation failed due to network object; retrying without placement.")
+        pool_data.pop("placement_networks", None)
+        resp2 = api.post("pool", data=pool_data)
+        if resp2.status_code in (200, 201):
+            logger.info(f"Pool created (auto-placement): {pool_name}")
+            return resp2.json()
+        logger.error(f"Pool creation still failed: {resp2.text}")
         return None
+
+    logger.error(f"Failed to create pool '{pool_name}': {resp.text}")
+    return None
 
 
 # ---------------------------------------------------------------------
-# Virtual Service creation
+# VS creation (with smart fallback)
 # ---------------------------------------------------------------------
 def create_virtual_service(api, logger, vs_name, vs_ip, vs_port, pool_name,
                            vip_network=None, vip_subnet=None, vip_mask=None,
@@ -183,7 +183,6 @@ def create_virtual_service(api, logger, vs_name, vs_ip, vs_port, pool_name,
         return existing
 
     pool_ref = f"/api/pool?name={pool_name}"
-
     vip_block = {
         "vip_id": "1",
         "enabled": True,
@@ -198,13 +197,11 @@ def create_virtual_service(api, logger, vs_name, vs_ip, vs_port, pool_name,
     if vs_ip.lower() != "auto":
         vip_block["ip_address"] = {"addr": vs_ip, "type": "V4"}
 
-    if vip_network and vip_subnet and vip_mask:
+    net_ref = build_network_ref(vip_network, cloud_uuid)
+    if net_ref and vip_subnet and vip_mask:
         vip_block["placement_networks"] = [{
-            "subnet": {
-                "ip_addr": {"addr": vip_subnet, "type": "V4"},
-                "mask": int(vip_mask)
-            },
-            "network_ref": f"/api/network?name={vip_network}&cloud_ref=/api/cloud/{cloud_uuid}"
+            "subnet": {"ip_addr": {"addr": vip_subnet, "type": "V4"}, "mask": int(vip_mask)},
+            "network_ref": net_ref
         }]
 
     vs_data = {
@@ -221,16 +218,28 @@ def create_virtual_service(api, logger, vs_name, vs_ip, vs_port, pool_name,
         vs_data["se_group_ref"] = f"/api/serviceenginegroup?name={se_group}"
 
     if dry_run:
-        logger.info(f"[DRY-RUN] Would create VS '{vs_name}' (VIP={vs_ip}, SEGroup={se_group}, Cloud={cloud_name})")
+        logger.info(f"[DRY-RUN] Would create VS '{vs_name}' (VIP={vs_ip}, SEGroup={se_group}, Cloud={cloud_name}).")
         return vs_data
 
     resp = api.post("virtualservice", data=vs_data)
     if resp.status_code in (200, 201):
         logger.info(f"VS created: {vs_name} | VIP={vs_ip} | SEGroup={se_group} | Cloud={cloud_name}")
         return resp.json()
-    else:
-        logger.error(f"Failed to create VS '{vs_name}': {resp.text}")
+
+    # Fallback on network object error
+    if "network object not found" in resp.text.lower():
+        logger.warning(f"[RETRY] VS '{vs_name}' creation failed due to network object; retrying without placement.")
+        vip_block.pop("placement_networks", None)
+        vs_data["vip"] = [vip_block]
+        resp2 = api.post("virtualservice", data=vs_data)
+        if resp2.status_code in (200, 201):
+            logger.info(f"VS created (auto-placement): {vs_name}")
+            return resp2.json()
+        logger.error(f"VS creation still failed: {resp2.text}")
         return None
+
+    logger.error(f"Failed to create VS '{vs_name}': {resp.text}")
+    return None
 
 
 # ---------------------------------------------------------------------
@@ -268,23 +277,20 @@ def main():
         logger.error(f"Failed to connect to Avi Controller '{args.controller}': {e}")
         sys.exit(1)
 
-    # --- Pre-check Clouds & Networks ---
+    # --- Cloud & network discovery ---
     cloud_map = fetch_cloud_map(api, logger)
     if not cloud_map:
         logger.error("Unable to fetch clouds; aborting.")
         sys.exit(1)
 
     networks_by_uuid = fetch_networks(api, logger)
-    if not networks_by_uuid:
-        logger.error("Unable to fetch networks; aborting.")
-        sys.exit(1)
-
     display_network_summary(cloud_map, networks_by_uuid, logger)
 
     if not os.path.exists(args.csv):
         logger.error(f"CSV '{args.csv}' not found.")
         sys.exit(1)
 
+    # --- Process CSV ---
     with open(args.csv, newline='') as f:
         reader = csv.DictReader(f)
         for row in reader:
@@ -301,15 +307,7 @@ def main():
             cloud_name = row.get("cloud_name") or "Default-Cloud"
             cloud_uuid = cloud_map.get(cloud_name)
 
-            logger.info(f"\n[PROCESSING] VS='{vs_name}' Pool='{pool_name}' (Cloud={cloud_name})")
-
-            # --- Validate networks before proceeding ---
-            if not validate_network(vip_network, cloud_name, cloud_map, networks_by_uuid, logger):
-                logger.error(f"Skipping VS '{vs_name}' due to invalid VIP network '{vip_network}'.")
-                continue
-            if not validate_network(pool_network, cloud_name, cloud_map, networks_by_uuid, logger):
-                logger.error(f"Skipping VS '{vs_name}' due to invalid Pool network '{pool_network}'.")
-                continue
+            logger.info(f"\n[PROCESSING] VS='{vs_name}' Pool='{pool_name}' Network='{vip_network}' (Cloud={cloud_name})")
 
             pool_obj = create_pool(api, logger, pool_name, members,
                                    pool_network=pool_network, cloud_name=cloud_name,
