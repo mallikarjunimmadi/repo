@@ -2,7 +2,7 @@
 """
 bulk_create_vs_full_placement_dryrun.py
 ----------------------------------------
-Automate creation of multiple Virtual Services (VS) and Pools in
+Automates creation of multiple Virtual Services (VS) and Pools in
 VMware NSX Advanced Load Balancer (Avi) using a CSV file.
 
 Features:
@@ -10,6 +10,7 @@ Features:
 - SE Group assignment
 - SNAT and Auto Gateway enablement
 - Dry-run mode (simulate without actual creation)
+- Prompts for missing controller/username/password
 - Detailed logging (console + file)
 
 Requirements:
@@ -22,10 +23,12 @@ import datetime
 import logging
 import os
 import sys
+import getpass
 from avi.sdk.avi_api import ApiSession
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 import urllib3
 urllib3.disable_warnings(InsecureRequestWarning)
+
 
 # ---------------------------------------------------------------------
 # Logging setup
@@ -38,12 +41,10 @@ def setup_logger(log_dir="logs"):
     logger = logging.getLogger("AviVSCreate")
     logger.setLevel(logging.DEBUG)
 
-    # Console handler
     ch = logging.StreamHandler(sys.stdout)
     ch.setLevel(logging.INFO)
     ch.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
 
-    # File handler
     fh = logging.FileHandler(log_file)
     fh.setLevel(logging.DEBUG)
     fh.setFormatter(
@@ -57,7 +58,7 @@ def setup_logger(log_dir="logs"):
 
 
 # ---------------------------------------------------------------------
-# Pool creation (with optional placement network)
+# Pool creation
 # ---------------------------------------------------------------------
 def create_pool(api, logger, pool_name, members, pool_network=None, dry_run=False):
     existing = api.get_object_by_name("pool", pool_name)
@@ -98,7 +99,7 @@ def create_pool(api, logger, pool_name, members, pool_network=None, dry_run=Fals
 
 
 # ---------------------------------------------------------------------
-# VS creation (with VIP + SE Group + SNAT + auto-gateway)
+# Virtual Service creation
 # ---------------------------------------------------------------------
 def create_virtual_service(api, logger, vs_name, vs_ip, vs_port, pool_name,
                            vip_network=None, vip_subnet=None, vip_mask=None,
@@ -121,11 +122,9 @@ def create_virtual_service(api, logger, vs_name, vs_ip, vs_port, pool_name,
         "auto_allocate_gateway": True
     }
 
-    # Static VIP
     if vs_ip.lower() != "auto":
         vip_block["ip_address"] = {"addr": vs_ip, "type": "V4"}
 
-    # Placement for VIP
     if vip_network and vip_subnet and vip_mask:
         vip_block["placement_networks"] = [{
             "subnet": {
@@ -162,13 +161,13 @@ def create_virtual_service(api, logger, vs_name, vs_ip, vs_port, pool_name,
 
 
 # ---------------------------------------------------------------------
-# Main
+# Main logic
 # ---------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(description="Bulk create VS & Pools in Avi with placement")
-    parser.add_argument("--controller", required=True, help="Avi Controller IP/FQDN")
-    parser.add_argument("--username", required=True, help="Username for Avi login")
-    parser.add_argument("--password", required=True, help="Password for Avi login")
+    parser.add_argument("--controller", help="Avi Controller IP/FQDN (prompted if not provided)")
+    parser.add_argument("--username", help="Username for Avi login (prompted if not provided)")
+    parser.add_argument("--password", help="Password for Avi login (prompted if not provided)")
     parser.add_argument("--tenant", default="admin", help="Tenant name (default=admin)")
     parser.add_argument("--csv", required=True, help="Path to CSV input file")
     parser.add_argument("--log-dir", default="logs", help="Log directory (default=logs)")
@@ -176,21 +175,25 @@ def main():
     args = parser.parse_args()
 
     logger = setup_logger(args.log_dir)
-    logger.info(f"Controller: {args.controller}, Tenant: {args.tenant}")
     logger.info(f"Input CSV: {args.csv}")
     logger.info(f"Dry-run mode: {args.dry_run}")
 
+    # Prompt for missing controller/username/password
+    if not args.controller:
+        args.controller = input("Enter Avi Controller (IP/FQDN): ").strip()
+    if not args.username:
+        args.username = input("Enter Avi Username: ").strip()
+    if not args.password:
+        args.password = getpass.getpass("Enter Avi Password: ")
+    if not args.tenant:
+        args.tenant = "admin"
+
     try:
-        api = ApiSession.get_session(
-            controller=args.controller,
-            username=args.username,
-            password=args.password,
-            tenant=args.tenant,
-            verify=False
-        )
-        logger.info("Connected to Avi Controller successfully.")
+        # Old-style SDK uses positional arguments
+        api = ApiSession.get_session(args.controller, args.username, args.password, tenant=args.tenant)
+        logger.info(f"Connected to Avi Controller '{args.controller}' as '{args.username}' (tenant={args.tenant})")
     except Exception as e:
-        logger.error(f"Failed to connect: {e}")
+        logger.error(f"Failed to connect to Avi Controller '{args.controller}': {e}")
         sys.exit(1)
 
     if not os.path.exists(args.csv):
