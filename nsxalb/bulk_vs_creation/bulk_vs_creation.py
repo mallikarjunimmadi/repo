@@ -2,17 +2,13 @@
 """
 bulk_create_vs_full_placement_dryrun.py
 ---------------------------------------
-Create multiple Virtual Services, Pools, and VSVIPs in VMware NSX Advanced Load Balancer (Avi)
-using a CSV file. Works for both NSX-T and vCenter clouds.
+Bulk-create Virtual Services, Pools, and VSVIPs with correct NSX-T payloads.
 
-Features:
-- Cloud-aware (each object created in specified Cloud)
-- NSX-T aware (creates separate VSVIP object)
-- Placement networks with subnet_ref for both Pool and VSVIP
-- SNAT + Auto Gateway enabled
-- Auto-retry if network object not found
-- Dry-run mode (--dry-run)
-- Debug logging (--debug) shows full payloads/responses
+Fixes:
+  • VSVIP now uses placement_networks (subnet + mask) per NSX-T requirement.
+  • Pool placement_networks also use subnet + mask.
+  • SNAT + Auto-gateway enabled.
+  • Dry-run + Debug logging.
 """
 
 import argparse, csv, datetime, logging, os, sys, getpass
@@ -21,8 +17,7 @@ from requests.packages.urllib3.exceptions import InsecureRequestWarning
 import urllib3
 urllib3.disable_warnings(InsecureRequestWarning)
 
-
-# ---------- Logger ----------
+# ---------------- Logger ----------------
 def setup_logger(log_dir="logs", debug=False):
     os.makedirs(log_dir, exist_ok=True)
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -37,198 +32,159 @@ def setup_logger(log_dir="logs", debug=False):
     if debug: log.info("Debug mode enabled — full payloads/responses logged.")
     return log
 
-
-# ---------- Discovery ----------
+# ---------------- Discovery ----------------
 def fetch_cloud_map(api, log):
-    clouds = {c["name"]: c["uuid"] for c in api.get("cloud").json().get("results", [])}
-    log.info(f"Discovered Clouds: {', '.join(clouds.keys())}")
-    return clouds
+    clouds={c["name"]:c["uuid"] for c in api.get("cloud").json().get("results",[])}
+    log.info(f"Discovered Clouds: {', '.join(clouds.keys())}"); return clouds
 
 def fetch_networks(api, log):
-    nets = {}
-    for n in api.get("network").json().get("results", []):
-        cu = n.get("cloud_ref", "").split("/")[-1]
-        nets.setdefault(cu, []).append(n["name"])
-    log.info(f"Discovered {sum(len(v) for v in nets.values())} networks across {len(nets)} clouds.")
+    nets={}
+    for n in api.get("network").json().get("results",[]):
+        cu=n.get("cloud_ref","").split("/")[-1]
+        nets.setdefault(cu,[]).append(n)
+    total=sum(len(v) for v in nets.values())
+    log.info(f"Discovered {total} networks across {len(nets)} clouds.")
     return nets
 
-def fetch_subnets(api, log):
-    mapping = {}
-    try:
-        resp = api.get("subnet").json()
-        for s in resp.get("results", []):
-            nref = s.get("network_ref")
-            if not nref: continue
-            net_uuid = nref.split("/")[-1]
-            mapping.setdefault(net_uuid, []).append(s["uuid"])
-        log.info(f"Discovered {sum(len(v) for v in mapping.values())} subnets.")
-    except Exception as e:
-        log.warning(f"Failed to fetch subnets: {e}")
-    return mapping
+def find_network_details(nets, cloud_uuid, name_or_uuid):
+    for n in nets.get(cloud_uuid, []):
+        if name_or_uuid in (n["name"], n["uuid"]):
+            if n.get("configured_subnets"):
+                s=n["configured_subnets"][0]
+                return {
+                    "uuid":n["uuid"],
+                    "name":n["name"],
+                    "subnet_addr":s["prefix"]["ip_addr"]["addr"],
+                    "subnet_mask":s["prefix"]["mask"]
+                }
+    return None
 
-def display_network_summary(clouds, nets, log):
-    log.info("\n📋 Networks available per Cloud:")
-    rev = {v: k for k, v in clouds.items()}
-    for cu, names in nets.items():
-        cname = rev.get(cu, cu)
-        log.info(f"  → {cname} ({len(names)} networks)")
-        for n in sorted(names): log.info(f"     - {n}")
-
-def build_network_ref(net, cloud_uuid):
-    if not net: return None
-    return f"/api/network/{net}" if net.startswith("network-") else f"/api/network?name={net}&cloud_ref=/api/cloud/{cloud_uuid}"
-
-
-# ---------- Pool ----------
-def create_pool(api, log, name, members, net, cu, cn, dry, dbg, subnets):
+# ---------------- Pool ----------------
+def create_pool(api, log, name, members, net_name, cu, cn, dry, dbg, nets):
     if api.get_object_by_name("pool", name):
         log.warning(f"Pool '{name}' exists. Skipping."); return True
 
-    servers = [{"ip": {"addr": m.split(':')[0].strip(), "type": "V4"},
-                "port": int(m.split(':')[1]) if ':' in m else 80}
-               for m in members if m.strip()]
-    data = {
-        "name": name,
-        "cloud_ref": f"/api/cloud/{cu}",
-        "lb_algorithm": "LB_ALGORITHM_ROUND_ROBIN",
-        "servers": servers
-    }
-    if net:
-        net_ref = build_network_ref(net, cu)
-        entry = {"network_ref": net_ref}
-        # include subnet_ref if available
-        net_uuid = net.split("network-")[-1] if net.startswith("network-") else None
-        if net_uuid and net_uuid in subnets and subnets[net_uuid]:
-            entry["subnet_ref"] = f"/api/subnet/{subnets[net_uuid][0]}"
-        data["placement_networks"] = [entry]
+    servers=[{"ip":{"addr":m.split(':')[0].strip(),"type":"V4"},
+              "port":int(m.split(':')[1]) if ':' in m else 80}
+             for m in members if m.strip()]
+
+    data={"name":name,"cloud_ref":f"/api/cloud/{cu}",
+          "lb_algorithm":"LB_ALGORITHM_ROUND_ROBIN","servers":servers}
+
+    if net_name:
+        nd=find_network_details(nets,cu,net_name)
+        if nd:
+            data["placement_networks"]=[{
+                "network_ref":f"/api/network/{nd['uuid']}",
+                "subnet":{
+                    "ip_addr":{"addr":nd["subnet_addr"],"type":"V4"},
+                    "mask":nd["subnet_mask"]
+                }
+            }]
+        else:
+            log.warning(f"Pool network '{net_name}' not found in cloud {cn}")
 
     if dbg: log.debug(f"[POOL PAYLOAD] {data}")
-    if dry:
-        log.info(f"[DRY-RUN] Would create Pool '{name}' ({cn})"); return True
+    if dry: log.info(f"[DRY-RUN] Would create Pool '{name}'"); return True
 
-    r = api.post("pool", data=data)
+    r=api.post("pool",data=data)
     if dbg: log.debug(f"[POOL RESPONSE] {r.status_code} → {r.text}")
-    if r.status_code in (200, 201):
-        log.info(f"Pool created: {name} ({cn})"); return True
-    if "network object not found" in r.text.lower():
-        data.pop("placement_networks", None)
-        r2 = api.post("pool", data=data)
-        if dbg: log.debug(f"[POOL RETRY] {r2.status_code} → {r2.text}")
-        if r2.status_code in (200, 201):
-            log.info(f"Pool created (auto-placement): {name}"); return True
+    if r.status_code in (200,201): log.info(f"Pool created: {name}"); return True
     log.error(f"Pool failed: {r.text}"); return False
 
-
-# ---------- VSVIP ----------
-def create_vsvip(api, log, name, vs_ip, vip_net, cu, cn, dry, dbg, subnets):
+# ---------------- VSVIP ----------------
+def create_vsvip(api, log, name, vs_ip, vip_net, cu, cn, dry, dbg, nets):
     if api.get_object_by_name("vsvip", name):
         log.warning(f"VSVIP '{name}' exists. Skipping."); return True
 
-    vsvip = {
-        "name": name,
-        "cloud_ref": f"/api/cloud/{cu}",
-        "vip": [{
-            "enabled": True,
-            "auto_allocate_ip": vs_ip.lower() == "auto",
-            "auto_allocate_gateway": True
-        }]
+    nd=find_network_details(nets,cu,vip_net) if vip_net else None
+    vip_block={
+        "vip_id":"0","enabled":True,
+        "auto_allocate_ip":vs_ip.lower()=="auto",
+        "auto_allocate_floating_ip":False,
+        "auto_allocate_ip_type":"V4_ONLY",
+        "auto_allocate_gateway":True,
+        "snat":True
     }
-    if vs_ip.lower() != "auto":
-        vsvip["vip"][0]["ip_address"] = {"addr": vs_ip, "type": "V4"}
+    if vs_ip.lower()!="auto":
+        vip_block["ip_address"]={"addr":vs_ip,"type":"V4"}
+        vip_block["prefix_length"]=32
 
-    if vip_net:
-        ref = build_network_ref(vip_net, cu)
-        vsvip["vip"][0]["vip_network_ref"] = ref
-        net_uuid = vip_net.split("network-")[-1] if vip_net.startswith("network-") else None
-        if net_uuid and net_uuid in subnets and subnets[net_uuid]:
-            vsvip["vip"][0]["subnet_ref"] = f"/api/subnet/{subnets[net_uuid][0]}"
+    if nd:
+        vip_block["placement_networks"]=[{
+            "network_ref":f"/api/network/{nd['uuid']}",
+            "subnet":{
+                "ip_addr":{"addr":nd["subnet_addr"],"type":"V4"},
+                "mask":nd["subnet_mask"]
+            }
+        }]
 
-    if dbg: log.debug(f"[VSVIP PAYLOAD] {vsvip}")
-    if dry:
-        log.info(f"[DRY-RUN] Would create VSVIP '{name}'"); return True
+    data={"name":name,"cloud_ref":f"/api/cloud/{cu}","east_west_placement":False,"vip":[vip_block]}
+    if dbg: log.debug(f"[VSVIP PAYLOAD] {data}")
+    if dry: log.info(f"[DRY-RUN] Would create VSVIP '{name}'"); return True
 
-    r = api.post("vsvip", data=vsvip)
+    r=api.post("vsvip",data=data)
     if dbg: log.debug(f"[VSVIP RESPONSE] {r.status_code} → {r.text}")
-    if r.status_code in (200, 201):
-        log.info(f"VSVIP created: {name} ({cn})"); return True
-    if "network object not found" in r.text.lower():
-        vsvip["vip"][0].pop("vip_network_ref", None)
-        vsvip["vip"][0].pop("subnet_ref", None)
-        r2 = api.post("vsvip", data=vsvip)
-        if dbg: log.debug(f"[VSVIP RETRY] {r2.status_code} → {r2.text}")
-        if r2.status_code in (200, 201):
-            log.info(f"VSVIP auto-placement: {name}"); return True
+    if r.status_code in (200,201): log.info(f"VSVIP created: {name}"); return True
     log.error(f"VSVIP failed: {r.text}"); return False
 
-
-# ---------- VS ----------
-def create_vs(api, log, vs, vs_ip, vs_port, pool, vip_net, se_group, cu, cn, dry, dbg, subnets):
+# ---------------- VS ----------------
+def create_vs(api, log, vs, vs_ip, vs_port, pool, vip_net, se_group, cu, cn, dry, dbg, nets):
     if api.get_object_by_name("virtualservice", vs):
         log.warning(f"VS '{vs}' exists. Skipping."); return True
 
-    data = {
-        "name": vs,
-        "cloud_ref": f"/api/cloud/{cu}",
-        "services": [{"port": int(vs_port)}],
-        "pool_ref": f"/api/pool?name={pool}",
-        "application_profile_ref": "/api/applicationprofile?name=System-Secure-HTTP",
-        "network_profile_ref": "/api/networkprofile?name=System-TCP-Proxy",
-        "enabled": True
-    }
-    if se_group:
-        data["se_group_ref"] = f"/api/serviceenginegroup?name={se_group}"
+    data={"name":vs,"cloud_ref":f"/api/cloud/{cu}",
+          "services":[{"port":int(vs_port)}],
+          "pool_ref":f"/api/pool?name={pool}",
+          "application_profile_ref":"/api/applicationprofile?name=System-Secure-HTTP",
+          "network_profile_ref":"/api/networkprofile?name=System-TCP-Proxy",
+          "enabled":True}
+    if se_group: data["se_group_ref"]=f"/api/serviceenginegroup?name={se_group}"
 
-    if cn.lower() != "default-cloud":
-        vsvip_name = f"{vs}_vsvip"
-        if not create_vsvip(api, log, vsvip_name, vs_ip, vip_net, cu, cn, dry, dbg, subnets):
+    if cn.lower()!="default-cloud":
+        vsvip_name=f"{vs}_vsvip"
+        if not create_vsvip(api,log,vsvip_name,vs_ip,vip_net,cu,cn,dry,dbg,nets):
             log.error(f"Skipping VS '{vs}' — VSVIP creation failed."); return False
-        data["vsvip_ref"] = f"/api/vsvip?name={vsvip_name}"
+        data["vsvip_ref"]=f"/api/vsvip?name={vsvip_name}"
     else:
-        vip = {"vip_id": "1", "enabled": True, "snat": True,
-               "auto_allocate_ip": vs_ip.lower() == "auto",
-               "auto_allocate_gateway": True}
-        if vs_ip.lower() != "auto":
-            vip["ip_address"] = {"addr": vs_ip, "type": "V4"}
-        ref = build_network_ref(vip_net, cu)
-        if ref: vip["vip_network_ref"] = ref
-        data["vip"] = [vip]
+        vip={"vip_id":"1","enabled":True,"auto_allocate_ip":vs_ip.lower()=="auto",
+             "auto_allocate_gateway":True}
+        if vs_ip.lower()!="auto": vip["ip_address"]={"addr":vs_ip,"type":"V4"}
+        data["vip"]=[vip]
 
     if dbg: log.debug(f"[VS PAYLOAD] {data}")
-    if dry:
-        log.info(f"[DRY-RUN] Would create VS '{vs}' ({cn})"); return True
+    if dry: log.info(f"[DRY-RUN] Would create VS '{vs}'"); return True
 
-    r = api.post("virtualservice", data=data)
+    r=api.post("virtualservice",data=data)
     if dbg: log.debug(f"[VS RESPONSE] {r.status_code} → {r.text}")
-    if r.status_code in (200, 201):
-        log.info(f"VS created: {vs} ({cn})"); return True
+    if r.status_code in (200,201): log.info(f"VS created: {vs}"); return True
     log.error(f"VS failed: {r.text}"); return False
 
-
-# ---------- Main ----------
+# ---------------- Main ----------------
 def main():
-    p = argparse.ArgumentParser()
+    p=argparse.ArgumentParser()
     p.add_argument("--controller"); p.add_argument("--username"); p.add_argument("--password")
-    p.add_argument("--tenant", default="admin")
-    p.add_argument("--csv", required=True)
-    p.add_argument("--log-dir", default="logs")
-    p.add_argument("--dry-run", action="store_true")
-    p.add_argument("--debug", action="store_true")
-    a = p.parse_args()
+    p.add_argument("--tenant",default="admin")
+    p.add_argument("--csv",required=True)
+    p.add_argument("--log-dir",default="logs")
+    p.add_argument("--dry-run",action="store_true")
+    p.add_argument("--debug",action="store_true")
+    a=p.parse_args()
 
-    log = setup_logger(a.log_dir, a.debug)
-    if not a.controller: a.controller = input("Controller: ").strip()
-    if not a.username: a.username = input("Username: ").strip()
-    if not a.password: a.password = getpass.getpass("Password: ")
+    log=setup_logger(a.log_dir,a.debug)
+    if not a.controller: a.controller=input("Controller: ").strip()
+    if not a.username: a.username=input("Username: ").strip()
+    if not a.password: a.password=getpass.getpass("Password: ")
 
-    api = ApiSession.get_session(a.controller, a.username, a.password, tenant=a.tenant)
+    api=ApiSession.get_session(a.controller,a.username,a.password,tenant=a.tenant)
     log.info(f"Connected to '{a.controller}' as '{a.username}'")
 
-    clouds = fetch_cloud_map(api, log)
-    nets = fetch_networks(api, log)
-    subnets = fetch_subnets(api, log)
-    display_network_summary(clouds, nets, log)
+    clouds=fetch_cloud_map(api,log); nets=fetch_networks(api,log)
+    for cu,arr in nets.items():
+        log.info(f"→ {len(arr)} networks in Cloud {cu}")
 
     if not os.path.exists(a.csv): log.error("CSV not found."); sys.exit(1)
+
     with open(a.csv) as f:
         for r in csv.DictReader(f):
             vs, pool = r["vs_name"], r["pool_name"]
@@ -237,16 +193,11 @@ def main():
             if not cu: log.error(f"Cloud '{cn}' not found; skipping '{vs}'."); continue
             log.info(f"\n[PROCESSING] VS='{vs}' Pool='{pool}' (Cloud={cn})")
 
-            ok = create_pool(api, log, pool, r.get("pool_members", "").split(";"),
-                             r.get("pool_network"), cu, cn, a.dry_run, a.debug, subnets)
+            ok=create_pool(api,log,pool,r.get("pool_members","").split(";"),
+                           r.get("pool_network"),cu,cn,a.dry_run,a.debug,nets)
             if not ok: continue
-            create_vs(api, log, vs, r.get("vs_ip"), r.get("vs_port"), pool,
-                      r.get("vip_network"), r.get("se_group"), cu, cn, a.dry_run, a.debug, subnets)
-
+            create_vs(api,log,vs,r.get("vs_ip"),r.get("vs_port"),pool,
+                      r.get("vip_network"),r.get("se_group"),cu,cn,a.dry_run,a.debug,nets)
     log.info("\n✅ All processing complete.")
-    if a.dry_run:
-        log.info("Dry-run complete — no changes applied.")
 
-
-if __name__ == "__main__":
-    main()
+if __name__=="__main__": main()
