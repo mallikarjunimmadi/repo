@@ -1,17 +1,13 @@
-mum01-1-dmz-vlan203 | https://m00avientuat/api/cloud/cloud-0a512e32-f5a6-404d-bea0-30669cfef78a
-m01-avi-se-b-prod-1456 | https://m00avientuat/api/cloud/cloud-0a512e32-f5a6-404d-bea0-30669cfef78a
-
-
-
-[INFO] Logging initialized → ./avi_vs_create_20251009_180513.log
+[INFO] Logging initialized → ./avi_vs_create_20251009_181832.log
 [INFO] Input CSV: ./sample.csv
 [INFO] Dry-run mode: False
-Enter Avi Password:
-[INFO] Connected to Avi Controller 'm00avientuat' as 'admin' (tenant=admin)
+[INFO] Connected to Avi Controller 'm00avientuat.corp.ad.sbi' as 'admin' (tenant=admin)
+[INFO] Discovered Clouds: Default-Cloud, NSX-T-UAT
 [INFO] Discovered 2 networks across 1 clouds.
 [INFO]
 [PROCESSING] VS='web_vs1' Pool='web_pool1' (Cloud=NSX-T-UAT)
-[ERROR] Network 'mum01-1-dmz-vlan203' not found in Cloud 'NSX-T-UAT'. Please verify name or discovery status.
-[ERROR] Skipping VS 'web_vs1' due to invalid VIP network 'mum01-1-dmz-vlan203'.
+Warning: Object Not found for pool named web_pool1
+[ERROR] Failed to create pool 'web_pool1': {"error":"network object not found!"}
+[ERROR] Skipping VS 'web_vs1' due to pool creation failure.
 [INFO]
 ✅ All VS & Pool processing complete.
