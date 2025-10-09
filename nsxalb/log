@@ -1,10 +1,5 @@
-[INFO]
-[PROCESSING] VS='web_vs1' Pool='web_pool1' (Cloud=NSX-T-UAT)
-Warning: Object Not found for pool named web_pool1
-[ERROR] Failed to create pool 'web_pool1': {"error":"network object not found!"}
-[ERROR] Skipping VS 'web_vs1' due to pool creation failure.
-[INFO]
-[PROCESSING] VS='web_vs2' Pool='web_pool2' (Cloud=NSX-T-UAT)
-Warning: Object Not found for pool named web_pool2
-[ERROR] Failed to create pool 'web_pool2': {"error":"network object not found!"}
-[ERROR] Skipping VS 'web_vs2' due to pool creation failure.
+from avi.sdk.avi_api import ApiSession
+api = ApiSession.get_session("m00avientuat", "admin", "VMware123!", tenant="admin")
+nets = api.get("network").json()["results"]
+for n in nets:
+    print(n["name"], "|", n["cloud_ref"])
