@@ -1,89 +1,42 @@
-[INFO] Logging initialized → ./avi_vs_create_20251009_185819.log
-[INFO] Debug mode enabled — full payloads/responses logged.
-[INFO] Input CSV: ./sample.csv
-[INFO] Connected to 'm00avientuat' as 'admin'
-[INFO] Discovered Clouds: Default-Cloud, NSX-T-UAT
-[INFO] Discovered 2 networks across 1 clouds.
-[INFO]
-📋 Networks available per Cloud:
-[INFO]   → NSX-T-UAT (2 networks)
-[INFO]      - m01-avi-se-b-prod-1456
-[INFO]      - mum01-1-dmz-vlan203
-[INFO]
-[PROCESSING] VS='web_vs1' Pool='web_pool1' (Cloud=NSX-T-UAT)
-Warning: Object Not found for pool named web_pool1
-[DEBUG] [POOL PAYLOAD] {'name': 'web_pool1', 'cloud_ref': '/api/cloud/cloud-0a512e32-f5a6-404d-bea0-30669cfef78a', 'lb_algorithm': 'LB_ALGORITHM_ROUND_ROBIN', 'servers': [{'ip': {'addr': '10.10.20.11', 'type': 'V4'}, 'port': 443}, {'ip': {'addr': '10.10.20.12', 'type': 'V4'}, 'port': 443}], 'placement_networks': [{'network_ref': '/api/network?name=mum01-1-dmz-vlan203&cloud_ref=/api/cloud/cloud-0a512e32-f5a6-404d-bea0-30669cfef78a'}]}
-[DEBUG] [POOL RESPONSE] 400 → {"error":"network object not found!"}
-[WARNING] [RETRY] Pool 'web_pool1' failed due to network object; retrying without placement.
-[DEBUG] [POOL RETRY RESPONSE] 201 → {
-  "_last_modified": "1760016500705169",
-  "analytics_profile_ref": "https://m00avientuat/api/analyticsprofile/analyticsprofile-0b8a8c70-99c1-4b59-9eb7-297647d7ec5a#System-Analytics-Profile",
-  "capacity_estimation": false,
-  "capacity_estimation_ttfb_thresh": 0,
-  "cloud_ref": "https://m00avientuat/api/cloud/cloud-0a512e32-f5a6-404d-bea0-30669cfef78a#NSX-T-UAT",
-  "connection_ramp_duration": 10,
-  "default_server_port": 80,
-  "delete_server_on_dns_refresh": true,
-  "enable_http2": false,
-  "enabled": true,
-  "fewest_tasks_feedback_delay": 10,
-  "graceful_disable_timeout": 1,
-  "host_check_enabled": false,
-  "ignore_server_port": false,
-  "inline_health_monitor": true,
-  "lb_algorithm": "LB_ALGORITHM_ROUND_ROBIN",
-  "lb_algorithm_core_nonaffinity": 2,
-  "lb_algorithm_hash": "LB_ALGORITHM_CONSISTENT_HASH_SOURCE_IP_ADDRESS",
-  "lookup_server_by_name": false,
-  "max_concurrent_connections_per_server": 0,
-  "name": "web_pool1",
-  "request_queue_depth": 128,
-  "request_queue_enabled": false,
-  "rewrite_host_header_to_server_name": false,
-  "rewrite_host_header_to_sni": false,
-  "routing_pool": false,
-  "server_timeout": 0,
-  "servers": [
-    {
-      "enabled": true,
-      "hostname": "10.10.20.11",
-      "ip": {
-        "addr": "10.10.20.11",
-        "type": "V4"
-      },
-      "port": 443,
-      "ratio": 1,
-      "resolve_server_by_dns": false,
-      "rewrite_host_header": false,
-      "static": false,
-      "verify_network": false
-    },
-    {
-      "enabled": true,
-      "hostname": "10.10.20.12",
-      "ip": {
-        "addr": "10.10.20.12",
-        "type": "V4"
-      },
-      "port": 443,
-      "ratio": 1,
-      "resolve_server_by_dns": false,
-      "rewrite_host_header": false,
-      "static": false,
-      "verify_network": false
-    }
-  ],
-  "sni_enabled": true,
-  "tenant_ref": "https://m00avientuat/api/tenant/admin#admin",
-  "url": "https://m00avientuat/api/pool/pool-155b940a-ff65-4206-b167-ffb59bb82116#web_pool1",
-  "use_service_port": false,
-  "uuid": "pool-155b940a-ff65-4206-b167-ffb59bb82116",
-  "vrf_ref": "https://m00avientuat/api/vrfcontext/vrfcontext-78792253-be0e-4b31-9ded-9fa5cafb766b#global"
+{
+    "_last_modified": "1760017332988077",
+    "cloud_ref": "https://m00avientuat/api/cloud/cloud-0a512e32-f5a6-404d-bea0-30669cfef78a#NSX-T-UAT",
+    "east_west_placement": false,
+    "name": "web_vs1_vsvip",
+    "tenant_ref": "https://m00avientuat/api/tenant/admin#admin",
+    "url": "https://m00avientuat/api/vsvip/vsvip-c9c6c134-f743-45d2-922f-85a0fdd721cc#web_vs1_vsvip",
+    "uuid": "vsvip-c9c6c134-f743-45d2-922f-85a0fdd721cc",
+    "vip": [
+        {
+            "auto_allocate_floating_ip": false,
+            "auto_allocate_ip": false,
+            "auto_allocate_ip_type": "V4_ONLY",
+            "avi_allocated_fip": false,
+            "avi_allocated_vip": false,
+            "enabled": true,
+            "ip_address": {
+                "addr": "10.10.10.10",
+                "type": "V4"
+            },
+            "prefix_length": 32,
+            "vip_id": "0",
+            "placement_networks": [
+                {
+                    "subnet": {
+                        "ip_addr": {
+                            "addr": "10.189.48.0",
+                            "type": "V4"
+                        },
+                        "mask": 23
+                    },
+                    "network_ref": "https://m00avientuat/api/network/network-6ff75e9c-172a-4f9b-811d-9f43082583c9#mum01-1-dmz-vlan203"
+                }
+            ]
+        }
+    ],
+    "vrf_context_ref": "https://m00avientuat/api/vrfcontext/vrfcontext-78792253-be0e-4b31-9ded-9fa5cafb766b#global",
+    "vs_refs": [
+        "https://m00avientuat/api/virtualservice/virtualservice-9aa4136f-e741-4ea1-b608-c82afc9bf4d2#web_vs1"
+    ],
+    "bgp_peer_labels": []
 }
-[INFO] Pool created (auto-placement): web_pool1
-Warning: Object Not found for virtualservice named web_vs1
-[DEBUG] [VS PAYLOAD] {'name': 'web_vs1', 'cloud_ref': '/api/cloud/cloud-0a512e32-f5a6-404d-bea0-30669cfef78a', 'services': [{'port': 443}], 'pool_ref': '/api/pool?name=web_pool1', 'application_profile_ref': '/api/applicationprofile?name=System-Secure-HTTP', 'network_profile_ref': '/api/networkprofile?name=System-TCP-Proxy', 'enabled': True, 'se_group_ref': '/api/serviceenginegroup?name=Internal-ServiceEngineGroup', 'vip': [{'vip_id': '1', 'enabled': True, 'snat': True, 'auto_allocate_ip': False, 'auto_allocate_gateway': True, 'ip_address': {'addr': '10.10.10.10', 'type': 'V4'}, 'vip_network_ref': '/api/network?name=mum01-1-dmz-vlan203&cloud_ref=/api/cloud/cloud-0a512e32-f5a6-404d-bea0-30669cfef78a'}]}
-[DEBUG] [VS RESPONSE] 400 → {"error":"VIP object mandatory for Virtual Service web_vs1"}
-[ERROR] VS create failed: {"error":"VIP object mandatory for Virtual Service web_vs1"}
-[INFO]
-✅ All processing complete.
