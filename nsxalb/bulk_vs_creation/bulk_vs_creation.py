@@ -11,6 +11,7 @@ Features:
 - SNAT and Auto Gateway enablement
 - Cloud-aware mapping (cloud name → UUID)
 - Network existence pre-check by Cloud
+- Live summary of networks per cloud
 - Dry-run mode (simulate without actual creation)
 - Prompts for missing controller/username/password
 - Detailed logging (console + file)
@@ -75,7 +76,7 @@ def fetch_cloud_map(api, logger):
 
 
 def fetch_networks(api, logger):
-    """Return mapping {cloud_uuid: [network_names]}."""
+    """Return mapping {cloud_uuid: [network_names]} and display summary."""
     networks_by_uuid = {}
     try:
         resp = api.get("network").json()
@@ -84,8 +85,9 @@ def fetch_networks(api, logger):
             cloud_ref = net.get("cloud_ref", "")
             if not cloud_ref:
                 continue
-            cloud_uuid = cloud_ref.split("/")[-1]   # extract 'cloud-UUID'
+            cloud_uuid = cloud_ref.split("/")[-1]
             networks_by_uuid.setdefault(cloud_uuid, []).append(name)
+
         total = sum(len(v) for v in networks_by_uuid.values())
         logger.info(f"Discovered {total} networks across {len(networks_by_uuid)} clouds.")
         return networks_by_uuid
@@ -94,12 +96,27 @@ def fetch_networks(api, logger):
         return {}
 
 
+def display_network_summary(cloud_map, networks_by_uuid, logger):
+    """Print human-friendly summary of networks per cloud."""
+    logger.info("\n📋 Networks available per Cloud:")
+    if not networks_by_uuid:
+        logger.warning("No networks discovered from Avi Controller.")
+        return
+
+    reverse_map = {v: k for k, v in cloud_map.items()}
+    for cloud_uuid, nets in networks_by_uuid.items():
+        cloud_name = reverse_map.get(cloud_uuid, cloud_uuid)
+        logger.info(f"  → {cloud_name} ({len(nets)} networks)")
+        for n in sorted(nets):
+            logger.info(f"     - {n}")
+
+
 # ---------------------------------------------------------------------
 # Validate network existence
 # ---------------------------------------------------------------------
 def validate_network(name, cloud_name, cloud_map, networks_by_uuid, logger):
     if not name:
-        return True  # blank network OK
+        return True  # blank OK
     cloud_uuid = cloud_map.get(cloud_name)
     if not cloud_uuid:
         logger.error(f"Cloud '{cloud_name}' not found on controller.")
@@ -261,6 +278,8 @@ def main():
     if not networks_by_uuid:
         logger.error("Unable to fetch networks; aborting.")
         sys.exit(1)
+
+    display_network_summary(cloud_map, networks_by_uuid, logger)
 
     if not os.path.exists(args.csv):
         logger.error(f"CSV '{args.csv}' not found.")
