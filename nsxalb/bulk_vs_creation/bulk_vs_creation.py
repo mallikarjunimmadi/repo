@@ -10,6 +10,7 @@ Features:
 - SE Group assignment
 - SNAT and Auto Gateway enablement
 - Cloud-aware network references (via 'cloud_name' column)
+- Pre-check: verify all referenced networks exist in target Cloud
 - Dry-run mode (simulate without actual creation)
 - Prompts for missing controller/username/password
 - Detailed logging (console + file)
@@ -56,6 +57,41 @@ def setup_logger(log_dir="logs"):
     logger.addHandler(fh)
     logger.info(f"Logging initialized → {log_file}")
     return logger
+
+
+# ---------------------------------------------------------------------
+# Query Avi for network list by Cloud
+# ---------------------------------------------------------------------
+def fetch_networks(api, logger):
+    """Fetch all networks and return mapping by cloud name."""
+    networks_by_cloud = {}
+    try:
+        resp = api.get("network").json()
+        for net in resp.get("results", []):
+            name = net["name"]
+            cloud_ref = net.get("cloud_ref", "")
+            cloud_name = cloud_ref.split("?name=")[-1] if "?name=" in cloud_ref else cloud_ref.split("/")[-1]
+            networks_by_cloud.setdefault(cloud_name, []).append(name)
+        logger.info(f"Discovered {sum(len(v) for v in networks_by_cloud.values())} networks across {len(networks_by_cloud)} clouds.")
+        for cloud, nets in networks_by_cloud.items():
+            logger.debug(f"  Cloud '{cloud}': {nets}")
+        return networks_by_cloud
+    except Exception as e:
+        logger.error(f"Failed to fetch networks from Avi Controller: {e}")
+        return {}
+
+
+# ---------------------------------------------------------------------
+# Validate network existence
+# ---------------------------------------------------------------------
+def validate_network(name, cloud_name, networks_by_cloud, logger):
+    if not name:
+        return True  # blank network (auto-placement) is OK
+    nets = networks_by_cloud.get(cloud_name, [])
+    if name in nets:
+        return True
+    logger.error(f"Network '{name}' not found in Cloud '{cloud_name}'. Please verify name or discovery status.")
+    return False
 
 
 # ---------------------------------------------------------------------
@@ -196,6 +232,12 @@ def main():
         logger.error(f"Failed to connect to Avi Controller '{args.controller}': {e}")
         sys.exit(1)
 
+    # --- Pre-check networks ---
+    networks_by_cloud = fetch_networks(api, logger)
+    if not networks_by_cloud:
+        logger.error("Unable to retrieve networks; aborting for safety.")
+        sys.exit(1)
+
     if not os.path.exists(args.csv):
         logger.error(f"CSV '{args.csv}' not found.")
         sys.exit(1)
@@ -216,6 +258,14 @@ def main():
             cloud_name = row.get("cloud_name") or "Default-Cloud"
 
             logger.info(f"\n[PROCESSING] VS='{vs_name}' Pool='{pool_name}' (Cloud={cloud_name})")
+
+            # --- Validate networks before proceeding ---
+            if not validate_network(vip_network, cloud_name, networks_by_cloud, logger):
+                logger.error(f"Skipping VS '{vs_name}' due to invalid VIP network '{vip_network}'.")
+                continue
+            if not validate_network(pool_network, cloud_name, networks_by_cloud, logger):
+                logger.error(f"Skipping VS '{vs_name}' due to invalid Pool network '{pool_network}'.")
+                continue
 
             pool_obj = create_pool(api, logger, pool_name, members,
                                    pool_network=pool_network, cloud_name=cloud_name, dry_run=args.dry_run)
