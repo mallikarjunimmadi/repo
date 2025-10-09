@@ -9,6 +9,7 @@ Features:
 - VIP + Pool placement network support
 - SE Group assignment
 - SNAT and Auto Gateway enablement
+- Cloud-aware network references (via 'cloud_name' column)
 - Dry-run mode (simulate without actual creation)
 - Prompts for missing controller/username/password
 - Detailed logging (console + file)
@@ -60,7 +61,7 @@ def setup_logger(log_dir="logs"):
 # ---------------------------------------------------------------------
 # Pool creation
 # ---------------------------------------------------------------------
-def create_pool(api, logger, pool_name, members, pool_network=None, dry_run=False):
+def create_pool(api, logger, pool_name, members, pool_network=None, cloud_name="Default-Cloud", dry_run=False):
     existing = api.get_object_by_name("pool", pool_name)
     if existing:
         logger.warning(f"Pool '{pool_name}' already exists. Skipping creation.")
@@ -82,16 +83,16 @@ def create_pool(api, logger, pool_name, members, pool_network=None, dry_run=Fals
 
     if pool_network:
         pool_data["placement_networks"] = [{
-            "network_ref": f"/api/network?name={pool_network}"
+            "network_ref": f"/api/network?name={pool_network}&cloud={cloud_name}"
         }]
 
     if dry_run:
-        logger.info(f"[DRY-RUN] Would create pool '{pool_name}' with {len(servers)} members.")
+        logger.info(f"[DRY-RUN] Would create pool '{pool_name}' with {len(servers)} members in Cloud '{cloud_name}'.")
         return pool_data
 
     resp = api.post("pool", data=pool_data)
     if resp.status_code in (200, 201):
-        logger.info(f"Pool created: {pool_name}")
+        logger.info(f"Pool created: {pool_name} (Cloud={cloud_name})")
         return resp.json()
     else:
         logger.error(f"Failed to create pool '{pool_name}': {resp.text}")
@@ -103,7 +104,7 @@ def create_pool(api, logger, pool_name, members, pool_network=None, dry_run=Fals
 # ---------------------------------------------------------------------
 def create_virtual_service(api, logger, vs_name, vs_ip, vs_port, pool_name,
                            vip_network=None, vip_subnet=None, vip_mask=None,
-                           se_group=None, dry_run=False):
+                           se_group=None, cloud_name="Default-Cloud", dry_run=False):
     existing = api.get_object_by_name("virtualservice", vs_name)
     if existing:
         logger.warning(f"Virtual Service '{vs_name}' already exists. Skipping.")
@@ -131,7 +132,7 @@ def create_virtual_service(api, logger, vs_name, vs_ip, vs_port, pool_name,
                 "ip_addr": {"addr": vip_subnet, "type": "V4"},
                 "mask": int(vip_mask)
             },
-            "network_ref": f"/api/network?name={vip_network}"
+            "network_ref": f"/api/network?name={vip_network}&cloud={cloud_name}"
         }]
 
     vs_data = {
@@ -148,12 +149,12 @@ def create_virtual_service(api, logger, vs_name, vs_ip, vs_port, pool_name,
         vs_data["se_group_ref"] = f"/api/serviceenginegroup?name={se_group}"
 
     if dry_run:
-        logger.info(f"[DRY-RUN] Would create VS '{vs_name}' (VIP={vs_ip}, SEGroup={se_group})")
+        logger.info(f"[DRY-RUN] Would create VS '{vs_name}' (VIP={vs_ip}, SEGroup={se_group}, Cloud={cloud_name})")
         return vs_data
 
     resp = api.post("virtualservice", data=vs_data)
     if resp.status_code in (200, 201):
-        logger.info(f"VS created: {vs_name} | VIP={vs_ip} | SEGroup={se_group}")
+        logger.info(f"VS created: {vs_name} | VIP={vs_ip} | SEGroup={se_group} | Cloud={cloud_name}")
         return resp.json()
     else:
         logger.error(f"Failed to create VS '{vs_name}': {resp.text}")
@@ -189,7 +190,6 @@ def main():
         args.tenant = "admin"
 
     try:
-        # Old-style SDK uses positional arguments
         api = ApiSession.get_session(args.controller, args.username, args.password, tenant=args.tenant)
         logger.info(f"Connected to Avi Controller '{args.controller}' as '{args.username}' (tenant={args.tenant})")
     except Exception as e:
@@ -213,11 +213,12 @@ def main():
             vip_mask = row.get("vip_mask")
             pool_network = row.get("pool_network")
             se_group = row.get("se_group")
+            cloud_name = row.get("cloud_name") or "Default-Cloud"
 
-            logger.info(f"\n[PROCESSING] VS='{vs_name}' Pool='{pool_name}'")
+            logger.info(f"\n[PROCESSING] VS='{vs_name}' Pool='{pool_name}' (Cloud={cloud_name})")
 
             pool_obj = create_pool(api, logger, pool_name, members,
-                                   pool_network=pool_network, dry_run=args.dry_run)
+                                   pool_network=pool_network, cloud_name=cloud_name, dry_run=args.dry_run)
             if not pool_obj:
                 logger.error(f"Skipping VS '{vs_name}' due to pool creation failure.")
                 continue
@@ -225,7 +226,7 @@ def main():
             create_virtual_service(api, logger, vs_name, vs_ip, vs_port, pool_name,
                                    vip_network=vip_network, vip_subnet=vip_subnet,
                                    vip_mask=vip_mask, se_group=se_group,
-                                   dry_run=args.dry_run)
+                                   cloud_name=cloud_name, dry_run=args.dry_run)
 
     logger.info("\n✅ All VS & Pool processing complete.")
     if args.dry_run:
