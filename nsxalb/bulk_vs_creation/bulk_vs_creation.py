@@ -2,11 +2,12 @@
 """
 bulk_create_vs_full_placement_dryrun.py
 ---------------------------------------
-Bulk-create Virtual Services, Pools, and VSVIPs with proper NSX-T payloads.
+Bulk-create Virtual Services, Pools, and VSVIPs with NSX-T compliance.
 
 ✅ Pretty-printed JSON payloads in debug logs
-✅ Reuse same VSVIP across multiple VS (via 'vsvip_name' CSV column)
-✅ Supports NSX-T clouds with placement_networks (subnet + mask)
+✅ Reuse existing VSVIP automatically by IP (avoids overlapping VIP error)
+✅ Reuse by name if specified in CSV
+✅ Correct NSX-T placement_networks with subnet+mask
 ✅ SNAT + Auto Gateway enabled
 ✅ Dry-run + Debug logging
 """
@@ -17,7 +18,8 @@ from requests.packages.urllib3.exceptions import InsecureRequestWarning
 import urllib3
 urllib3.disable_warnings(InsecureRequestWarning)
 
-# ---------------- Logger ----------------
+
+# ---------- Logger ----------
 def setup_logger(log_dir="logs", debug=False):
     os.makedirs(log_dir, exist_ok=True)
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -32,7 +34,10 @@ def setup_logger(log_dir="logs", debug=False):
     if debug: log.info("Debug mode enabled — full payloads/responses logged.")
     return log
 
-# ---------------- Discovery ----------------
+
+# ---------- Helpers ----------
+def pp(data): return json.dumps(data, indent=2, ensure_ascii=False)
+
 def fetch_cloud_map(api, log):
     clouds={c["name"]:c["uuid"] for c in api.get("cloud").json().get("results",[])}
     log.info(f"Discovered Clouds: {', '.join(clouds.keys())}"); return clouds
@@ -59,10 +64,17 @@ def find_network_details(nets, cloud_uuid, name_or_uuid):
                 }
     return None
 
-def pp(data):  # pretty print JSON for debug
-    return json.dumps(data, indent=2, ensure_ascii=False)
+def find_existing_vsvip_by_ip(api, vip_ip):
+    """Return the name of existing VSVIP with same VIP IP, if any"""
+    resp = api.get("vsvip").json().get("results", [])
+    for v in resp:
+        for vip in v.get("vip", []):
+            if vip.get("ip_address", {}).get("addr") == vip_ip:
+                return v["name"]
+    return None
 
-# ---------------- Pool ----------------
+
+# ---------- Pool ----------
 def create_pool(api, log, name, members, net_name, cu, cn, dry, dbg, nets):
     if api.get_object_by_name("pool", name):
         log.warning(f"Pool '{name}' exists. Skipping."); return True
@@ -95,11 +107,18 @@ def create_pool(api, log, name, members, net_name, cu, cn, dry, dbg, nets):
     if r.status_code in (200,201): log.info(f"Pool created: {name}"); return True
     log.error(f"Pool failed: {r.text}"); return False
 
-# ---------------- VSVIP ----------------
-def create_vsvip(api, log, name, vs_ip, vip_net, cu, cn, dry, dbg, nets):
-    existing = api.get_object_by_name("vsvip", name)
-    if existing:
-        log.info(f"Reusing existing VSVIP '{name}'"); return True
+
+# ---------- VSVIP ----------
+def create_or_reuse_vsvip(api, log, name, vs_ip, vip_net, cu, cn, dry, dbg, nets):
+    """Create a new VSVIP or reuse an existing one with the same IP."""
+    existing_by_ip = find_existing_vsvip_by_ip(api, vs_ip) if vs_ip.lower() != "auto" else None
+    if existing_by_ip:
+        log.info(f"Found existing VSVIP '{existing_by_ip}' for IP {vs_ip}. Reusing it.")
+        return existing_by_ip
+
+    existing_by_name = api.get_object_by_name("vsvip", name)
+    if existing_by_name:
+        log.info(f"Reusing existing VSVIP '{name}'"); return name
 
     nd=find_network_details(nets,cu,vip_net) if vip_net else None
     vip_block={
@@ -125,14 +144,16 @@ def create_vsvip(api, log, name, vs_ip, vip_net, cu, cn, dry, dbg, nets):
 
     data={"name":name,"cloud_ref":f"/api/cloud/{cu}","east_west_placement":False,"vip":[vip_block]}
     if dbg: log.debug(f"[VSVIP PAYLOAD]\n{pp(data)}")
-    if dry: log.info(f"[DRY-RUN] Would create VSVIP '{name}'"); return True
+    if dry: log.info(f"[DRY-RUN] Would create VSVIP '{name}'"); return name
 
     r=api.post("vsvip",data=data)
     if dbg: log.debug(f"[VSVIP RESPONSE] {r.status_code} → {r.text}")
-    if r.status_code in (200,201): log.info(f"VSVIP created: {name}"); return True
-    log.error(f"VSVIP failed: {r.text}"); return False
+    if r.status_code in (200,201):
+        log.info(f"VSVIP created: {name}"); return name
+    log.error(f"VSVIP failed: {r.text}"); return None
 
-# ---------------- VS ----------------
+
+# ---------- VS ----------
 def create_vs(api, log, vs, vs_ip, vs_port, pool, vip_net, se_group,
               vsvip_name, cu, cn, dry, dbg, nets):
     if api.get_object_by_name("virtualservice", vs):
@@ -148,9 +169,10 @@ def create_vs(api, log, vs, vs_ip, vs_port, pool, vip_net, se_group,
         data["se_group_ref"]=f"/api/serviceenginegroup?name={se_group}"
 
     if cn.lower()!="default-cloud":
-        if not create_vsvip(api,log,vsvip_name,vs_ip,vip_net,cu,cn,dry,dbg,nets):
+        vsvip_used = create_or_reuse_vsvip(api,log,vsvip_name,vs_ip,vip_net,cu,cn,dry,dbg,nets)
+        if not vsvip_used:
             log.error(f"Skipping VS '{vs}' — VSVIP creation failed."); return False
-        data["vsvip_ref"]=f"/api/vsvip?name={vsvip_name}"
+        data["vsvip_ref"]=f"/api/vsvip?name={vsvip_used}"
     else:
         vip={"vip_id":"1","enabled":True,"auto_allocate_ip":vs_ip.lower()=="auto",
              "auto_allocate_gateway":True}
@@ -165,7 +187,8 @@ def create_vs(api, log, vs, vs_ip, vs_port, pool, vip_net, se_group,
     if r.status_code in (200,201): log.info(f"VS created: {vs}"); return True
     log.error(f"VS failed: {r.text}"); return False
 
-# ---------------- Main ----------------
+
+# ---------- Main ----------
 def main():
     p=argparse.ArgumentParser()
     p.add_argument("--controller"); p.add_argument("--username"); p.add_argument("--password")
