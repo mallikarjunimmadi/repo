@@ -1,15 +1,6 @@
-# Show the detected entity_uuid for each JSON we saved
-for f in /tools_data/reports/vsMetrics/*.json; do
-  printf "%s -> " "$(basename "$f")"
-  jq -r '.series[0].header.entity_uuid // "NO_SERIES"' "$f"
-done
-
-# Count by prefix (VS/POOL/SE)
-for f in /tools_data/reports/vsMetrics/*.json; do
-  jq -r '.series[0].header.entity_uuid // "NO_SERIES"' "$f"
-done | awk '
-/^virtualservice-/ {vs++}
-/^pool-/           {pl++}
-/^serviceengine-/  {se++}
-/^NO_SERIES/       {ns++}
-END {printf "VS=%d Pool=%d SE=%d NoSeries=%d\n", vs, pl, se, ns}'
+[INFO] Logging initialized → ./avi_vs_create_20251009_171906.log
+[INFO] Controller: m00avientuat.corp.ad.sbi, Tenant: admin
+[INFO] Input CSV: ./sample.csv
+[INFO] Dry-run mode: False
+[ERROR] Failed to connect: get_session() got an unexpected keyword argument 'controller'
+[toolsuser@m00tools01 bulk_vs_creation]$ less ./avi_vs_create_20251009_171906.log
