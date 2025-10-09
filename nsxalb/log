@@ -1,5 +1,2 @@
-from avi.sdk.avi_api import ApiSession
-api = ApiSession.get_session("m00avientuat", "admin", "VMware123!", tenant="admin")
-nets = api.get("network").json()["results"]
-for n in nets:
-    print(n["name"], "|", n["cloud_ref"])
+mum01-1-dmz-vlan203 | https://m00avientuat/api/cloud/cloud-0a512e32-f5a6-404d-bea0-30669cfef78a
+m01-avi-se-b-prod-1456 | https://m00avientuat/api/cloud/cloud-0a512e32-f5a6-404d-bea0-30669cfef78a
