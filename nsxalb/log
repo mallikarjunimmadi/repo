@@ -1,7 +1,6 @@
-[INFO] Logging initialized → ./avi_vs_create_20251009_183405.log
+[INFO] Logging initialized → ./avi_vs_create_20251009_185059.log
 [INFO] Input CSV: ./sample.csv
-[INFO] Dry-run mode: False
-[INFO] Connected to Avi Controller 'm00avientuat' as 'admin' (tenant=admin)
+[INFO] Connected to 'm00avientuat' as 'admin'
 [INFO] Discovered Clouds: Default-Cloud, NSX-T-UAT
 [INFO] Discovered 2 networks across 1 clouds.
 [INFO]
@@ -10,9 +9,12 @@
 [INFO]      - m01-avi-se-b-prod-1456
 [INFO]      - mum01-1-dmz-vlan203
 [INFO]
-[PROCESSING] VS='web_vs1' Pool='web_pool1' Network='mum01-1-dmz-vlan203' (Cloud=NSX-T-UAT)
+[PROCESSING] VS='web_vs1' Pool='web_pool1' (Cloud=NSX-T-UAT)
 Warning: Object Not found for pool named web_pool1
-[ERROR] Failed to create pool 'web_pool1': {"error":"network object not found!"}
-[ERROR] Skipping VS 'web_vs1' due to pool creation failure.
+[WARNING] [RETRY] Pool 'web_pool1' failed due to network object; retrying without placement.
+[INFO] Pool created (auto-placement): web_pool1
+Warning: Object Not found for virtualservice named web_vs1
+[WARNING] [RETRY] VS 'web_vs1' failed due to network object; retrying without placement.
+[ERROR] VS create failed: {"error":"network object not found!"}
 [INFO]
-✅ All VS & Pool processing complete.
+✅ All processing complete.
