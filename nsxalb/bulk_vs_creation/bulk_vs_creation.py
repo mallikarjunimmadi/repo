@@ -9,8 +9,8 @@ Features:
 - VIP + Pool placement network support
 - SE Group assignment
 - SNAT and Auto Gateway enablement
-- Cloud-aware network references (via 'cloud_name' column)
-- Pre-check: verify all referenced networks exist in target Cloud
+- Cloud-aware mapping (cloud name → UUID)
+- Network existence pre-check by Cloud
 - Dry-run mode (simulate without actual creation)
 - Prompts for missing controller/username/password
 - Detailed logging (console + file)
@@ -60,44 +60,62 @@ def setup_logger(log_dir="logs"):
 
 
 # ---------------------------------------------------------------------
-# Query Avi for network list by Cloud
+# Fetch Clouds and Networks
 # ---------------------------------------------------------------------
+def fetch_cloud_map(api, logger):
+    """Return dict of {cloud_name: cloud_uuid}."""
+    try:
+        resp = api.get("cloud").json()
+        clouds = {c["name"]: c["uuid"] for c in resp.get("results", [])}
+        logger.info(f"Discovered Clouds: {', '.join(clouds.keys())}")
+        return clouds
+    except Exception as e:
+        logger.error(f"Failed to fetch cloud list: {e}")
+        return {}
+
+
 def fetch_networks(api, logger):
-    """Fetch all networks and return mapping by cloud name."""
-    networks_by_cloud = {}
+    """Return mapping {cloud_uuid: [network_names]}."""
+    networks_by_uuid = {}
     try:
         resp = api.get("network").json()
         for net in resp.get("results", []):
             name = net["name"]
             cloud_ref = net.get("cloud_ref", "")
-            cloud_name = cloud_ref.split("?name=")[-1] if "?name=" in cloud_ref else cloud_ref.split("/")[-1]
-            networks_by_cloud.setdefault(cloud_name, []).append(name)
-        logger.info(f"Discovered {sum(len(v) for v in networks_by_cloud.values())} networks across {len(networks_by_cloud)} clouds.")
-        for cloud, nets in networks_by_cloud.items():
-            logger.debug(f"  Cloud '{cloud}': {nets}")
-        return networks_by_cloud
+            if not cloud_ref:
+                continue
+            cloud_uuid = cloud_ref.split("/")[-1]   # extract 'cloud-UUID'
+            networks_by_uuid.setdefault(cloud_uuid, []).append(name)
+        total = sum(len(v) for v in networks_by_uuid.values())
+        logger.info(f"Discovered {total} networks across {len(networks_by_uuid)} clouds.")
+        return networks_by_uuid
     except Exception as e:
-        logger.error(f"Failed to fetch networks from Avi Controller: {e}")
+        logger.error(f"Failed to fetch networks: {e}")
         return {}
 
 
 # ---------------------------------------------------------------------
 # Validate network existence
 # ---------------------------------------------------------------------
-def validate_network(name, cloud_name, networks_by_cloud, logger):
+def validate_network(name, cloud_name, cloud_map, networks_by_uuid, logger):
     if not name:
-        return True  # blank network (auto-placement) is OK
-    nets = networks_by_cloud.get(cloud_name, [])
+        return True  # blank network OK
+    cloud_uuid = cloud_map.get(cloud_name)
+    if not cloud_uuid:
+        logger.error(f"Cloud '{cloud_name}' not found on controller.")
+        return False
+    nets = networks_by_uuid.get(cloud_uuid, [])
     if name in nets:
         return True
-    logger.error(f"Network '{name}' not found in Cloud '{cloud_name}'. Please verify name or discovery status.")
+    logger.error(f"Network '{name}' not found in Cloud '{cloud_name}' (uuid={cloud_uuid}).")
     return False
 
 
 # ---------------------------------------------------------------------
 # Pool creation
 # ---------------------------------------------------------------------
-def create_pool(api, logger, pool_name, members, pool_network=None, cloud_name="Default-Cloud", dry_run=False):
+def create_pool(api, logger, pool_name, members, pool_network=None,
+                cloud_name="Default-Cloud", cloud_uuid=None, dry_run=False):
     existing = api.get_object_by_name("pool", pool_name)
     if existing:
         logger.warning(f"Pool '{pool_name}' already exists. Skipping creation.")
@@ -119,7 +137,7 @@ def create_pool(api, logger, pool_name, members, pool_network=None, cloud_name="
 
     if pool_network:
         pool_data["placement_networks"] = [{
-            "network_ref": f"/api/network?name={pool_network}&cloud={cloud_name}"
+            "network_ref": f"/api/network?name={pool_network}&cloud_ref=/api/cloud/{cloud_uuid}"
         }]
 
     if dry_run:
@@ -140,7 +158,8 @@ def create_pool(api, logger, pool_name, members, pool_network=None, cloud_name="
 # ---------------------------------------------------------------------
 def create_virtual_service(api, logger, vs_name, vs_ip, vs_port, pool_name,
                            vip_network=None, vip_subnet=None, vip_mask=None,
-                           se_group=None, cloud_name="Default-Cloud", dry_run=False):
+                           se_group=None, cloud_name="Default-Cloud",
+                           cloud_uuid=None, dry_run=False):
     existing = api.get_object_by_name("virtualservice", vs_name)
     if existing:
         logger.warning(f"Virtual Service '{vs_name}' already exists. Skipping.")
@@ -168,7 +187,7 @@ def create_virtual_service(api, logger, vs_name, vs_ip, vs_port, pool_name,
                 "ip_addr": {"addr": vip_subnet, "type": "V4"},
                 "mask": int(vip_mask)
             },
-            "network_ref": f"/api/network?name={vip_network}&cloud={cloud_name}"
+            "network_ref": f"/api/network?name={vip_network}&cloud_ref=/api/cloud/{cloud_uuid}"
         }]
 
     vs_data = {
@@ -232,10 +251,15 @@ def main():
         logger.error(f"Failed to connect to Avi Controller '{args.controller}': {e}")
         sys.exit(1)
 
-    # --- Pre-check networks ---
-    networks_by_cloud = fetch_networks(api, logger)
-    if not networks_by_cloud:
-        logger.error("Unable to retrieve networks; aborting for safety.")
+    # --- Pre-check Clouds & Networks ---
+    cloud_map = fetch_cloud_map(api, logger)
+    if not cloud_map:
+        logger.error("Unable to fetch clouds; aborting.")
+        sys.exit(1)
+
+    networks_by_uuid = fetch_networks(api, logger)
+    if not networks_by_uuid:
+        logger.error("Unable to fetch networks; aborting.")
         sys.exit(1)
 
     if not os.path.exists(args.csv):
@@ -256,19 +280,21 @@ def main():
             pool_network = row.get("pool_network")
             se_group = row.get("se_group")
             cloud_name = row.get("cloud_name") or "Default-Cloud"
+            cloud_uuid = cloud_map.get(cloud_name)
 
             logger.info(f"\n[PROCESSING] VS='{vs_name}' Pool='{pool_name}' (Cloud={cloud_name})")
 
             # --- Validate networks before proceeding ---
-            if not validate_network(vip_network, cloud_name, networks_by_cloud, logger):
+            if not validate_network(vip_network, cloud_name, cloud_map, networks_by_uuid, logger):
                 logger.error(f"Skipping VS '{vs_name}' due to invalid VIP network '{vip_network}'.")
                 continue
-            if not validate_network(pool_network, cloud_name, networks_by_cloud, logger):
+            if not validate_network(pool_network, cloud_name, cloud_map, networks_by_uuid, logger):
                 logger.error(f"Skipping VS '{vs_name}' due to invalid Pool network '{pool_network}'.")
                 continue
 
             pool_obj = create_pool(api, logger, pool_name, members,
-                                   pool_network=pool_network, cloud_name=cloud_name, dry_run=args.dry_run)
+                                   pool_network=pool_network, cloud_name=cloud_name,
+                                   cloud_uuid=cloud_uuid, dry_run=args.dry_run)
             if not pool_obj:
                 logger.error(f"Skipping VS '{vs_name}' due to pool creation failure.")
                 continue
@@ -276,7 +302,8 @@ def main():
             create_virtual_service(api, logger, vs_name, vs_ip, vs_port, pool_name,
                                    vip_network=vip_network, vip_subnet=vip_subnet,
                                    vip_mask=vip_mask, se_group=se_group,
-                                   cloud_name=cloud_name, dry_run=args.dry_run)
+                                   cloud_name=cloud_name, cloud_uuid=cloud_uuid,
+                                   dry_run=args.dry_run)
 
     logger.info("\n✅ All VS & Pool processing complete.")
     if args.dry_run:
