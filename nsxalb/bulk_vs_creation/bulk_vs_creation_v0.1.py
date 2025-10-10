@@ -10,7 +10,8 @@ Bulk-create Virtual Services, Pools, and VSVIPs with NSX-T compliance.
 ✅ Pretty JSON debug logs
 ✅ Reuse existing VSVIP by IP/name
 ✅ Dry-run and Debug modes
-✅ Generate a ready-to-use CSV template (--generate-sample-csv)
+✅ Generate CSV templates (--generate-sample-csv)
+✅ Rich --help with usage examples
 """
 
 import argparse, csv, datetime, logging, os, sys, getpass, json
@@ -221,17 +222,38 @@ def generate_sample_csv():
 
 # ---------- Main ----------
 def main():
-    p=argparse.ArgumentParser()
-    p.add_argument("--controller")
-    p.add_argument("--username")
-    p.add_argument("--password")
-    p.add_argument("--tenant",default="admin")
-    p.add_argument("--csv")
-    p.add_argument("--log-dir",default="logs")
-    p.add_argument("--dry-run",action="store_true")
-    p.add_argument("--debug",action="store_true")
-    p.add_argument("--generate-sample-csv",action="store_true",
-                   help="Generate a sample CSV template and exit")
+    examples = """
+Examples:
+  # 1️⃣ Generate a ready-to-fill sample CSV template
+  python3 bulk_create_vs_full_placement_dryrun.py --generate-sample-csv
+
+  # 2️⃣ Dry-run (no changes, only payloads logged)
+  python3 bulk_create_vs_full_placement_dryrun.py --controller m00avientuat --csv my_vs_list.csv --dry-run
+
+  # 3️⃣ Actual creation (execute API calls)
+  python3 bulk_create_vs_full_placement_dryrun.py --controller m00avientuat --csv my_vs_list.csv
+
+  # 4️⃣ Enable full debug logging (print payloads & API responses)
+  python3 bulk_create_vs_full_placement_dryrun.py --controller m00avientuat --csv my_vs_list.csv --debug
+
+  # 5️⃣ Combined dry-run + debug (safe validation mode)
+  python3 bulk_create_vs_full_placement_dryrun.py --controller m00avientuat --csv my_vs_list.csv --dry-run --debug
+"""
+    p=argparse.ArgumentParser(
+        description="Bulk-create NSX-T compatible Virtual Services, Pools, and VSVIPs from a CSV input.",
+        epilog=examples,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+
+    p.add_argument("--controller", help="Avi Controller hostname or IP (mandatory for create mode)")
+    p.add_argument("--username", help="Avi username")
+    p.add_argument("--password", help="Avi password (prompted if omitted)")
+    p.add_argument("--tenant", default="admin", help="Avi tenant name (default: admin)")
+    p.add_argument("--csv", help="Path to CSV file containing VS and Pool definitions")
+    p.add_argument("--log-dir", default="logs", help="Directory to store log files (default: ./logs)")
+    p.add_argument("--dry-run", action="store_true", help="Run in validation-only mode without API calls")
+    p.add_argument("--debug", action="store_true", help="Enable detailed debug logging (payloads, responses)")
+    p.add_argument("--generate-sample-csv", action="store_true",
+                   help="Generate a sample CSV template and exit (no other args allowed)")
     a=p.parse_args()
 
     # Exclusive mode for --generate-sample-csv
@@ -248,8 +270,7 @@ def main():
     if not a.password: a.password=getpass.getpass("Password: ")
 
     if not a.csv:
-        log.error("Missing --csv argument.")
-        sys.exit(1)
+        log.error("Missing --csv argument."); sys.exit(1)
 
     api=ApiSession.get_session(a.controller,a.username,a.password,tenant=a.tenant)
     log.info(f"Connected to '{a.controller}' as '{a.username}'")
