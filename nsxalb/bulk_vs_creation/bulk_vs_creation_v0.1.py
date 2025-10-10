@@ -5,7 +5,7 @@ bulk_create_vs_full_placement_dryrun.py
 Bulk-create Virtual Services, Pools, and VSVIPs with NSX-T compliance.
 
 ✅ CSV-driven configuration
-✅ Auto-attach SSL Profile to VS + Pool for Secure-HTTP
+✅ Auto-attach SSL Profile + SSL Certificate for System-Secure-HTTP
 ✅ Health monitor(s) + application profile from CSV
 ✅ Pretty JSON debug logs
 ✅ Reuse existing VSVIP by IP/name
@@ -167,6 +167,7 @@ def create_vs(api, log, vs, vs_ip, vs_port, pool, vip_net, se_group,
 
     app_profile = app_prof or "System-L4-Application"
     ssl_profile = ssl_prof or ("System-Standard-PFS" if app_profile == "System-Secure-HTTP" else None)
+    ssl_cert = "/api/sslkeyandcertificate?name=System-Default-Cert" if app_profile == "System-Secure-HTTP" else None
 
     data={"name":vs,"cloud_ref":f"/api/cloud/{cu}",
           "services":[{"port":int(vs_port)}],
@@ -179,6 +180,8 @@ def create_vs(api, log, vs, vs_ip, vs_port, pool, vip_net, se_group,
         data["se_group_ref"]=f"/api/serviceenginegroup?name={se_group}"
     if ssl_profile:
         data["ssl_profile_ref"]=f"/api/sslprofile?name={ssl_profile}"
+    if ssl_cert:
+        data["ssl_key_and_certificate_refs"]=[ssl_cert]
 
     if cn.lower()!="default-cloud":
         vsvip_used = create_or_reuse_vsvip(api,log,vsvip_name,vs_ip,vip_net,cu,cn,dry,dbg,nets)
