@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 """
 bulk_create_vs_full_placement_dryrun.py
@@ -169,38 +170,62 @@ def create_vs(api, log, vs, vs_ip, vs_port, pool, vip_net, se_group,
     ssl_profile = ssl_prof or ("System-Standard-PFS" if app_profile == "System-Secure-HTTP" else None)
     ssl_cert = "/api/sslkeyandcertificate?name=System-Default-Cert" if app_profile == "System-Secure-HTTP" else None
 
-    data={"name":vs,"cloud_ref":f"/api/cloud/{cu}",
-          "services":[{"port":int(vs_port)}],
-          "pool_ref":f"/api/pool?name={pool}",
-          "application_profile_ref":f"/api/applicationprofile?name={app_profile}",
-          "network_profile_ref":"/api/networkprofile?name=System-TCP-Proxy",
-          "enabled":True}
+    # Build VS service list
+    service = {"port": int(vs_port)}
+    if app_profile == "System-Secure-HTTP":
+        service["enable_ssl"] = True   # ✅ Enable SSL for Secure-HTTP VS
+
+    data = {
+        "name": vs,
+        "cloud_ref": f"/api/cloud/{cu}",
+        "services": [service],
+        "pool_ref": f"/api/pool?name={pool}",
+        "application_profile_ref": f"/api/applicationprofile?name={app_profile}",
+        "network_profile_ref": "/api/networkprofile?name=System-TCP-Proxy",
+        "enabled": True
+    }
 
     if se_group:
-        data["se_group_ref"]=f"/api/serviceenginegroup?name={se_group}"
+        data["se_group_ref"] = f"/api/serviceenginegroup?name={se_group}"
     if ssl_profile:
-        data["ssl_profile_ref"]=f"/api/sslprofile?name={ssl_profile}"
+        data["ssl_profile_ref"] = f"/api/sslprofile?name={ssl_profile}"
     if ssl_cert:
-        data["ssl_key_and_certificate_refs"]=[ssl_cert]
+        data["ssl_key_and_certificate_refs"] = [ssl_cert]
 
-    if cn.lower()!="default-cloud":
-        vsvip_used = create_or_reuse_vsvip(api,log,vsvip_name,vs_ip,vip_net,cu,cn,dry,dbg,nets)
+    if cn.lower() != "default-cloud":
+        vsvip_used = create_or_reuse_vsvip(api, log, vsvip_name, vs_ip, vip_net, cu, cn, dry, dbg, nets)
         if not vsvip_used:
-            log.error(f"Skipping VS '{vs}' — VSVIP creation failed."); return False
-        data["vsvip_ref"]=f"/api/vsvip?name={vsvip_used}"
+            log.error(f"Skipping VS '{vs}' — VSVIP creation failed.")
+            return False
+        data["vsvip_ref"] = f"/api/vsvip?name={vsvip_used}"
     else:
-        vip={"vip_id":"1","enabled":True,"auto_allocate_ip":vs_ip.lower()=="auto",
-             "auto_allocate_gateway":True}
-        if vs_ip.lower()!="auto": vip["ip_address"]={"addr":vs_ip,"type":"V4"}
-        data["vip"]=[vip]
+        vip = {
+            "vip_id": "1",
+            "enabled": True,
+            "auto_allocate_ip": vs_ip.lower() == "auto",
+            "auto_allocate_gateway": True
+        }
+        if vs_ip.lower() != "auto":
+            vip["ip_address"] = {"addr": vs_ip, "type": "V4"}
+        data["vip"] = [vip]
 
-    if dbg: log.debug(f"[VS PAYLOAD]\n{pp(data)}")
-    if dry: log.info(f"[DRY-RUN] Would create VS '{vs}'"); return True
+    if dbg:
+        log.debug(f"[VS PAYLOAD]\n{pp(data)}")
 
-    r=api.post("virtualservice",data=data)
-    if dbg: log.debug(f"[VS RESPONSE] {r.status_code} → {r.text}")
-    if r.status_code in (200,201): log.info(f"VS created: {vs}"); return True
-    log.error(f"VS failed: {r.text}"); return False
+    if dry:
+        log.info(f"[DRY-RUN] Would create VS '{vs}'")
+        return True
+
+    r = api.post("virtualservice", data=data)
+    if dbg:
+        log.debug(f"[VS RESPONSE] {r.status_code} → {r.text}")
+    if r.status_code in (200, 201):
+        log.info(f"VS created: {vs}")
+        return True
+
+    log.error(f"VS failed: {r.text}")
+    return False
+
 
 
 # ---------- Generate Sample CSV ----------
