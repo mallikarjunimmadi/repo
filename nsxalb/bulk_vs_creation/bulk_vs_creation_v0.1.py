@@ -4,11 +4,13 @@ bulk_create_vs_full_placement_dryrun.py
 ---------------------------------------
 Bulk-create Virtual Services, Pools, and VSVIPs with NSX-T compliance.
 
-✅ Health monitor(s) configurable from CSV
-✅ Application Profile configurable from CSV
-✅ Auto-attach SSL Profile to VS and Pool when System-Secure-HTTP is used
-✅ Pretty JSON logs, Dry-run, Debug support
-✅ Reuse existing VSVIP by IP or name
+✅ CSV-driven configuration
+✅ Auto-attach SSL Profile to VS + Pool for Secure-HTTP
+✅ Health monitor(s) + application profile from CSV
+✅ Pretty JSON debug logs
+✅ Reuse existing VSVIP by IP/name
+✅ Dry-run and Debug modes
+✅ Generate a ready-to-use CSV template (--generate-sample-csv)
 """
 
 import argparse, csv, datetime, logging, os, sys, getpass, json
@@ -84,16 +86,13 @@ def create_pool(api, log, name, members, net_name, cu, cn, dry, dbg, nets, healt
     data={"name":name,"cloud_ref":f"/api/cloud/{cu}",
           "lb_algorithm":"LB_ALGORITHM_ROUND_ROBIN","servers":servers}
 
-    # Attach health monitors
     if health_monitor:
         hms = [f"/api/healthmonitor?name={hm.strip()}" for hm in health_monitor.split(",") if hm.strip()]
         data["health_monitor_refs"] = hms
 
-    # Attach SSL profile for pool if secure HTTP
     if app_prof == "System-Secure-HTTP":
         data["ssl_profile_ref"] = "/api/sslprofile?name=System-Standard-PFS"
 
-    # Placement network
     if net_name:
         nd=find_network_details(nets,cu,net_name)
         if nd:
@@ -200,21 +199,51 @@ def create_vs(api, log, vs, vs_ip, vs_port, pool, vip_net, se_group,
     log.error(f"VS failed: {r.text}"); return False
 
 
+# ---------- Generate Sample CSV ----------
+def generate_sample_csv():
+    ts=datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    fname=f"avi_vs_sample_template_{ts}.csv"
+    header=["vs_name","vs_ip","vs_port","pool_name","pool_members","vip_network",
+            "pool_network","se_group","vsvip_name","application_profile",
+            "health_monitor","ssl_profile","cloud_name"]
+    sample=[
+        ["tcp_vs1","10.10.10.11","1521","ora_pool","10.10.20.11:1521;10.10.20.12:1521",
+         "mum01-1-dmz-vlan203","m01-avi-se-b-prod-1456","Internal-SE-Group","","System-L4-Application","System-TCP","","NSX-T-UAT"],
+        ["http_vs1","10.10.10.12","80","web_pool","10.10.20.21:80;10.10.20.22:80",
+         "mum01-1-dmz-vlan203","m01-avi-se-b-prod-1456","Internal-SE-Group","","System-HTTP","System-HTTP","","NSX-T-UAT"],
+        ["https_vs1","10.10.10.13","443","secure_pool","10.10.20.31:443;10.10.20.32:443",
+         "mum01-1-dmz-vlan203","m01-avi-se-b-prod-1456","Internal-SE-Group","","System-Secure-HTTP","System-HTTPS","","NSX-T-UAT"]
+    ]
+    with open(fname,"w",newline="") as f:
+        csv.writer(f).writerows([header]+sample)
+    print(f"✅ Sample CSV template generated: {fname}")
+
+
 # ---------- Main ----------
 def main():
     p=argparse.ArgumentParser()
     p.add_argument("--controller"); p.add_argument("--username"); p.add_argument("--password")
     p.add_argument("--tenant",default="admin")
-    p.add_argument("--csv",required=True)
+    p.add_argument("--csv")
     p.add_argument("--log-dir",default="logs")
     p.add_argument("--dry-run",action="store_true")
     p.add_argument("--debug",action="store_true")
+    p.add_argument("--generate-sample-csv",action="store_true",
+                   help="Generate a sample CSV template and exit")
     a=p.parse_args()
+
+    if a.generate_sample_csv:
+        generate_sample_csv()
+        sys.exit(0)
 
     log=setup_logger(a.log_dir,a.debug)
     if not a.controller: a.controller=input("Controller: ").strip()
     if not a.username: a.username=input("Username: ").strip()
     if not a.password: a.password=getpass.getpass("Password: ")
+
+    if not a.csv:
+        log.error("Missing --csv argument.")
+        sys.exit(1)
 
     api=ApiSession.get_session(a.controller,a.username,a.password,tenant=a.tenant)
     log.info(f"Connected to '{a.controller}' as '{a.username}'")
