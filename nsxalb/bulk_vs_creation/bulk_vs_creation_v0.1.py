@@ -222,7 +222,9 @@ def generate_sample_csv():
 # ---------- Main ----------
 def main():
     p=argparse.ArgumentParser()
-    p.add_argument("--controller"); p.add_argument("--username"); p.add_argument("--password")
+    p.add_argument("--controller")
+    p.add_argument("--username")
+    p.add_argument("--password")
     p.add_argument("--tenant",default="admin")
     p.add_argument("--csv")
     p.add_argument("--log-dir",default="logs")
@@ -232,7 +234,11 @@ def main():
                    help="Generate a sample CSV template and exit")
     a=p.parse_args()
 
+    # Exclusive mode for --generate-sample-csv
     if a.generate_sample_csv:
+        if any([a.controller, a.username, a.password, a.csv, a.dry_run, a.debug]):
+            print("❌ When using --generate-sample-csv, no other arguments are allowed.")
+            sys.exit(1)
         generate_sample_csv()
         sys.exit(0)
 
@@ -269,5 +275,6 @@ def main():
                       cu,cn,a.dry_run,a.debug,nets,
                       r.get("application_profile"),r.get("ssl_profile"))
     log.info("\n✅ All processing complete.")
+
 
 if __name__=="__main__": main()
