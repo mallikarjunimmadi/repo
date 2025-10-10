@@ -6,8 +6,8 @@ Bulk-create Virtual Services, Pools, and VSVIPs with NSX-T compliance.
 
 ✅ Health monitor(s) configurable from CSV
 ✅ Application Profile configurable from CSV
-✅ Auto-attach SSL Profile if Secure-HTTP is used
-✅ Pretty JSON logs, Dry-run, and Debug support
+✅ Auto-attach SSL Profile to VS and Pool when System-Secure-HTTP is used
+✅ Pretty JSON logs, Dry-run, Debug support
 ✅ Reuse existing VSVIP by IP or name
 """
 
@@ -73,7 +73,7 @@ def find_existing_vsvip_by_ip(api, vip_ip):
 
 
 # ---------- Pool ----------
-def create_pool(api, log, name, members, net_name, cu, cn, dry, dbg, nets, health_monitor):
+def create_pool(api, log, name, members, net_name, cu, cn, dry, dbg, nets, health_monitor, app_prof):
     if api.get_object_by_name("pool", name):
         log.warning(f"Pool '{name}' exists. Skipping."); return True
 
@@ -84,11 +84,16 @@ def create_pool(api, log, name, members, net_name, cu, cn, dry, dbg, nets, healt
     data={"name":name,"cloud_ref":f"/api/cloud/{cu}",
           "lb_algorithm":"LB_ALGORITHM_ROUND_ROBIN","servers":servers}
 
-    # Attach health monitors if provided
+    # Attach health monitors
     if health_monitor:
         hms = [f"/api/healthmonitor?name={hm.strip()}" for hm in health_monitor.split(",") if hm.strip()]
         data["health_monitor_refs"] = hms
 
+    # Attach SSL profile for pool if secure HTTP
+    if app_prof == "System-Secure-HTTP":
+        data["ssl_profile_ref"] = "/api/sslprofile?name=System-Standard-PFS"
+
+    # Placement network
     if net_name:
         nd=find_network_details(nets,cu,net_name)
         if nd:
@@ -160,7 +165,6 @@ def create_vs(api, log, vs, vs_ip, vs_port, pool, vip_net, se_group,
     if api.get_object_by_name("virtualservice", vs):
         log.warning(f"VS '{vs}' exists. Skipping."); return True
 
-    # Default app and SSL handling
     app_profile = app_prof or "System-L4-Application"
     ssl_profile = ssl_prof or ("System-Standard-PFS" if app_profile == "System-Secure-HTTP" else None)
 
@@ -229,7 +233,7 @@ def main():
 
             ok=create_pool(api,log,pool,r.get("pool_members","").split(";"),
                            r.get("pool_network"),cu,cn,a.dry_run,a.debug,nets,
-                           r.get("health_monitor"))
+                           r.get("health_monitor"),r.get("application_profile"))
             if not ok: continue
             create_vs(api,log,vs,r.get("vs_ip"),r.get("vs_port"),pool,
                       r.get("vip_network"),r.get("se_group"),vsvip_name,
