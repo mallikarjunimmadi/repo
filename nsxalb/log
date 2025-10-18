@@ -1,20 +1,35 @@
 imallikarjun@ubuntu-01:~/scripts/nsxalb/dev$ python3 alb-vsInventory-v0.2_WIP.py --debug
 /usr/lib/python3/dist-packages/requests/__init__.py:87: RequestsDependencyWarning: urllib3 (2.2.2) or chardet (4.0.0) doesn't match a supported version!
   warnings.warn("urllib3 ({}) or chardet ({}) doesn't match a supported "
-2025-10-18 18:19:00: INFO: Controllers: m00avientlb.local, avi_user, avi_pass
-2025-10-18 18:19:00: INFO: Metrics: ['l4_client.avg_bandwidth', 'l4_client.avg_new_established_conns', 'l4_client.avg_complete_conns', 'l4_client.max_open_conns', 'l7_client.avg_ssl_handshakes_new', 'l7_client.avg_ssl_connections', 'l7_client.avg_ssl_handshakes_reused'] | step=21600 | limit=1
-2025-10-18 18:19:00: DEBUG: Starting new HTTPS connection (1): m00avientlb.local:443
-2025-10-18 18:19:00: DEBUG: https://m00avientlb.local:443 "POST /login HTTP/11" 200 10968
-2025-10-18 18:19:00: INFO: [m00avientlb.local] Logged in
-2025-10-18 18:19:00: DEBUG: https://m00avientlb.local:443 "GET /api/serviceengine?include_name=true HTTP/11" 200 269108
-2025-10-18 18:19:01: INFO: Service Engine cache built: 25 entries
-2025-10-18 18:19:01: DEBUG: https://m00avientlb.local:443 "GET /api/virtualservice?include_name=true HTTP/11" 200 212797
-2025-10-18 18:19:01: INFO: [m00avientlb.local] VS inventory fetched: 25 items
-2025-10-18 18:19:01: DEBUG: [virtualservice-016911e3-7e0a-4f14-8f06-7b5c8e5b0547] Metrics URL: https://m00avientlb.local/api/analytics/metrics/virtualservice/virtualservice-016911e3-7e0a-4f14-8f06-7b5c8e5b0547/?metric_id=l4_client.avg_bandwidth%2Cl4_client.avg_new_established_conns%2Cl4_client.avg_complete_conns%2Cl4_client.max_open_conns%2Cl7_client.avg_ssl_handshakes_new%2Cl7_client.avg_ssl_connections%2Cl7_client.avg_ssl_handshakes_reused&limit=1&step=21600
-2025-10-18 18:19:01: DEBUG: https://m00avientlb.local:443 "GET /api/analytics/metrics/virtualservice/virtualservice-016911e3-7e0a-4f14-8f06-7b5c8e5b0547/?metric_id=l4_client.avg_bandwidth%2Cl4_client.avg_new_established_conns%2Cl4_client.avg_complete_conns%2Cl4_client.max_open_conns%2Cl7_client.avg_ssl_handshakes_new%2Cl7_client.avg_ssl_connections%2Cl7_client.avg_ssl_handshakes_reused&limit=1&step=21600 HTTP/11" 200 None
+2025-10-18 18:24:56: INFO: Controllers: m00avientlb.local, avi_user, avi_pass
+2025-10-18 18:24:56: INFO: Metrics: ['l4_client.avg_bandwidth', 'l4_client.avg_new_established_conns', 'l4_client.avg_complete_conns', 'l4_client.max_open_conns', 'l7_client.avg_ssl_handshakes_new', 'l7_client.avg_ssl_connections', 'l7_client.avg_ssl_handshakes_reused'] | step=21600 | limit=1
+2025-10-18 18:24:56: DEBUG: Starting new HTTPS connection (1): m00avientlb.local:443
+2025-10-18 18:24:56: DEBUG: Starting new HTTPS connection (1): avi_user:443
+2025-10-18 18:24:56: DEBUG: Starting new HTTPS connection (1): avi_pass:443
+2025-10-18 18:24:56: ERROR: [avi_user] Login error: HTTPSConnectionPool(host='avi_user', port=443): Max retries exceeded with url: /login (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x7f23d2369120>: Failed to resolve 'avi_user' ([Errno -3] Temporary failure in name resolution)"))
+2025-10-18 18:24:56: ERROR: [avi_pass] Login error: HTTPSConnectionPool(host='avi_pass', port=443): Max retries exceeded with url: /login (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x7f23d2369420>: Failed to resolve 'avi_pass' ([Errno -3] Temporary failure in name resolution)"))
+2025-10-18 18:24:56: DEBUG: https://m00avientlb.local:443 "POST /login HTTP/11" 200 10968
+2025-10-18 18:24:56: INFO: [m00avientlb.local] Logged in
+2025-10-18 18:24:57: DEBUG: https://m00avientlb.local:443 "GET /api/serviceengine?include_name=true HTTP/11" 200 269108
+2025-10-18 18:24:57: INFO: Service Engine cache built: 25 entries
+2025-10-18 18:24:57: DEBUG: https://m00avientlb.local:443 "GET /api/virtualservice?include_name=true HTTP/11" 200 212797
+2025-10-18 18:24:57: INFO: [m00avientlb.local] VS inventory fetched: 25 items
+2025-10-18 18:24:57: DEBUG: [virtualservice-016911e3-7e0a-4f14-8f06-7b5c8e5b0547] Metrics URL: https://m00avientlb.local/api/analytics/metrics/virtualservice/virtualservice-016911e3-7e0a-4f14-8f06-7b5c8e5b0547/?metric_id=l4_client.avg_bandwidth%2Cl4_client.avg_new_established_conns%2Cl4_client.avg_complete_conns%2Cl4_client.max_open_conns%2Cl7_client.avg_ssl_handshakes_new%2Cl7_client.avg_ssl_connections%2Cl7_client.avg_ssl_handshakes_reused&limit=1&step=21600
+2025-10-18 18:24:58: DEBUG: https://m00avientlb.local:443 "GET /api/analytics/metrics/virtualservice/virtualservice-016911e3-7e0a-4f14-8f06-7b5c8e5b0547/?metric_id=l4_client.avg_bandwidth%2Cl4_client.avg_new_established_conns%2Cl4_client.avg_complete_conns%2Cl4_client.max_open_conns%2Cl7_client.avg_ssl_handshakes_new%2Cl7_client.avg_ssl_connections%2Cl7_client.avg_ssl_handshakes_reused&limit=1&step=21600 HTTP/11" 200 None
 Traceback (most recent call last):
-  File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 307, in <module>
+  File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 315, in <module>
     main()
-  File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 283, in main
-    user, password = creds.split(",", 1)
-ValueError: not enough values to unpack (expected 2, got 1)
+  File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 293, in main
+    res, ctrl, ct, mt, tt = fut.result()
+  File "/usr/lib/python3.10/concurrent/futures/_base.py", line 451, in result
+    return self.__get_result()
+  File "/usr/lib/python3.10/concurrent/futures/_base.py", line 403, in __get_result
+    raise self._exception
+  File "/usr/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 240, in worker
+    row = process_vs(vs, se_cache, metrics_data, controller)
+  File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 179, in process_vs
+    metrics_values[name] = datapoints[0][1] if datapoints else "N/A"
+KeyError: 1
+imallikarjun@ubuntu-01:~/scripts/nsxalb/dev$
