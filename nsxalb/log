@@ -1,0 +1,18 @@
+2025-10-18 15:29:45,343: INFO: Logging initialized. Level=INFO
+2025-10-18 15:29:45,344: INFO: Controllers mode: sequential
+2025-10-18 15:29:45,345: INFO: Metrics: ['l4_client.avg_bandwidth', 'l4_client.avg_new_established_conns', 'l4_client.avg_complete_conns', 'l4_client.max_open_conns', 'l7_client.avg_ssl_handshakes_new', 'l7_client.avg_ssl_
+connections', 'l7_client.avg_ssl_handshakes_reused'] | step=21600 | limit=1
+C:\Program Files\Python313\Lib\site-packages\urllib3\connectionpool.py:1099: InsecureRequestWarning: Unverified HTTPS request is being made to host 'm00avientlb.local'. Adding certificate verification is strongly adv
+ised. See: https://urllib3.readthedocs.io/en/latest/advanced-usage.html#tls-warnings
+  warnings.warn(
+Traceback (most recent call last):
+  File "M:\Mallik\Scripts\nsxalb\alb-vsInventory-v0.2_WIP.py", line 474, in <module>
+    main()
+    ~~~~^^
+  File "M:\Mallik\Scripts\nsxalb\alb-vsInventory-v0.2_WIP.py", line 468, in main
+    process_controller(c, creds, writer, METRIC_IDS)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "M:\Mallik\Scripts\nsxalb\alb-vsInventory-v0.2_WIP.py", line 215, in process_controller
+    for cfg in api.get_iter('virtualservice', params={'include_name': True, 'page_size': 200}):
+               ^^^^^^^^^^^^
+AttributeError: 'ApiSession' object has no attribute 'get_iter'
