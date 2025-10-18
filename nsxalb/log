@@ -1,40 +1,4 @@
-/usr/lib/python3/dist-packages/requests/__init__.py:87: RequestsDependencyWarning: urllib3 (2.2.2) or chardet (4.0.0) doesn't match a supported version!
-  warnings.warn("urllib3 ({}) or chardet ({}) doesn't match a supported "
-2025-10-18 18:41:58: INFO: Controllers: m00aviblb.local, avi_user, avi_pass
-2025-10-18 18:41:58: INFO: Metrics: ['l4_client.avg_bandwidth', 'l4_client.avg_new_established_conns', 'l4_client.avg_complete_conns', 'l4_client.max_open_conns', 'l7_client.avg_ssl_handshakes_new', 'l7_client.avg_ssl_connections', 'l7_client.avg_ssl_handshakes_reused'] | step=21600 | limit=1
-2025-10-18 18:41:58: DEBUG: Starting new HTTPS connection (1): avi_user:443
-2025-10-18 18:41:58: DEBUG: Starting new HTTPS connection (1): avi_pass:443
-2025-10-18 18:41:58: ERROR: [avi_user] Login error: HTTPSConnectionPool(host='avi_user', port=443): Max retries exceeded with url: /login (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x7fa095553af0>: Failed to resolve 'avi_user' ([Errno -3] Temporary failure in name resolution)"))
-2025-10-18 18:41:58: DEBUG: Starting new HTTPS connection (1): m00aviblb.local:443
-2025-10-18 18:41:58: ERROR: [avi_pass] Login error: HTTPSConnectionPool(host='avi_pass', port=443): Max retries exceeded with url: /login (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x7fa095553e20>: Failed to resolve 'avi_pass' ([Errno -3] Temporary failure in name resolution)"))
-2025-10-18 18:41:59: DEBUG: https://m00aviblb.local:443 "POST /login HTTP/11" 200 7752
-2025-10-18 18:41:59: INFO: [m00aviblb.local] Logged in
-2025-10-18 18:41:59: DEBUG: Pagination GET (page 1): https://m00aviblb.local/api/serviceengine?include_name=true
-2025-10-18 18:41:59: DEBUG: https://m00aviblb.local:443 "GET /api/serviceengine?include_name=true HTTP/11" 200 222547
-2025-10-18 18:41:59: INFO: Service Engine cache built: 20 entries
-2025-10-18 18:41:59: DEBUG: Pagination GET (page 1): https://m00aviblb.local/api/virtualservice?include_name=true
-2025-10-18 18:41:59: DEBUG: https://m00aviblb.local:443 "GET /api/virtualservice?include_name=true HTTP/11" 200 218265
-2025-10-18 18:41:59: DEBUG: Pagination GET (page 2): /api/virtualservice?include_name=true&page=2
-2025-10-18 18:41:59: WARNING: Connection error retrying /api/virtualservice?include_name=true&page=2: Invalid URL '/api/virtualservice?include_name=true&page=2': No schema supplied. Perhaps you meant http:///api/virtualservice?include_name=true&page=2?
-2025-10-18 18:42:01: WARNING: Connection error retrying /api/virtualservice?include_name=true&page=2: Invalid URL '/api/virtualservice?include_name=true&page=2': No schema supplied. Perhaps you meant http:///api/virtualservice?include_name=true&page=2?
-2025-10-18 18:42:05: WARNING: Connection error retrying /api/virtualservice?include_name=true&page=2: Invalid URL '/api/virtualservice?include_name=true&page=2': No schema supplied. Perhaps you meant http:///api/virtualservice?include_name=true&page=2?
-2025-10-18 18:42:11: ERROR: Giving up after 3 retries: /api/virtualservice?include_name=true&page=2
-2025-10-18 18:42:11: INFO: [m00aviblb.local] VS inventory fetched: 25 items
-2025-10-18 18:42:11: DEBUG: [virtualservice-00e02a00-7482-44d1-bead-aed3ccdfc0cc] Metrics URL: https://m00aviblb.local/api/analytics/metrics/virtualservice/virtualservice-00e02a00-7482-44d1-bead-aed3ccdfc0cc/?metric_id=l4_client.avg_bandwidth%2Cl4_client.avg_new_established_conns%2Cl4_client.avg_complete_conns%2Cl4_client.max_open_conns%2Cl7_client.avg_ssl_handshakes_new%2Cl7_client.avg_ssl_connections%2Cl7_client.avg_ssl_handshakes_reused&limit=1&step=21600
-2025-10-18 18:42:12: DEBUG: https://m00aviblb.local:443 "GET /api/analytics/metrics/virtualservice/virtualservice-00e02a00-7482-44d1-bead-aed3ccdfc0cc/?metric_id=l4_client.avg_bandwidth%2Cl4_client.avg_new_established_conns%2Cl4_client.avg_complete_conns%2Cl4_client.max_open_conns%2Cl7_client.avg_ssl_handshakes_new%2Cl7_client.avg_ssl_connections%2Cl7_client.avg_ssl_handshakes_reused&limit=1&step=21600 HTTP/11" 200 None
-Traceback (most recent call last):
-  File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 484, in <module>
-    main()
-  File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 445, in main
-    rows, ctrl, se_cnt, vs_cnt, inv_t, met_t, tot_t = fut.result()
-  File "/usr/lib/python3.10/concurrent/futures/_base.py", line 451, in result
-    return self.__get_result()
-  File "/usr/lib/python3.10/concurrent/futures/_base.py", line 403, in __get_result
-    raise self._exception
-  File "/usr/lib/python3.10/concurrent/futures/thread.py", line 58, in run
-    result = self.fn(*self.args, **self.kwargs)
-  File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 375, in controller_worker
-    row = process_vs_row(vs, se_cache, metrics_data, controller, metrics_list)
-  File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 338, in process_vs_row
-    series_map[mname] = first[0]
-KeyError: 0
+Controller	Virtual_Service_Name	VS_VIP	Port	Type(IPv4_/IPv6)	VS_Enabled	Traffic_Enabled	SSL_Enabled	VIP_as_SNAT	Auto_Gateway_Enabled	VH_Type	Application_Profile	SSL_Profile	SSL_Certificate_Name	Analytics_Profile	Network_Profile	State	Reason	Pool	Service_Engine_Group	Primary_SE_Name	Primary_SE_IP	Primary_SE_UUID	Secondary_SE_Name	Secondary_SE_IP	Secondary_SE_UUID	Active_Standby_SE_Tag	Cloud	Cloud_Type	Tenant	Real_Time_Metrics_Enabled	l4_client.avg_bandwidth	l4_client.avg_new_established_conns	l4_client.avg_complete_conns	l4_client.max_open_conns	l7_client.avg_ssl_handshakes_new	l7_client.avg_ssl_connections	l7_client.avg_ssl_handshakes_reused	VS_UUID
+m00aviblb.local	VS_SF_SEWA_10.191.152.21_443		443		TRUE	TRUE	FALSE	TRUE	TRUE		System-L4-Application			System-Analytics-Profile	System-TCP-Proxy	UNKNOWN		VS_SF_SEWA_10.191.152.21_443-Pool	SE-Group-2-602			se-005056aec474#avie_uat_Avi-se-dsvoa			se-005056aedd84#avie_uat_Avi-se-nnzmt	ACTIVE_STANDBY_SE_1	NSX-T-UAT	CLOUD_NSXT	admin	FALSE	{'timestamp': '2025-10-18T13:00:00+00:00', 'value': 0.0}	{'timestamp': '2025-10-18T13:00:00+00:00', 'value': 0.0}	{'timestamp': '2025-10-18T13:00:00+00:00', 'value': 0.0}	{'timestamp': '2025-10-18T13:00:00+00:00', 'value': 0.0}	N/A	N/A	N/A	virtualservice-00e02a00-7482-44d1-bead-aed3ccdfc0cc
+m00aviblb.local	VS_CRM_CC_156.100_6004		6004		TRUE	TRUE	TRUE	TRUE	FALSE		System-Secure-HTTP	System-Standard-PFS	VS_CRM_CC_156.100_V1	System-Analytics-Profile	System-TCP-Proxy	UNKNOWN		VS_CRM_CC_156.100_6004-pool	SE-Group-1-602			se-005056aeb2d7#avie_uat_Avi-se-lcjfz			se-005056ae2662#avie_uat_Avi-se-wjgos	ACTIVE_STANDBY_SE_2	NSX-T-UAT	CLOUD_NSXT	admin	FALSE	{'timestamp': '2025-10-18T13:00:00+00:00', 'value': 0.0}	{'timestamp': '2025-10-18T13:00:00+00:00', 'value': 0.0}	{'timestamp': '2025-10-18T13:00:00+00:00', 'value': 0.0}	{'timestamp': '2025-10-18T13:00:00+00:00', 'value': 0.0}	{'timestamp': '2025-10-18T13:00:00+00:00', 'value': 0.0}	{'timestamp': '2025-10-18T13:00:00+00:00', 'value': 0.0}	{'timestamp': '2025-10-18T13:00:00+00:00', 'value': 0.0}	virtualservice-12e3d225-75c0-4d01-9ec4-9a8ecbb3c16c
+m00aviblb.local	VS_INB_RETAIL_10.191.206.194_8443		8443		TRUE	TRUE	FALSE	FALSE	TRUE		System-L4-Application			System-Analytics-Profile	System-TCP-Proxy	UNKNOWN		VS_INB_RETAIL_10.191.206.194_8443-pool	SE-Group-728-1			se-005056ae6f29#avie_uat_Avi-se-ymjpr			se-005056aeee6b#avie_uat_Avi-se-mlbpw	ACTIVE_STANDBY_SE_1	NSX-T-UAT	CLOUD_NSXT	admin	FALSE	{'timestamp': '2025-10-18T13:00:00+00:00', 'value': 0.0}	{'timestamp': '2025-10-18T13:00:00+00:00', 'value': 0.0}	{'timestamp': '2025-10-18T13:00:00+00:00', 'value': 0.0}	{'timestamp': '2025-10-18T13:00:00+00:00', 'value': 0.0}	N/A	N/A	N/A	virtualservice-3078ffd3-6b52-4e93-a1cc-262a509f82bc
