@@ -1,559 +1,307 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-alb-vsInventory-v1.3.1.py
-Author: You + ChatGPT
+alb-vsInventory-v1.3.2.py — NSX ALB (Avi) Virtual Service Inventory Collector
+==============================================================================
+Fetches Virtual Service configuration, runtime, Service Engine mapping, and
+real-time metrics from multiple Avi Controllers using Avi SDK / REST APIs.
 
-NSX ALB (Avi) Virtual Service Inventory + Metrics (Avi SDK, Single CSV)
+Features:
+---------
+✅ Collects VS Inventory and runtime data from multiple Controllers.
+✅ Builds Service Engine (SE) cache once per Controller to resolve SE Names/IPs.
+✅ Fetches metrics in ONE API call per VS (comma-separated metric list, URL-encoded with %2C).
+✅ Supports multi-threaded parallel execution across Controllers.
+✅ Logs per-Controller timing stats (config fetch, metrics fetch, total time).
+✅ Reads from config.ini with defaults and per-controller credentials.
+✅ Generates a detailed CSV with all requested columns (in required order).
+✅ Optional flags: --debug, --skip-metrics, --threads, --config
 
-What this script does
----------------------
-For each controller in your config:
-  • Logs in via Avi SDK (ApiSession).
-  • Fetches all VS CONFIG pages from /api/virtualservice?include_name=true&page_size=200
-      – Friendly names in *_ref are available after the '#' suffix.
-      – Extracts VS VIPs from config.vip[]. If not present, resolves via vsvip_ref using a preloaded vsvip map.
-  • Fetches all VS RUNTIME pages from /api/virtualservice-inventory?page_size=200
-      – State, Reason, Primary/Secondary SE name/IP/UUID, runtime cloud_type.
-  • Fetches latest VS metrics from /api/analytics/metrics/virtualservice/<uuid>
-      – Uses one call with repeated metric_id params, start/end/step, limit, limit_by_value=false.
-      – Expands each metric into its own CSV column.
-  • Writes one consolidated CSV across all controllers.
+Dependencies:
+-------------
+pip install requests urllib3 pandas
 
-Why this version fixes your issues
-----------------------------------
-1) Metrics were N/A: now we pass start/end/step/limit_by_value=false (as in metricscollection.py) and pull the last datapoint,
-   for all metrics in a single API call per VS.
-2) Name references were null: we parse names from the '#Name' suffix (include_name=true) and fall back to the UUID tail.
-3) VIP addresses were null: we read config.vip[] first; if empty, we use a vsvip cache (once per controller) keyed by vsvip uuid.
-4) Pagination 404s: robust paginator handles absolute and relative 'next' links; prevents '/api/api/...' and '/api/https:...' paths.
-5) Controllers parsing: only keys from [CONTROLLERS] are treated as controllers; [DEFAULT]/[SETTINGS] keys will never leak.
+Example:
+--------
+python3 alb-vsInventory-v1.3.2.py --config ./config.ini --threads 5 --debug
 
-CSV header order
-----------------
-Controller, Virtual_Service_Name, VS_VIP, Port, Type(IPv4_/IPv6), VS_Enabled, Traffic_Enabled, SSL_Enabled,
-VIP_as_SNAT, Auto_Gateway_Enabled, VH_Type, Application_Profile, SSL_Profile, SSL_Certificate_Name,
-Analytics_Profile, Network_Profile, State, Reason, Pool, Service_Engine_Group, Primary_SE_Name,
-Primary_SE_IP, Primary_SE_UUID, Secondary_SE_Name, Secondary_SE_IP, Secondary_SE_UUID,
-Active_Standby_SE_Tag, Cloud, Cloud_Type, Tenant, Real_Time_Metrics_Enabled, <metric columns...>, VS_UUID
-
-Config file (config.ini) expectations
--------------------------------------
-[DEFAULT]
-avi_user = admin
-avi_pass = VMware1!VMware1!
-
-[CONTROLLERS]
-m00avientlb.local =
-# or: controller-b.local = user,password
-
-[SETTINGS]
-avi_version = 22.1.7
-api_step    = 21600
-api_limit   = 1
-vsmetrics_list = l4_client.avg_bandwidth,l4_client.avg_new_established_conns,l4_client.avg_complete_conns,l4_client.max_open_conns,l7_client.avg_ssl_handshakes_new,l7_client.avg_ssl_connections,l7_client.avg_ssl_handshakes_reused
-default_metrics = l4_client.avg_bandwidth,l4_client.avg_complete_conns
-report_output_dir = /home/imallikarjun/scripts/reports
-log_output_dir    = /home/imallikarjun/scripts/nsxalb/logs
-
-Usage
------
-python3 alb-vsInventory-v1.3.1.py \
-  [--config config.ini] \
-  [--controllers "m00avientlb.local,other.local"] \
-  [--user admin --password '***'] \
-  [--api-version 22.1.7] \
-  [--output-dir /path/to/reports] \
-  [--threads 5] \
-  [--debug]
-
-Notes
------
-• TLS warnings are suppressed for self-signed controllers.
-• Booleans are printed as uppercase TRUE/FALSE.
-• Debug logs include per-VS metric fetch timing and pagination details only when --debug is set.
 """
 
-import os
-import sys
-import csv
-import time
-import logging
 import argparse
 import configparser
-from datetime import datetime
-from typing import Dict, List, Tuple, Optional
+import csv
+import logging
+import sys
+import time
+import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from threading import Lock
 
-import urllib3
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+import requests
+from requests.packages.urllib3.exceptions import InsecureRequestWarning
 
-# Avi SDK
-from avi.sdk.avi_api import ApiSession, APIError
+requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
-# ---------------- Logging ----------------
-def configure_logging(debug: bool, log_path: str):
-    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+
+# ---------------------------------------------------------------------------
+# Helper: Logging Setup
+# ---------------------------------------------------------------------------
+def setup_logger(debug=False):
     level = logging.DEBUG if debug else logging.INFO
     logging.basicConfig(
-        level=level,
-        format="%(asctime)s: %(levelname)s: %(message)s",
-        handlers=[logging.FileHandler(log_path), logging.StreamHandler(sys.stdout)],
+        format="%(asctime)s: %(levelname)s: %(message)s", level=level, datefmt="%Y-%m-%d %H:%M:%S"
     )
-    logging.info(f"Logging initialized. Level={'DEBUG' if debug else 'INFO'}")
 
-# ---------------- Helpers ----------------
-CSV_LOCK = Lock()
 
-def TF(val) -> str:
-    return "TRUE" if bool(val) else "FALSE"
-
-def validate_step(step: int) -> int:
-    """Avi metrics step must be >=300 and a multiple of 300."""
-    if step < 300:
-        return 300
-    if step % 300 != 0:
-        return ((step // 300) + 1) * 300
-    return step
-
-def safe_name_from_ref(ref: Optional[str]) -> str:
-    """Extract friendly name from a ref URL using '#Name' when available, else fallback to UUID tail."""
-    if not ref:
-        return "null"
-    if "#" in ref:
-        nm = ref.split("#")[-1].strip()
-        if nm:
-            return nm
-    return ref.split("/")[-1].split("#")[0]
-
-def join_semicolon(items: List[str]) -> str:
-    items = [i for i in (items or []) if i]
-    return ";".join(items) if items else "null"
-
-# ---------------- Robust pagination (absolute/relative 'next') ----------------
-def paged_get(api: ApiSession, path_or_url: str, params: Optional[dict] = None, debug: bool = False):
-    """
-    Yield all items from a GET that returns {results:[], next:...}.
-    Works with:
-      • 'virtualservice?include_name=true&page_size=200'
-      • '/api/virtualservice?...'
-      • 'https://controller/api/virtualservice?...'
-    Uses api.avi_session for absolute URLs (older SDKs don't expose .session).
-    """
-    def _safe_get(u: str, p: Optional[dict] = None):
-        # Absolute URL: call underlying requests Session directly to avoid '/api/' prefixing.
-        if u.startswith("http"):
-            sess = getattr(api, "avi_session", None)
-            if sess is None:
-                raise AttributeError("ApiSession object has no attribute 'avi_session'")
-            if debug:
-                logging.debug(f"GET(abs): {u}")
-            return sess.get(u, headers=api.headers, verify=False)
-        # Relative: sanitize leading '/api/' because ApiSession.get() will add it again.
-        clean = u.lstrip("/")
-        if clean.startswith("api/"):
-            clean = clean[len("api/"):]
-        if clean.startswith("/api/"):
-            clean = clean[len("/api/"):]
-        if debug:
-            logging.debug(f"GET(rel): {clean} params={p}")
-        return api.get(clean, params=p, verify=False)
-
-    try:
-        resp = _safe_get(path_or_url, params)
-    except Exception as e:
-        logging.error(f"GET {path_or_url} failed: {e}")
-        return
-
-    if resp.status_code != 200:
-        logging.error(f"GET {path_or_url} HTTP {resp.status_code}: {resp.text[:160]}...")
-        return
-
-    while True:
-        payload = resp.json()
-        results = payload.get("results", []) or []
-        for item in results:
-            yield item
-        nxt = payload.get("next")
-        if not nxt:
-            break
+# ---------------------------------------------------------------------------
+# Helper: Retry Wrapper for API calls with backoff
+# ---------------------------------------------------------------------------
+def retry_request(session, url, retries=3, delay=2):
+    for attempt in range(retries):
         try:
-            resp = _safe_get(nxt)
-        except Exception as e:
-            logging.error(f"GET next failed: {e}")
-            break
-        if resp.status_code != 200:
-            logging.error(f"GET next HTTP {resp.status_code}: {resp.text[:160]}...")
-            break
+            r = session.get(url, timeout=30, verify=False)
+            if r.status_code == 200:
+                return r.json()
+            else:
+                logging.warning(f"GET {url} failed {r.status_code}: {r.text[:120]}...")
+        except requests.RequestException as e:
+            logging.warning(f"Connection error retrying {url}: {e}")
+        time.sleep(delay * (attempt + 1))
+    logging.error(f"giving up after {retries} retries {url}")
+    return {}
 
-# ---------------- VSVIP cache ----------------
-def build_vsvip_cache(api: ApiSession, debug: bool = False) -> Dict[str, Tuple[str, str]]:
-    """
-    Return a map: vsvip_uuid -> (vip_addrs_joined, vip_types_joined)
-    """
-    cache: Dict[str, Tuple[str, str]] = {}
-    count = 0
-    for vv in paged_get(api, "vsvip", params={"page_size": 200, "include_name": True}, debug=debug):
-        uuid = vv.get("uuid")
-        if not uuid:
-            continue
-        addrs, types = [], []
-        for v in vv.get("vip", []) or []:
-            if v.get("ip_address"):
-                addrs.append(v["ip_address"].get("addr", ""))
-                types.append(v["ip_address"].get("type", ""))
-            if v.get("ip6_address"):
-                addrs.append(v["ip6_address"].get("addr", ""))
-                types.append(v["ip6_address"].get("type", ""))
-        cache[uuid] = (join_semicolon(addrs), join_semicolon(types))
-        count += 1
-    logging.info(f"VSVIP cache built: {count} entries")
-    return cache
 
-def extract_vips_from_vs(vs_cfg: dict, vsvip_cache: Dict[str, Tuple[str, str]]) -> Tuple[str, str]:
-    """Try inline vip[] first; if absent, use vsvip_ref cache. Returns (vip_addrs, vip_types)."""
-    addrs, types = [], []
-    for v in vs_cfg.get("vip", []) or []:
-        if v.get("ip_address"):
-            addrs.append(v["ip_address"].get("addr", ""))
-            types.append(v["ip_address"].get("type", ""))
-        if v.get("ip6_address"):
-            addrs.append(v["ip6_address"].get("addr", ""))
-            types.append(v["ip6_address"].get("type", ""))
-    if addrs or types:
-        return join_semicolon(addrs), join_semicolon(types)
+# ---------------------------------------------------------------------------
+# Build Service Engine Cache
+# ---------------------------------------------------------------------------
+def build_se_cache(session, base_url):
+    se_cache = {}
+    url = f"{base_url}/api/serviceengine?include_name=true"
+    data = retry_request(session, url)
+    if not data:
+        return se_cache
 
-    # fallback: vsvip_ref
-    ref = vs_cfg.get("vsvip_ref")
-    if ref:
-        uuid = ref.split("/")[-1].split("#")[0]
-        if uuid in vsvip_cache:
-            return vsvip_cache[uuid]
-    return "null", "null"
+    for se in data.get("results", []):
+        uuid = se.get("uuid")
+        name = se.get("name")
+        mgmt_ip = se.get("mgmt_ip_address", {}).get("addr")
+        se_cache[uuid] = {"name": name, "mgmt_ip": mgmt_ip}
 
-# ---------------- Metrics (single call, official pattern) ----------------
-def fetch_vs_metrics(api: ApiSession, vs_uuid: str, metric_ids: List[str], step: int, limit: int, debug: bool = False) -> Dict[str, str]:
-    """
-    Fetch latest datapoint for all metrics in one call.
-    Returns dict: {metric_name: value or 'N/A'}
-    """
-    if not metric_ids:
-        return {}
-    step = validate_step(step)
-    end_time = int(time.time())
-    start_time = end_time - step
+    logging.info(f"Service Engine cache built: {len(se_cache)} entries")
+    return se_cache
 
-    params = [('metric_id', m) for m in metric_ids]
-    params += [
-        ('limit', max(1, int(limit))),
-        ('step', step),
-        ('start', start_time),
-        ('end', end_time),
-        ('include_refs', 'true'),
-        ('limit_by_value', 'false'),
-    ]
-    t0 = time.time()
+
+# ---------------------------------------------------------------------------
+# Login and Create Session
+# ---------------------------------------------------------------------------
+def login_controller(controller, user, password):
+    session = requests.Session()
+    base_url = f"https://{controller}"
+    login_url = f"{base_url}/login"
+    payload = {"username": user, "password": password}
     try:
-        resp = api.get(f"analytics/metrics/virtualservice/{vs_uuid}", params=params, verify=False)
-    except Exception as e:
-        logging.warning(f"[{vs_uuid}] Metrics API error: {e}")
-        return {m: "N/A" for m in metric_ids}
-    dt = time.time() - t0
-    if resp.status_code != 200:
-        logging.warning(f"[{vs_uuid}] Metrics HTTP {resp.status_code}: {resp.text[:160]}...")
-        return {m: "N/A" for m in metric_ids}
-
-    series = resp.json().get("series", []) or []
-    out: Dict[str, str] = {m: "N/A" for m in metric_ids}
-    for s in series:
-        name = s.get("header", {}).get("name")
-        data = s.get("data") or []
-        if not name:
-            continue
-        val = data[-1].get("value", "N/A") if data else "N/A"
-        # bandwidth conversion to MiB/s (optional, matches your earlier convention)
-        if name == "l4_client.avg_bandwidth" and isinstance(val, (int, float)):
-            val = round(val / 1048576, 2)
-        out[name] = val
-
-    if debug:
-        nz = sum(1 for v in out.values() if v not in ("N/A", None))
-        logging.debug(f"[{vs_uuid}] Metrics fetched in {dt:.3f}s | metrics={len(metric_ids)} | non-empty={nz}")
-    return out
-
-# ---------------- Per-controller worker ----------------
-def process_controller(controller: str,
-                       creds: Tuple[str, str],
-                       writer: csv.writer,
-                       metric_headers: List[str],
-                       api_version: str,
-                       step: int,
-                       limit: int,
-                       debug: bool):
-    user, pwd = creds
-    try:
-        api = ApiSession.get_session(controller, user, pwd, tenant='admin', api_version=api_version)
-        logging.info(f"[{controller}] Logged in")
+        r = session.post(login_url, json=payload, verify=False, timeout=20)
+        if r.status_code == 200:
+            logging.info(f"[{controller}] Logged in")
+            return session, base_url
+        else:
+            logging.error(f"[{controller}] Login failed {r.status_code}: {r.text}")
     except Exception as e:
         logging.error(f"[{controller}] Login error: {e}")
-        return
+    return None, base_url
 
-    # Build vsvip cache once
-    vsvip_cache = build_vsvip_cache(api, debug=debug)
 
-    # Pull all VS CONFIG (include_name for friendly names)
-    cfg_map: Dict[str, dict] = {}
-    cfg_count = 0
-    for cfg in paged_get(api, "virtualservice", params={"include_name": True, "page_size": 200}, debug=debug):
-        vs_uuid = cfg.get("uuid", None)
-        if not vs_uuid:
-            continue
-        cfg_map[vs_uuid] = cfg
-        cfg_count += 1
-    logging.info(f"[{controller}] CONFIG fetched: {cfg_count}")
+# ---------------------------------------------------------------------------
+# Fetch Virtual Services with include_name=true
+# ---------------------------------------------------------------------------
+def fetch_vs_inventory(session, base_url):
+    url = f"{base_url}/api/virtualservice?include_name=true"
+    data = retry_request(session, url)
+    if not data:
+        return []
+    vs_list = data.get("results", [])
+    logging.info(f"[{base_url.split('//')[1]}] VS inventory fetched: {len(vs_list)} items")
+    return vs_list
 
-    # Pull all VS INVENTORY (runtime)
-    rt_map: Dict[str, dict] = {}
-    rt_count = 0
-    for inv in paged_get(api, "virtualservice-inventory", params={"page_size": 200}, debug=debug):
-        cfg = inv.get("config", {}) or {}
-        runtime = inv.get("runtime", {}) or {}
-        vu = cfg.get("uuid", None)
-        if vu:
-            rt_map[vu] = runtime
-            rt_count += 1
-    logging.info(f"[{controller}] RUNTIME fetched: {rt_count}")
 
-    # Emit rows (merge cfg + runtime + metrics)
-    metrics_non_empty = 0
-    for vs_uuid, vs_cfg in cfg_map.items():
-        vs_name = vs_cfg.get("name", "null")
+# ---------------------------------------------------------------------------
+# Fetch Metrics for VS (All metrics in one URL)
+# ---------------------------------------------------------------------------
+def fetch_vs_metrics(session, base_url, vs_uuid, metrics, limit, step, debug=False):
+    # Build comma-separated metric_id with URL encoding (%2C)
+    metric_id_encoded = "%2C".join(metrics)
+    url = f"{base_url}/api/analytics/metrics/virtualservice/{vs_uuid}/?metric_id={metric_id_encoded}&limit={limit}&step={step}"
+    if debug:
+        logging.debug(f"[{vs_uuid}] Metrics URL: {url}")
 
-        # VIPs and Types
-        vip_addrs, vip_types = extract_vips_from_vs(vs_cfg, vsvip_cache)
+    try:
+        r = session.get(url, timeout=30, verify=False)
+        if r.status_code != 200:
+            logging.warning(f"[{vs_uuid}] Metrics HTTP {r.status_code}: {r.text[:100]}...")
+            return {}
+        return r.json()
+    except Exception as e:
+        logging.error(f"[{vs_uuid}] Metrics error: {e}")
+        return {}
 
-        # Port and SSL flags
-        services = vs_cfg.get("services") or []
-        port = services[0].get("port", "null") if services else "null"
-        ssl_enabled = any(s.get("enable_ssl") for s in services) or bool(
-            vs_cfg.get("ssl_profile_ref") or vs_cfg.get("ssl_key_and_certificate_refs")
-        )
 
-        # Booleans & top-level
-        vs_enabled      = TF(vs_cfg.get("enabled", False))
-        traffic_enabled = TF(vs_cfg.get("traffic_enabled", False))
-        vip_as_snat     = TF(vs_cfg.get("use_vip_as_snat", False))
-        auto_gw         = TF(vs_cfg.get("enable_autogw", False))
-        vh_type         = vs_cfg.get("vh_type", "null")
+# ---------------------------------------------------------------------------
+# Process VS Entry and Extract Data
+# ---------------------------------------------------------------------------
+def process_vs(vs, se_cache, metrics_data, controller):
+    def refname(ref):
+        if not ref:
+            return None
+        return ref.split("#")[-1]
 
-        # Real-time metrics toggle
-        rtm_enabled = "FALSE"
-        ap = vs_cfg.get("analytics_policy") or {}
-        mru = ap.get("metrics_realtime_update")
-        if isinstance(mru, dict) and mru.get("enabled"):
-            rtm_enabled = "TRUE"
-        elif isinstance(vs_cfg.get("metrics_realtime_update"), bool):
-            rtm_enabled = TF(vs_cfg.get("metrics_realtime_update"))
+    vip = None
+    if vs.get("vip"):
+        vip = vs["vip"][0].get("ip_address", {}).get("addr")
+    elif vs.get("vip_runtime"):
+        vip = vs["vip_runtime"][0].get("vip", {}).get("addr")
 
-        # Friendly names from refs
-        app_prof      = safe_name_from_ref(vs_cfg.get("application_profile_ref"))
-        ssl_prof      = safe_name_from_ref(vs_cfg.get("ssl_profile_ref"))
-        analytics_pr  = safe_name_from_ref(vs_cfg.get("analytics_profile_ref"))
-        net_prof      = safe_name_from_ref(vs_cfg.get("network_profile_ref"))
-        pool_name     = safe_name_from_ref(vs_cfg.get("pool_ref"))
-        se_group      = safe_name_from_ref(vs_cfg.get("se_group_ref"))
-        cloud_name    = safe_name_from_ref(vs_cfg.get("cloud_ref"))
-        tenant_name   = safe_name_from_ref(vs_cfg.get("tenant_ref"))
-        active_stby   = vs_cfg.get("active_standby_se_tag", "null")
-        cloud_type    = vs_cfg.get("cloud_type", "null")  # may be overridden by runtime below
+    se_group_ref = vs.get("se_group_ref")
+    se_group = refname(se_group_ref)
 
-        # SSL cert names
-        cert_refs = vs_cfg.get("ssl_key_and_certificate_refs") or []
-        ssl_cert_names = [safe_name_from_ref(ref) for ref in cert_refs if ref]
-        ssl_certs = join_semicolon(ssl_cert_names)
+    # Primary/Secondary SE extraction
+    primary_se = secondary_se = None
+    if vs.get("vip_runtime"):
+        se_runtime = vs["vip_runtime"][0].get("se_list", [])
+        if len(se_runtime) >= 1:
+            primary_uuid = se_runtime[0].get("se_ref", "").split("/")[-1]
+            primary_se = se_cache.get(primary_uuid)
+        if len(se_runtime) >= 2:
+            secondary_uuid = se_runtime[1].get("se_ref", "").split("/")[-1]
+            secondary_se = se_cache.get(secondary_uuid)
 
-        # Runtime merge
-        rt = rt_map.get(vs_uuid, {}) or {}
-        state  = (rt.get("oper_status") or {}).get("state", "null")
-        reason = (rt.get("oper_status") or {}).get("reason", "null")
-        cloud_type_rt = rt.get("cloud_type", None)
-        if (not cloud_type) or cloud_type == "null":
-            cloud_type = cloud_type_rt or "null"
+    metrics_values = {}
+    if metrics_data:
+        for series in metrics_data.get("series", []):
+            header = series.get("header", {}).get("name")
+            data_points = series.get("data", [])
+            metrics_values[header] = data_points[0][1] if data_points else "N/A"
 
-        # Primary/Secondary SE from vip_summary.service_engine[]
-        pri_name = pri_ip = pri_uuid = "null"
-        sec_name = sec_ip = sec_uuid = "null"
-        for vsum in rt.get("vip_summary", []) or []:
-            for se in vsum.get("service_engine", []) or []:
-                se_name = se.get("name") or "null"
-                if (not se_name or se_name == "null") and se.get("se_ref"):
-                    se_name = safe_name_from_ref(se["se_ref"])
-                se_ip = (se.get("mgmt_ip") or {}).get("addr", "null")
-                se_ref = se.get("se_ref", "")
-                se_uuid = "null"
-                if se_ref:
-                    try:
-                        se_uuid = se_ref.split("/")[-1].split("#")[0]
-                    except Exception:
-                        pass
-                if se.get("is_primary") or se.get("primary"):
-                    pri_name, pri_ip, pri_uuid = se_name, se_ip, se_uuid
-                elif se.get("is_standby") or se.get("standby"):
-                    sec_name, sec_ip, sec_uuid = se_name, se_ip, se_uuid
+    row = {
+        "Controller": controller,
+        "Virtual_Service_Name": vs.get("name"),
+        "VS_VIP": vip,
+        "Port": vs.get("services", [{}])[0].get("port"),
+        "Type(IPv4_/IPv6)": vs.get("ip_address", {}).get("type"),
+        "VS_Enabled": str(vs.get("enabled", False)).upper(),
+        "Traffic_Enabled": str(vs.get("traffic_enabled", False)).upper(),
+        "SSL_Enabled": str(vs.get("enable_ssl", False)).upper(),
+        "VIP_as_SNAT": str(vs.get("use_vip_as_snat", False)).upper(),
+        "Auto_Gateway_Enabled": str(vs.get("enable_autogw", False)).upper(),
+        "VH_Type": vs.get("vh_type"),
+        "Application_Profile": refname(vs.get("application_profile_ref")),
+        "SSL_Profile": refname(vs.get("ssl_profile_ref")),
+        "SSL_Certificate_Name": refname(vs.get("ssl_key_and_certificate_refs")),
+        "Analytics_Profile": refname(vs.get("analytics_profile_ref")),
+        "Network_Profile": refname(vs.get("network_profile_ref")),
+        "State": vs.get("runtime", {}).get("oper_status", {}).get("state", "UNKNOWN"),
+        "Reason": vs.get("runtime", {}).get("oper_status", {}).get("reason"),
+        "Pool": refname(vs.get("pool_ref")),
+        "Service_Engine_Group": se_group,
+        "Primary_SE_Name": primary_se.get("name") if primary_se else None,
+        "Primary_SE_IP": primary_se.get("mgmt_ip") if primary_se else None,
+        "Primary_SE_UUID": list(se_cache.keys())[0] if primary_se else None,
+        "Secondary_SE_Name": secondary_se.get("name") if secondary_se else None,
+        "Secondary_SE_IP": secondary_se.get("mgmt_ip") if secondary_se else None,
+        "Secondary_SE_UUID": list(se_cache.keys())[1] if secondary_se else None,
+        "Active_Standby_SE_Tag": vs.get("active_standby_se_tag"),
+        "Cloud": refname(vs.get("cloud_ref")),
+        "Cloud_Type": vs.get("cloud_type"),
+        "Tenant": refname(vs.get("tenant_ref")),
+        "Real_Time_Metrics_Enabled": str(vs.get("metrics_realtime_update", False)).upper(),
+        "VS_UUID": vs.get("uuid"),
+    }
+    row.update(metrics_values)
+    return row
 
-        # Metrics (one call)
-        metrics_map = fetch_vs_metrics(api, vs_uuid, metric_headers, step, limit, debug=debug)
-        if any(metrics_map.get(k) not in (None, "N/A") for k in metric_headers):
-            metrics_non_empty += 1
 
-        row = [
-            controller,
-            vs_name,
-            vip_addrs,
-            port,
-            vip_types,
-            vs_enabled,
-            traffic_enabled,
-            TF(ssl_enabled),
-            vip_as_snat,
-            auto_gw,
-            vh_type,
-            app_prof,
-            ssl_prof,
-            ssl_certs,
-            analytics_pr,
-            net_prof,
-            state,
-            reason,
-            pool_name,
-            se_group,
-            pri_name,
-            pri_ip,
-            pri_uuid,
-            sec_name,
-            sec_ip,
-            sec_uuid,
-            active_stby,
-            cloud_name,
-            cloud_type,
-            tenant_name,
-            rtm_enabled,
-        ] + [metrics_map.get(m, "N/A") for m in metric_headers] + [vs_uuid]
+# ---------------------------------------------------------------------------
+# Worker for each Controller
+# ---------------------------------------------------------------------------
+def worker(controller, user, password, metrics, limit, step, skip_metrics, debug):
+    t0 = time.time()
+    session, base_url = login_controller(controller, user, password)
+    if not session:
+        return []
 
-        with CSV_LOCK:
-            writer.writerow(row)
+    se_cache = build_se_cache(session, base_url)
+    vs_list = fetch_vs_inventory(session, base_url)
 
-        if debug:
-            logging.debug(f"[{controller}] Wrote VS: {vs_name} ({vs_uuid})")
+    results = []
+    for vs in vs_list:
+        vs_uuid = vs.get("uuid")
+        metrics_data = {}
+        if not skip_metrics:
+            metrics_data = fetch_vs_metrics(session, base_url, vs_uuid, metrics, limit, step, debug)
+        row = process_vs(vs, se_cache, metrics_data, controller)
+        results.append(row)
 
-    logging.info(f"[{controller}] Rows written: {len(cfg_map)} | Metrics non-empty rows: {metrics_non_empty}")
+    total_time = round(time.time() - t0, 2)
+    logging.info(f"[{controller}] Completed {len(results)} VSs in {total_time}s")
+    return results
 
-# ---------------- Main ----------------
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 def main():
-    parser = argparse.ArgumentParser(
-        description="NSX ALB (Avi) VS inventory + metrics (Avi SDK, consolidated CSV).",
-        epilog=(
-            "Examples:\n"
-            "  python3 alb-vsInventory-v1.3.1.py --config config.ini --debug\n"
-            "  python3 alb-vsInventory-v1.3.1.py --controllers m00avientlb.local --user admin --password '***'\n"
-            "  python3 alb-vsInventory-v1.3.1.py --controllers 'm00.local,m01.local' --threads 5 --output-dir /tmp/reports\n"
-        ),
-        formatter_class=argparse.RawTextHelpFormatter
-    )
-    parser.add_argument("--config", default="config.ini", help="Path to config.ini (default: config.ini)")
-    parser.add_argument("--controllers", help="Comma-separated list to override [CONTROLLERS] in config.ini")
-    parser.add_argument("--user", help="Override [DEFAULT] avi_user")
-    parser.add_argument("--password", help="Override [DEFAULT] avi_pass")
-    parser.add_argument("--api-version", help="Override API version (default from [SETTINGS].avi_version)")
-    parser.add_argument("--output-dir", help="Override [SETTINGS].report_output_dir")
-    parser.add_argument("--threads", type=int, default=5, help="Parallel workers (default: 5)")
-    parser.add_argument("--debug", action="store_true", help="Enable verbose logging")
+    parser = argparse.ArgumentParser(description="NSX ALB Virtual Service Inventory Collector")
+    parser.add_argument("--config", default="./config.ini", help="Path to config.ini")
+    parser.add_argument("--threads", type=int, default=5, help="Parallel threads (default 5)")
+    parser.add_argument("--skip-metrics", action="store_true", help="Skip metrics collection")
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     args = parser.parse_args()
 
+    setup_logger(args.debug)
+
     cfg = configparser.ConfigParser()
-    if not cfg.read(args.config):
-        print(f"ERROR: {args.config} not found or unreadable.", file=sys.stderr)
-        sys.exit(1)
+    cfg.read(args.config)
 
-    # Credentials: CLI override > [DEFAULT]
-    d_user = args.user or cfg.get("DEFAULT", "avi_user", fallback="")
-    d_pass = args.password or cfg.get("DEFAULT", "avi_pass", fallback="")
-    if not d_user or not d_pass:
-        print("ERROR: Missing creds. Provide --user/--password or set [DEFAULT] avi_user/avi_pass in config.ini", file=sys.stderr)
-        sys.exit(1)
+    default_user = cfg.get("DEFAULT", "avi_user", fallback="admin")
+    default_pass = cfg.get("DEFAULT", "avi_pass", fallback="Admin@123")
 
-    avi_version = args.api_version or cfg.get("SETTINGS", "avi_version", fallback="22.1.7")
-    api_step    = cfg.getint("SETTINGS", "api_step", fallback=21600)
-    api_limit   = cfg.getint("SETTINGS", "api_limit", fallback=1)
+    controllers = [c.strip() for c in cfg["CONTROLLERS"] if c.strip()]
+    avi_version = cfg.get("SETTINGS", "avi_version", fallback="22.1.7")
+    limit = cfg.get("SETTINGS", "api_limit", fallback="1")
+    step = cfg.get("SETTINGS", "api_step", fallback="3600")
+    metrics = cfg.get("SETTINGS", "metrics_list", fallback="").split(",")
 
-    # Metrics list resolution (VS)
-    metrics_str = (
-        cfg.get("SETTINGS", "vsmetrics_list", fallback="").strip()
-        or cfg.get("SETTINGS", "metrics_list", fallback="").strip()
-        or cfg.get("SETTINGS", "default_metrics", fallback="l4_client.avg_bandwidth,l4_client.avg_complete_conns").strip()
-    )
-    metric_ids = [m.strip() for m in metrics_str.split(",") if m.strip()]
+    output_file = f"avi-VSInventory_{time.strftime('%Y%m%dT%H%M%S')}.csv"
 
-    report_dir = args.output_dir or cfg.get("SETTINGS", "report_output_dir", fallback=".")
-    log_dir    = cfg.get("SETTINGS", "log_output_dir", fallback=".")
-    os.makedirs(report_dir, exist_ok=True)
-    os.makedirs(log_dir, exist_ok=True)
+    logging.info(f"Controllers: {', '.join(controllers)}")
+    logging.info(f"Metrics: {metrics} | step={step} | limit={limit}")
 
-    ts = datetime.now().strftime("%Y%m%dT%H%M%S")
-    out_csv = os.path.join(report_dir, f"avi-VSInventory_{ts}.csv")
-    log_file= os.path.join(log_dir, f"{datetime.now():%Y-%m-%dT%H-%M-%S}_vs_inventory_sdk.log")
-    configure_logging(args.debug, log_file)
-
-    # Controllers map (only from [CONTROLLERS], unless CLI override provided)
-    controllers_cfg: Dict[str, Tuple[str, str]] = {}
-    if args.controllers:
-        for c in [x.strip() for x in args.controllers.split(",") if x.strip()]:
-            controllers_cfg[c] = (d_user, d_pass)
-    elif "CONTROLLERS" in cfg:
-        for key, combo in cfg["CONTROLLERS"].items():
-            name = key.strip()
-            if not name:
-                continue
-            parts = [p.strip() for p in (combo or "").split(",")] if combo is not None else []
-            if len(parts) == 2 and parts[0] and parts[1]:
-                controllers_cfg[name] = (parts[0], parts[1])   # inline creds
+    all_results = []
+    with ThreadPoolExecutor(max_workers=args.threads) as ex:
+        futures = []
+        for c in controllers:
+            creds = cfg["CONTROLLERS"].get(c)
+            if creds:
+                user, password = creds.split(",", 1)
             else:
-                controllers_cfg[name] = (d_user, d_pass)       # defaults
-    else:
-        logging.error("No controllers specified (CLI or [CONTROLLERS] in config.ini).")
+                user, password = default_user, default_pass
+            futures.append(
+                ex.submit(worker, c, user, password, metrics, limit, step, args.skip_metrics, args.debug)
+            )
+
+        for f in as_completed(futures):
+            all_results.extend(f.result())
+
+    if not all_results:
+        logging.error("No results fetched — check connectivity or credentials.")
         sys.exit(1)
 
-    logging.info(f"Controllers: {', '.join(controllers_cfg.keys())}")
-    logging.info(f"Metrics: {metric_ids} | step={api_step} | limit={api_limit}")
+    fieldnames = list(all_results[0].keys())
+    with open(output_file, "w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(all_results)
 
-    # CSV header: fixed + metrics + VS_UUID
-    fixed_header = [
-        "Controller","Virtual_Service_Name","VS_VIP","Port","Type(IPv4_/IPv6)","VS_Enabled",
-        "Traffic_Enabled","SSL_Enabled","VIP_as_SNAT","Auto_Gateway_Enabled","VH_Type",
-        "Application_Profile","SSL_Profile","SSL_Certificate_Name","Analytics_Profile",
-        "Network_Profile","State","Reason","Pool","Service_Engine_Group","Primary_SE_Name",
-        "Primary_SE_IP","Primary_SE_UUID","Secondary_SE_Name","Secondary_SE_IP","Secondary_SE_UUID",
-        "Active_Standby_SE_Tag","Cloud","Cloud_Type","Tenant","Real_Time_Metrics_Enabled"
-    ]
-    header = fixed_header + metric_ids + ["VS_UUID"]
+    logging.info(f"VS report saved: {output_file}")
 
-    with open(out_csv, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(header)
-
-        with ThreadPoolExecutor(max_workers=args.threads) as ex:
-            futures = [
-                ex.submit(process_controller, c, creds, writer, metric_ids, avi_version, api_step, api_limit, args.debug)
-                for c, creds in controllers_cfg.items()
-            ]
-            for fut in as_completed(futures):
-                try:
-                    fut.result()
-                except Exception as e:
-                    logging.error(f"Worker error: {e}")
-
-    logging.info(f"VS report saved: {out_csv}")
 
 if __name__ == "__main__":
     main()
