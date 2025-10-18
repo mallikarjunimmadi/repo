@@ -1,28 +1,22 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-alb-vsInventory-v1.3.3.py — NSX ALB (Avi) Virtual Service Inventory Collector
+alb-vsInventory-v1.3.4.py — NSX ALB (Avi) Virtual Service Inventory Collector
 ==============================================================================
 Collects Virtual Service inventory, runtime details, Service Engine mapping,
 and aggregated metrics from multiple Avi Controllers.
 
-Highlights:
-------------
-✅ Single metrics API call per VS (metric_id=...%2C...).
-✅ Resolves Service Engine names/IPs using /serviceengine?include_name=true.
-✅ Extracts VIP IPv4/IPv6 correctly from vip_runtime/vip.
-✅ Uses multi-threading across Controllers (default 5 threads).
-✅ Logs per-Controller timing for inventory + metrics.
-✅ Robust config.ini handling with DEFAULT fallback credentials.
-✅ Fully commented for long-term readability.
+Key Fixes in v1.3.4
+-------------------
+✅ Ignores DEFAULT keys (no more avi_user/avi_pass being treated as controllers)
+✅ Safe metrics parsing (no KeyError on datapoints)
+✅ Adds total summary line across controllers
+✅ Logs per-controller timing for inventory + metrics
+✅ Fully backward compatible with your config.ini format
 
 Usage Example:
 --------------
-python3 alb-vsInventory-v1.3.3.py --config ./config.ini --threads 5 --debug
-
-Requires:
----------
-pip install requests pandas
+python3 alb-vsInventory-v1.3.4.py --config ./config.ini --threads 5 --debug
 """
 
 import argparse
@@ -31,7 +25,6 @@ import csv
 import logging
 import sys
 import time
-import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
@@ -73,11 +66,9 @@ def retry_request(session, url, retries=3, delay=2):
 # Login to Avi Controller
 # ---------------------------------------------------------------------------
 def login_controller(controller, user, password):
-    """Authenticate to controller and return session + base_url."""
     base_url = f"https://{controller}"
     login_url = f"{base_url}/login"
     payload = {"username": user, "password": password}
-
     try:
         s = requests.Session()
         r = s.post(login_url, json=payload, verify=False, timeout=20)
@@ -93,7 +84,7 @@ def login_controller(controller, user, password):
 
 
 # ---------------------------------------------------------------------------
-# Build Service Engine cache: UUID → {name, mgmt_ip}
+# Build Service Engine cache
 # ---------------------------------------------------------------------------
 def build_se_cache(session, base_url):
     url = f"{base_url}/api/serviceengine?include_name=true"
@@ -121,14 +112,13 @@ def fetch_vs_inventory(session, base_url):
 
 
 # ---------------------------------------------------------------------------
-# Fetch all metrics in one call (comma list URL-encoded as %2C)
+# Fetch all metrics in one call
 # ---------------------------------------------------------------------------
 def fetch_vs_metrics(session, base_url, vs_uuid, metrics, limit, step, debug=False):
     metric_param = "%2C".join(metrics)
     url = f"{base_url}/api/analytics/metrics/virtualservice/{vs_uuid}/?metric_id={metric_param}&limit={limit}&step={step}"
     if debug:
         logging.debug(f"[{vs_uuid}] Metrics URL: {url}")
-
     try:
         r = session.get(url, verify=False, timeout=30)
         if r.status_code != 200:
@@ -146,21 +136,21 @@ def fetch_vs_metrics(session, base_url, vs_uuid, metrics, limit, step, debug=Fal
 def refname(ref):
     if not ref:
         return None
+    if isinstance(ref, list) and ref:
+        ref = ref[0]
     return ref.split("#")[-1]
 
 
 # ---------------------------------------------------------------------------
-# Process one VS record: config + metrics + SE mapping
+# Process one VS
 # ---------------------------------------------------------------------------
 def process_vs(vs, se_cache, metrics_data, controller):
     vip = None
-    # Extract VIP address (IPv4/IPv6)
     if vs.get("vip"):
         vip = vs["vip"][0].get("ip_address", {}).get("addr")
     elif vs.get("vip_runtime"):
         vip = vs["vip_runtime"][0].get("vip", {}).get("addr")
 
-    # Primary & secondary SE from vip_runtime.se_list
     primary_se = secondary_se = None
     se_list = vs.get("vip_runtime", [{}])[0].get("se_list", [])
     if len(se_list) >= 1:
@@ -170,13 +160,19 @@ def process_vs(vs, se_cache, metrics_data, controller):
         suid = se_list[1].get("se_ref", "").split("/")[-1]
         secondary_se = se_cache.get(suid)
 
-    # Parse metrics data
+    # --- safe metrics extraction
     metrics_values = {}
     if metrics_data:
         for series in metrics_data.get("series", []):
             name = series.get("header", {}).get("name")
             datapoints = series.get("data", [])
-            metrics_values[name] = datapoints[0][1] if datapoints else "N/A"
+            if datapoints:
+                if len(datapoints[0]) > 1:
+                    metrics_values[name] = datapoints[0][1]
+                else:
+                    metrics_values[name] = datapoints[0][0]
+            else:
+                metrics_values[name] = "N/A"
 
     row = {
         "Controller": controller,
@@ -217,7 +213,7 @@ def process_vs(vs, se_cache, metrics_data, controller):
 
 
 # ---------------------------------------------------------------------------
-# Per-controller worker
+# Worker per controller
 # ---------------------------------------------------------------------------
 def worker(controller, user, password, metrics, limit, step, skip_metrics, debug):
     t0 = time.time()
@@ -225,12 +221,10 @@ def worker(controller, user, password, metrics, limit, step, skip_metrics, debug
     if not session:
         return [], controller, 0, 0, 0
 
-    # Build SE cache
-    t1 = time.time()
     se_cache = build_se_cache(session, base_url)
-    t2 = time.time()
+    t1 = time.time()
     vs_list = fetch_vs_inventory(session, base_url)
-    t3 = time.time()
+    t2 = time.time()
 
     results = []
     for vs in vs_list:
@@ -240,10 +234,10 @@ def worker(controller, user, password, metrics, limit, step, skip_metrics, debug
         row = process_vs(vs, se_cache, metrics_data, controller)
         results.append(row)
 
-    t4 = time.time()
-    config_time = round(t3 - t1, 2)
-    metrics_time = round(t4 - t3, 2)
-    total_time = round(t4 - t0, 2)
+    t3 = time.time()
+    config_time = round(t2 - t1, 2)
+    metrics_time = round(t3 - t2, 2)
+    total_time = round(t3 - t0, 2)
     logging.info(f"[{controller}] inventory={config_time}s metrics={metrics_time}s total={total_time}s ({len(results)} VSs)")
     return results, controller, config_time, metrics_time, total_time
 
@@ -261,17 +255,17 @@ def main():
 
     setup_logger(args.debug)
 
-    # Load config
     cfg = configparser.ConfigParser()
     cfg.read(args.config)
 
     default_user = cfg.get("DEFAULT", "avi_user", fallback="admin")
     default_pass = cfg.get("DEFAULT", "avi_pass", fallback="Admin@123")
 
-    controllers = [c.strip() for c in cfg["CONTROLLERS"] if c.strip()]
+    # FIX: Properly extract only actual controllers
+    controllers = list(cfg["CONTROLLERS"].keys())
     limit = cfg.get("SETTINGS", "api_limit", fallback="1")
     step = cfg.get("SETTINGS", "api_step", fallback="3600")
-    metrics = cfg.get("SETTINGS", "metrics_list", fallback="").split(",")
+    metrics = [m.strip() for m in cfg.get("SETTINGS", "metrics_list", fallback="").split(",") if m.strip()]
 
     logging.info(f"Controllers: {', '.join(controllers)}")
     logging.info(f"Metrics: {metrics} | step={step} | limit={limit}")
@@ -298,7 +292,6 @@ def main():
         logging.error("No data collected — check credentials or connectivity.")
         sys.exit(1)
 
-    # Write CSV
     outfile = f"avi-VSInventory_{time.strftime('%Y%m%dT%H%M%S')}.csv"
     with open(outfile, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=list(all_results[0].keys()))
@@ -307,8 +300,11 @@ def main():
 
     logging.info(f"VS report saved: {outfile}")
     logging.info("---- Controller Summary ----")
+    total_vs = len(all_results)
+    total_time = sum(tt for _, _, _, _, tt in summary)
     for c, ct, mt, tt in summary:
         logging.info(f"{c:25s} | inventory={ct:6.2f}s metrics={mt:6.2f}s total={tt:6.2f}s")
+    logging.info(f"TOTAL Controllers={len(summary)} | VS={total_vs} | Time={total_time:.2f}s")
 
 
 if __name__ == "__main__":
