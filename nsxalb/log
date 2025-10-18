@@ -1,18 +1,62 @@
-2025-10-18 15:29:45,343: INFO: Logging initialized. Level=INFO
-2025-10-18 15:29:45,344: INFO: Controllers mode: sequential
-2025-10-18 15:29:45,345: INFO: Metrics: ['l4_client.avg_bandwidth', 'l4_client.avg_new_established_conns', 'l4_client.avg_complete_conns', 'l4_client.max_open_conns', 'l7_client.avg_ssl_handshakes_new', 'l7_client.avg_ssl_
+2025-10-18 15:31:35,701: INFO: Logging initialized. Level=INFO
+2025-10-18 15:31:35,704: INFO: Controllers: m00avientlb.local, avi_user, avi_pass
+2025-10-18 15:31:35,705: INFO: Metrics: ['l4_client.avg_bandwidth', 'l4_client.avg_new_established_conns', 'l4_client.avg_complete_conns', 'l4_client.max_open_conns', 'l7_client.avg_ssl_handshakes_new', 'l7_client.avg_ssl_
 connections', 'l7_client.avg_ssl_handshakes_reused'] | step=21600 | limit=1
 C:\Program Files\Python313\Lib\site-packages\urllib3\connectionpool.py:1099: InsecureRequestWarning: Unverified HTTPS request is being made to host 'm00avientlb.local'. Adding certificate verification is strongly adv
 ised. See: https://urllib3.readthedocs.io/en/latest/advanced-usage.html#tls-warnings
   warnings.warn(
-Traceback (most recent call last):
-  File "M:\Mallik\Scripts\nsxalb\alb-vsInventory-v0.2_WIP.py", line 474, in <module>
-    main()
-    ~~~~^^
-  File "M:\Mallik\Scripts\nsxalb\alb-vsInventory-v0.2_WIP.py", line 468, in main
-    process_controller(c, creds, writer, METRIC_IDS)
-    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "M:\Mallik\Scripts\nsxalb\alb-vsInventory-v0.2_WIP.py", line 215, in process_controller
-    for cfg in api.get_iter('virtualservice', params={'include_name': True, 'page_size': 200}):
-               ^^^^^^^^^^^^
-AttributeError: 'ApiSession' object has no attribute 'get_iter'
+2025-10-18 15:31:36,557: INFO: [m00avientlb.local] Logged in
+2025-10-18 15:31:36,558: ERROR: Worker error: 'ApiSession' object has no attribute 'get_iter'
+2025-10-18 15:31:38,032: WARNING: Connection error retrying HTTPSConnectionPool(host='avi_user', port=443): Max retries exceeded with url: /login (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object a
+t 0x000002841550C2D0>: Failed to resolve 'avi_user' ([Errno 11001] getaddrinfo failed)"))
+2025-10-18 15:31:38,048: WARNING: Connection error retrying HTTPSConnectionPool(host='avi_pass', port=443): Max retries exceeded with url: /login (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object a
+t 0x000002841550C690>: Failed to resolve 'avi_pass' ([Errno 11001] getaddrinfo failed)"))
+2025-10-18 15:31:40,307: WARNING: Connection error retrying HTTPSConnectionPool(host='avi_pass', port=443): Max retries exceeded with url: /login (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object a
+t 0x000002841550CB90>: Failed to resolve 'avi_pass' ([Errno 11001] getaddrinfo failed)"))
+2025-10-18 15:31:40,308: WARNING: Connection error retrying HTTPSConnectionPool(host='avi_user', port=443): Max retries exceeded with url: /login (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object a
+t 0x0000028415496850>: Failed to resolve 'avi_user' ([Errno 11001] getaddrinfo failed)"))
+2025-10-18 15:31:42,566: WARNING: Connection error retrying HTTPSConnectionPool(host='avi_user', port=443): Max retries exceeded with url: /login (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object a
+t 0x000002841550CE10>: Failed to resolve 'avi_user' ([Errno 11001] getaddrinfo failed)"))
+2025-10-18 15:31:42,607: WARNING: Connection error retrying HTTPSConnectionPool(host='avi_pass', port=443): Max retries exceeded with url: /login (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object a
+t 0x000002841550D1D0>: Failed to resolve 'avi_pass' ([Errno 11001] getaddrinfo failed)"))
+2025-10-18 15:31:44,897: WARNING: Connection error retrying HTTPSConnectionPool(host='avi_user', port=443): Max retries exceeded with url: /login (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object a
+t 0x000002841550D6D0>: Failed to resolve 'avi_user' ([Errno 11001] getaddrinfo failed)"))
+2025-10-18 15:31:44,898: WARNING: Connection error retrying HTTPSConnectionPool(host='avi_pass', port=443): Max retries exceeded with url: /login (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object a
+t 0x000002841550DA90>: Failed to resolve 'avi_pass' ([Errno 11001] getaddrinfo failed)"))
+2025-10-18 15:31:44,899: ERROR: giving up after 3 retries connection failure True
+2025-10-18 15:31:44,900: ERROR: giving up after 3 retries connection failure True
+2025-10-18 15:31:44,900: ERROR: [avi_user] Login error: HTTPSConnectionPool(host='avi_user', port=443): Max retries exceeded with url: /login (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x
+000002841550D6D0>: Failed to resolve 'avi_user' ([Errno 11001] getaddrinfo failed)"))
+2025-10-18 15:31:44,901: ERROR: [avi_pass] Login error: HTTPSConnectionPool(host='avi_pass', port=443): Max retries exceeded with url: /login (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x
+000002841550DA90>: Failed to resolve 'avi_pass' ([Errno 11001] getaddrinfo failed)"))
+2025-10-18 15:31:44,906: INFO: VS report saved: .\avi-VSInventory_20251018T153135.csv
+PS M:\Mallik\Scripts\nsxalb> python.exe .\alb-vsInventory-v0.2_WIP.py
+2025-10-18 15:34:15,222: INFO: Logging initialized. Level=INFO
+2025-10-18 15:34:15,223: INFO: Controllers: m00avientlb.local, avi_user, avi_pass
+2025-10-18 15:34:15,224: INFO: Metrics: ['l4_client.avg_bandwidth', 'l4_client.avg_new_established_conns', 'l4_client.avg_complete_conns', 'l4_client.max_open_conns', 'l7_client.avg_ssl_handshakes_new', 'l7_client.avg_ssl_
+connections', 'l7_client.avg_ssl_handshakes_reused'] | step=21600 | limit=1
+2025-10-18 15:34:15,901: INFO: [m00avientlb.local] Logged in
+2025-10-18 15:34:15,902: ERROR: Worker error: 'ApiSession' object has no attribute 'get_iter'
+2025-10-18 15:34:17,509: WARNING: Connection error retrying HTTPSConnectionPool(host='avi_user', port=443): Max retries exceeded with url: /login (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object a
+t 0x00000213D9EE4690>: Failed to resolve 'avi_user' ([Errno 11001] getaddrinfo failed)"))
+2025-10-18 15:34:17,540: WARNING: Connection error retrying HTTPSConnectionPool(host='avi_pass', port=443): Max retries exceeded with url: /login (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object a
+t 0x00000213D9E6BA10>: Failed to resolve 'avi_pass' ([Errno 11001] getaddrinfo failed)"))
+2025-10-18 15:34:19,766: WARNING: Connection error retrying HTTPSConnectionPool(host='avi_user', port=443): Max retries exceeded with url: /login (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object a
+t 0x00000213D9EE4910>: Failed to resolve 'avi_user' ([Errno 11001] getaddrinfo failed)"))
+2025-10-18 15:34:19,826: WARNING: Connection error retrying HTTPSConnectionPool(host='avi_pass', port=443): Max retries exceeded with url: /login (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object a
+t 0x00000213D9EE4E10>: Failed to resolve 'avi_pass' ([Errno 11001] getaddrinfo failed)"))
+2025-10-18 15:34:22,039: WARNING: Connection error retrying HTTPSConnectionPool(host='avi_user', port=443): Max retries exceeded with url: /login (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object a
+t 0x00000213D9EE51D0>: Failed to resolve 'avi_user' ([Errno 11001] getaddrinfo failed)"))
+2025-10-18 15:34:22,104: WARNING: Connection error retrying HTTPSConnectionPool(host='avi_pass', port=443): Max retries exceeded with url: /login (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object a
+t 0x00000213D9EE5590>: Failed to resolve 'avi_pass' ([Errno 11001] getaddrinfo failed)"))
+2025-10-18 15:34:24,324: WARNING: Connection error retrying HTTPSConnectionPool(host='avi_user', port=443): Max retries exceeded with url: /login (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object a
+t 0x00000213D9EE5950>: Failed to resolve 'avi_user' ([Errno 11001] getaddrinfo failed)"))
+2025-10-18 15:34:24,325: ERROR: giving up after 3 retries connection failure True
+2025-10-18 15:34:24,326: ERROR: [avi_user] Login error: HTTPSConnectionPool(host='avi_user', port=443): Max retries exceeded with url: /login (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x
+00000213D9EE5950>: Failed to resolve 'avi_user' ([Errno 11001] getaddrinfo failed)"))
+2025-10-18 15:34:24,393: WARNING: Connection error retrying HTTPSConnectionPool(host='avi_pass', port=443): Max retries exceeded with url: /login (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object a
+t 0x00000213D9EE5D10>: Failed to resolve 'avi_pass' ([Errno 11001] getaddrinfo failed)"))
+2025-10-18 15:34:24,394: ERROR: giving up after 3 retries connection failure True
+2025-10-18 15:34:24,395: ERROR: [avi_pass] Login error: HTTPSConnectionPool(host='avi_pass', port=443): Max retries exceeded with url: /login (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x
+00000213D9EE5D10>: Failed to resolve 'avi_pass' ([Errno 11001] getaddrinfo failed)"))
+2025-10-18 15:34:24,402: INFO: VS report saved: .\avi-VSInventory_20251018T153415.csv
