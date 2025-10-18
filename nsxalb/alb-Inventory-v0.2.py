@@ -100,11 +100,14 @@ def retry_get_json(session: requests.Session, url: str, retries: int = 3, delay:
 
 def paginate_all(session: requests.Session, first_url: str, debug: bool = False):
     """
-    Follow Avi paginated endpoints. Avi returns absolute URLs in 'next'.
-    Returns a list of items aggregated across pages.
+    Follow Avi paginated endpoints. Some versions return absolute 'next', others relative.
+    Returns a list of items aggregated across all pages.
     """
     results = []
     url = first_url
+    base = None
+    if "://" in first_url:
+        base = first_url.split("/api/")[0]
     page = 1
     while url:
         if debug:
@@ -112,9 +115,13 @@ def paginate_all(session: requests.Session, first_url: str, debug: bool = False)
         data = retry_get_json(session, url)
         if not data:
             break
-        items = data.get("results", [])
-        results.extend(items)
-        url = data.get("next")  # absolute or None
+        results.extend(data.get("results", []))
+        nxt = data.get("next")
+        if nxt:
+            # Handle relative next
+            if nxt.startswith("/"):
+                nxt = f"{base}{nxt}"
+        url = nxt
         page += 1
     return results
 
@@ -331,11 +338,17 @@ def process_vs_row(vs: dict, se_cache: dict, metrics_data: dict, controller: str
         # Defensive extraction:
         if datapoints:
             first = datapoints[0]
-            if isinstance(first, (list, tuple)) and len(first) > 1:
-                series_map[mname] = first[1]
+            # handle both [ts, val] and [val]
+            if isinstance(first, (list, tuple)):
+                if len(first) > 1:
+                    series_map[mname] = first[1]
+                elif len(first) == 1:
+                    series_map[mname] = first[0]
+                else:
+                    series_map[mname] = "N/A"
             else:
-                # Sometimes Avi may return [value] depending on params; handle gracefully
-                series_map[mname] = first[0]
+                # sometimes a scalar
+                series_map[mname] = first
         else:
             series_map[mname] = "N/A"
 
