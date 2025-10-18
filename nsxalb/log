@@ -1,18 +1,18 @@
-2025-10-18 18:28:58: INFO: Controllers: m00aviblb.local, avi_user, avi_pass
-2025-10-18 18:28:58: INFO: Metrics: ['l4_client.avg_bandwidth', 'l4_client.avg_new_established_conns', 'l4_client.avg_complete_conns', 'l4_client.max_open_conns', 'l7_client.avg_ssl_handshakes_new', 'l7_client.avg_ssl_connections', 'l7_client.avg_ssl_handshakes_reused'] | step=21600 | limit=1
-2025-10-18 18:28:58: DEBUG: Starting new HTTPS connection (1): m00aviblb.local:443
-2025-10-18 18:28:58: DEBUG: Starting new HTTPS connection (1): avi_pass:443
-2025-10-18 18:28:58: DEBUG: Starting new HTTPS connection (1): avi_user:443
-2025-10-18 18:28:58: ERROR: [avi_pass] Login error: HTTPSConnectionPool(host='avi_pass', port=443): Max retries exceeded with url: /login (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x7f59cb8e5660>: Failed to resolve 'avi_pass' ([Errno -3] Temporary failure in name resolution)"))
-2025-10-18 18:28:58: ERROR: [avi_user] Login error: HTTPSConnectionPool(host='avi_user', port=443): Max retries exceeded with url: /login (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x7f59cb8e5900>: Failed to resolve 'avi_user' ([Errno -3] Temporary failure in name resolution)"))
-2025-10-18 18:28:58: DEBUG: https://m00aviblb.local:443 "POST /login HTTP/11" 200 7752
-2025-10-18 18:28:58: INFO: [m00aviblb.local] Logged in
-2025-10-18 18:28:59: DEBUG: https://m00aviblb.local:443 "GET /api/serviceengine?include_name=true HTTP/11" 200 222547
-2025-10-18 18:28:59: INFO: Service Engine cache built: 20 entries
-2025-10-18 18:28:59: DEBUG: https://m00aviblb.local:443 "GET /api/virtualservice?include_name=true HTTP/11" 200 218265
-2025-10-18 18:28:59: INFO: [m00aviblb.local] VS inventory fetched: 25 items
-2025-10-18 18:28:59: DEBUG: [virtualservice-00e02a00-7482-44d1-bead-aed3ccdfc0cc] Metrics URL: https://m00aviblb.local/api/analytics/metrics/virtualservice/virtualservice-00e02a00-7482-44d1-bead-aed3ccdfc0cc/?metric_id=l4_client.avg_bandwidth%2Cl4_client.avg_new_established_conns%2Cl4_client.avg_complete_conns%2Cl4_client.max_open_conns%2Cl7_client.avg_ssl_handshakes_new%2Cl7_client.avg_ssl_connections%2Cl7_client.avg_ssl_handshakes_reused&limit=1&step=21600
-2025-10-18 18:29:00: DEBUG: https://m00aviblb.local:443 "GET /api/analytics/metrics/virtualservice/virtualservice-00e02a00-7482-44d1-bead-aed3ccdfc0cc/?metric_id=l4_client.avg_bandwidth%2Cl4_client.avg_new_established_conns%2Cl4_client.avg_complete_conns%2Cl4_client.max_open_conns%2Cl7_client.avg_ssl_handshakes_new%2Cl7_client.avg_ssl_connections%2Cl7_client.avg_ssl_handshakes_reused&limit=1&step=21600 HTTP/11" 200 None
+2025-10-18 18:31:50: INFO: Controllers: m00aviblb.corp.ad.sbi, avi_user, avi_pass
+2025-10-18 18:31:50: INFO: Metrics: ['l4_client.avg_bandwidth', 'l4_client.avg_new_established_conns', 'l4_client.avg_complete_conns', 'l4_client.max_open_conns', 'l7_client.avg_ssl_handshakes_new', 'l7_client.avg_ssl_connections', 'l7_client.avg_ssl_handshakes_reused'] | step=21600 | limit=1
+2025-10-18 18:31:50: DEBUG: Starting new HTTPS connection (1): avi_user:443
+2025-10-18 18:31:50: DEBUG: Starting new HTTPS connection (1): m00aviblb.corp.ad.sbi:443
+2025-10-18 18:31:50: DEBUG: Starting new HTTPS connection (1): avi_pass:443
+2025-10-18 18:31:50: ERROR: [avi_user] Login error: HTTPSConnectionPool(host='avi_user', port=443): Max retries exceeded with url: /login (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x7fd0669093f0>: Failed to resolve 'avi_user' ([Errno -3] Temporary failure in name resolution)"))
+2025-10-18 18:31:50: ERROR: [avi_pass] Login error: HTTPSConnectionPool(host='avi_pass', port=443): Max retries exceeded with url: /login (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x7fd0669099c0>: Failed to resolve 'avi_pass' ([Errno -3] Temporary failure in name resolution)"))
+2025-10-18 18:31:50: DEBUG: https://m00aviblb.corp.ad.sbi:443 "POST /login HTTP/11" 200 7752
+2025-10-18 18:31:50: INFO: [m00aviblb.corp.ad.sbi] Logged in
+2025-10-18 18:31:51: DEBUG: https://m00aviblb.corp.ad.sbi:443 "GET /api/serviceengine?include_name=true HTTP/11" 200 222547
+2025-10-18 18:31:51: INFO: Service Engine cache built: 20 entries
+2025-10-18 18:31:51: DEBUG: https://m00aviblb.corp.ad.sbi:443 "GET /api/virtualservice?include_name=true HTTP/11" 200 218265
+2025-10-18 18:31:51: INFO: [m00aviblb.corp.ad.sbi] VS inventory fetched: 25 items
+2025-10-18 18:31:51: DEBUG: [virtualservice-00e02a00-7482-44d1-bead-aed3ccdfc0cc] Metrics URL: https://m00aviblb.corp.ad.sbi/api/analytics/metrics/virtualservice/virtualservice-00e02a00-7482-44d1-bead-aed3ccdfc0cc/?metric_id=l4_client.avg_bandwidth%2Cl4_client.avg_new_established_conns%2Cl4_client.avg_complete_conns%2Cl4_client.max_open_conns%2Cl7_client.avg_ssl_handshakes_new%2Cl7_client.avg_ssl_connections%2Cl7_client.avg_ssl_handshakes_reused&limit=1&step=21600
+2025-10-18 18:31:52: DEBUG: https://m00aviblb.corp.ad.sbi:443 "GET /api/analytics/metrics/virtualservice/virtualservice-00e02a00-7482-44d1-bead-aed3ccdfc0cc/?metric_id=l4_client.avg_bandwidth%2Cl4_client.avg_new_established_conns%2Cl4_client.avg_complete_conns%2Cl4_client.max_open_conns%2Cl7_client.avg_ssl_handshakes_new%2Cl7_client.avg_ssl_connections%2Cl7_client.avg_ssl_handshakes_reused&limit=1&step=21600 HTTP/11" 200 None
 Traceback (most recent call last):
   File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 311, in <module>
     main()
@@ -29,3 +29,24 @@ Traceback (most recent call last):
   File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 171, in process_vs
     metrics_values[name] = datapoints[0][1]
 KeyError: 1
+
+
+
+ cat config.ini
+[DEFAULT]
+avi_user = admin
+avi_pass = VMware1!VMware1!
+
+[CONTROLLERS]
+# For controllers using default credentials, just list them without values
+m00aviblb.corp.ad.sbi =
+# For controllers with specific credentials, list them as key = username,password
+
+[SETTINGS]
+avi_version = 22.1.7
+api_step = 21600
+api_limit = 1
+metrics_list = l4_client.avg_bandwidth,l4_client.avg_new_established_conns,l4_client.avg_complete_conns,l4_client.max_open_conns,l7_client.avg_ssl_handshakes_new,l7_client.avg_ssl_connections,l7_client.avg_ssl_handshakes_reused
+default_metrics = l4_client.avg_bandwidth,l4_client.avg_complete_conns,l4_client.avg_connections_dropped,l4_client.avg_new_established_conns,l4_client.avg_policy_drops,l4_client.avg_total_rtt,l4_client.pct_policy_drops,l4_client.sum_finished_conns,l7_client.avg_application_response_time,l7_client.avg_client_data_transfer_time,l7_client.avg_client_rtt,l7_client.avg_complete_responses,l7_client.avg_server_rtt,l7_client.avg_ssl_connections,l7_client.avg_ssl_handshakes_new,l7_client.avg_ssl_handshakes_non_pfs,l7_client.avg_ssl_handshakes_pfs,l7_client.avg_ssl_handshakes_reused,l7_client.avg_total_requests,l7_client.max_ssl_open_sessions,l7_client.sum_total_responses
+report_output_dir = .
+log_output_dir = .
