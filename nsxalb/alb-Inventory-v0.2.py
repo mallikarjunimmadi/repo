@@ -157,13 +157,15 @@ def paged_get(api: ApiSession, path_or_url: str, params: Optional[dict] = None):
     payload = resp.json()
     for itm in payload.get("results", []):
         yield itm
-    next_url = payload.get("next")
+        next_url = payload.get("next")
     while next_url:
-        try:
-            resp = api.get(next_url, verify=False)  # next is a full URL
-        except APIError as e:
-            _log(f"GET next APIError: {e}", "error")
-            return
+        if next_url.startswith("/api/"):
+            # relative path; remove duplicate prefix if needed
+            next_url = next_url.lstrip("/")
+            resp = api.get(next_url, verify=False)
+        else:
+            # absolute URL
+            resp = api.get(next_url, verify=False)
         if resp.status_code != 200:
             _log(f"GET next HTTP {resp.status_code}: {resp.text[:180]}...", "error")
             return
