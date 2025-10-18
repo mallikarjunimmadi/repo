@@ -144,34 +144,42 @@ def realtime_metrics_enabled(cfg: dict) -> bool:
     return False
 
 # ---------- Pagination wrappers (replace get_iter) ----------
-def paged_get(api: ApiSession, path_or_url: str, params: Optional[dict] = None):
-    """Yield items from a GET that returns a {results:[], next:...} response."""
-    try:
-        resp = api.get(path_or_url, params=params, verify=False)
-    except APIError as e:
-        _log(f"GET {path_or_url} APIError: {e}", "error")
-        return
+def paged_get(api, path_or_url, params=None):
+    """
+    Generic iterator to fetch all pages from an Avi endpoint.
+    Handles both relative and absolute next URLs correctly.
+    """
+    def _safe_get(url, params=None):
+        # Directly use requests if URL is absolute, else go through SDK
+        if url.startswith("http"):
+            session = api.session
+            headers = api.headers.copy()
+            resp = session.get(url, headers=headers, verify=False)
+        else:
+            # Strip any leading slashes so ApiSession doesn't double /api/
+            clean = url.lstrip("/")
+            resp = api.get(clean, params=params, verify=False)
+        return resp
+
+    # first call
+    resp = _safe_get(path_or_url, params=params)
     if resp.status_code != 200:
         _log(f"GET {path_or_url} HTTP {resp.status_code}: {resp.text[:180]}...", "error")
         return
+
     payload = resp.json()
-    for itm in payload.get("results", []):
-        yield itm
-        next_url = payload.get("next")
+    for item in payload.get("results", []):
+        yield item
+
+    next_url = payload.get("next")
     while next_url:
-        if next_url.startswith("/api/"):
-            # relative path; remove duplicate prefix if needed
-            next_url = next_url.lstrip("/")
-            resp = api.get(next_url, verify=False)
-        else:
-            # absolute URL
-            resp = api.get(next_url, verify=False)
+        resp = _safe_get(next_url)
         if resp.status_code != 200:
             _log(f"GET next HTTP {resp.status_code}: {resp.text[:180]}...", "error")
-            return
+            break
         payload = resp.json()
-        for itm in payload.get("results", []):
-            yield itm
+        for item in payload.get("results", []):
+            yield item
         next_url = payload.get("next")
 
 # ---------- Metrics fetch with fallback ----------
