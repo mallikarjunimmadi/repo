@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-alb-vsInventory-v1.3-final.py
+alb-vsInventory-v1.3.1.py
 Author: You + ChatGPT
 
-NSX ALB (Avi) Virtual Service Inventory + Metrics (Single CSV, Avi SDK)
+NSX ALB (Avi) Virtual Service Inventory + Metrics (Avi SDK, Single CSV)
 
 What this script does
 ---------------------
@@ -16,15 +16,18 @@ For each controller in your config:
   • Fetches all VS RUNTIME pages from /api/virtualservice-inventory?page_size=200
       – State, Reason, Primary/Secondary SE name/IP/UUID, runtime cloud_type.
   • Fetches latest VS metrics from /api/analytics/metrics/virtualservice/<uuid>
-      – Uses official parameters: repeated metric_id, start/end/step, limit, limit_by_value=false.
-      – Expands every metric into its own CSV column (no “Metrics” blob column).
+      – Uses one call with repeated metric_id params, start/end/step, limit, limit_by_value=false.
+      – Expands each metric into its own CSV column.
   • Writes one consolidated CSV across all controllers.
 
 Why this version fixes your issues
 ----------------------------------
-1) Metrics were N/A: now we pass start/end/step/limit_by_value=false (as in metricscollection.py) and pull the last datapoint.
-2) Name references were null: we parse names from the '#Name' suffix (include_name=true) and fall back safely when absent.
+1) Metrics were N/A: now we pass start/end/step/limit_by_value=false (as in metricscollection.py) and pull the last datapoint,
+   for all metrics in a single API call per VS.
+2) Name references were null: we parse names from the '#Name' suffix (include_name=true) and fall back to the UUID tail.
 3) VIP addresses were null: we read config.vip[] first; if empty, we use a vsvip cache (once per controller) keyed by vsvip uuid.
+4) Pagination 404s: robust paginator handles absolute and relative 'next' links; prevents '/api/api/...' and '/api/https:...' paths.
+5) Controllers parsing: only keys from [CONTROLLERS] are treated as controllers; [DEFAULT]/[SETTINGS] keys will never leak.
 
 CSV header order
 ----------------
@@ -42,12 +45,12 @@ avi_pass = VMware1!VMware1!
 
 [CONTROLLERS]
 m00avientlb.local =
-# or: other.controller.local = user,password
+# or: controller-b.local = user,password
 
 [SETTINGS]
 avi_version = 22.1.7
-api_step = 21600
-api_limit = 1
+api_step    = 21600
+api_limit   = 1
 vsmetrics_list = l4_client.avg_bandwidth,l4_client.avg_new_established_conns,l4_client.avg_complete_conns,l4_client.max_open_conns,l7_client.avg_ssl_handshakes_new,l7_client.avg_ssl_connections,l7_client.avg_ssl_handshakes_reused
 default_metrics = l4_client.avg_bandwidth,l4_client.avg_complete_conns
 report_output_dir = /home/imallikarjun/scripts/reports
@@ -55,20 +58,20 @@ log_output_dir    = /home/imallikarjun/scripts/nsxalb/logs
 
 Usage
 -----
-python3 alb-vsInventory-v1.3-final.py \
+python3 alb-vsInventory-v1.3.1.py \
   [--config config.ini] \
   [--controllers "m00avientlb.local,other.local"] \
   [--user admin --password '***'] \
   [--api-version 22.1.7] \
   [--output-dir /path/to/reports] \
-  [--threads 8] \
+  [--threads 5] \
   [--debug]
 
 Notes
 -----
-• TLS warnings are suppressed for self-signed lab/test controllers. For prod, configure proper CA trust.
-• The script prints TRUE/FALSE in uppercase for boolean CSV fields.
-• Pagination works for both absolute and relative next links (no /api/api or /api/https issues).
+• TLS warnings are suppressed for self-signed controllers.
+• Booleans are printed as uppercase TRUE/FALSE.
+• Debug logs include per-VS metric fetch timing and pagination details only when --debug is set.
 """
 
 import os
@@ -100,17 +103,14 @@ def configure_logging(debug: bool, log_path: str):
     )
     logging.info(f"Logging initialized. Level={'DEBUG' if debug else 'INFO'}")
 
-log = logging.getLogger(__name__)
-
 # ---------------- Helpers ----------------
 CSV_LOCK = Lock()
 
-def tf(b: bool) -> str:
-    """Upper-case TRUE/FALSE for CSV."""
-    return "TRUE" if bool(b) else "FALSE"
+def TF(val) -> str:
+    return "TRUE" if bool(val) else "FALSE"
 
 def validate_step(step: int) -> int:
-    """Avi metrics step must be >=300 and multiple of 300."""
+    """Avi metrics step must be >=300 and a multiple of 300."""
     if step < 300:
         return 300
     if step % 300 != 0:
@@ -118,35 +118,47 @@ def validate_step(step: int) -> int:
     return step
 
 def safe_name_from_ref(ref: Optional[str]) -> str:
-    """Extract friendly name from a ref URL using '#Name' when available, else fallback to UUID."""
+    """Extract friendly name from a ref URL using '#Name' when available, else fallback to UUID tail."""
     if not ref:
         return "null"
     if "#" in ref:
-        name = ref.split("#")[-1].strip()
-        if name:
-            return name
-    # fallback to uuid tail
-    return ref.split("/")[-1]
+        nm = ref.split("#")[-1].strip()
+        if nm:
+            return nm
+    return ref.split("/")[-1].split("#")[0]
 
 def join_semicolon(items: List[str]) -> str:
     items = [i for i in (items or []) if i]
     return ";".join(items) if items else "null"
 
-# ---------------- Robust pagination (handles absolute/relative 'next') ----------------
-def paged_get(api: ApiSession, path_or_url: str, params: Optional[dict] = None):
+# ---------------- Robust pagination (absolute/relative 'next') ----------------
+def paged_get(api: ApiSession, path_or_url: str, params: Optional[dict] = None, debug: bool = False):
     """
     Yield all items from a GET that returns {results:[], next:...}.
     Works with:
       • 'virtualservice?include_name=true&page_size=200'
       • '/api/virtualservice?...'
       • 'https://controller/api/virtualservice?...'
+    Uses api.avi_session for absolute URLs (older SDKs don't expose .session).
     """
     def _safe_get(u: str, p: Optional[dict] = None):
-        # If absolute URL, use requests session directly (keeps auth/cookies from api.session).
+        # Absolute URL: call underlying requests Session directly to avoid '/api/' prefixing.
         if u.startswith("http"):
-            return api.session.get(u, headers=api.headers, verify=False, params=None)
-        # Else, let ApiSession add '/api/' (we strip leading '/' to avoid '/api//api/...').
-        return api.get(u.lstrip("/"), params=p, verify=False)
+            sess = getattr(api, "avi_session", None)
+            if sess is None:
+                raise AttributeError("ApiSession object has no attribute 'avi_session'")
+            if debug:
+                logging.debug(f"GET(abs): {u}")
+            return sess.get(u, headers=api.headers, verify=False)
+        # Relative: sanitize leading '/api/' because ApiSession.get() will add it again.
+        clean = u.lstrip("/")
+        if clean.startswith("api/"):
+            clean = clean[len("api/"):]
+        if clean.startswith("/api/"):
+            clean = clean[len("/api/"):]
+        if debug:
+            logging.debug(f"GET(rel): {clean} params={p}")
+        return api.get(clean, params=p, verify=False)
 
     try:
         resp = _safe_get(path_or_url, params)
@@ -160,7 +172,8 @@ def paged_get(api: ApiSession, path_or_url: str, params: Optional[dict] = None):
 
     while True:
         payload = resp.json()
-        for item in payload.get("results", []):
+        results = payload.get("results", []) or []
+        for item in results:
             yield item
         nxt = payload.get("next")
         if not nxt:
@@ -175,14 +188,13 @@ def paged_get(api: ApiSession, path_or_url: str, params: Optional[dict] = None):
             break
 
 # ---------------- VSVIP cache ----------------
-def build_vsvip_cache(api: ApiSession) -> Dict[str, Tuple[str, str]]:
+def build_vsvip_cache(api: ApiSession, debug: bool = False) -> Dict[str, Tuple[str, str]]:
     """
     Return a map: vsvip_uuid -> (vip_addrs_joined, vip_types_joined)
-    so we can resolve VIPs even when VS config lacks inline vip[].
     """
     cache: Dict[str, Tuple[str, str]] = {}
     count = 0
-    for vv in paged_get(api, "vsvip", params={"page_size": 200, "include_name": True}):
+    for vv in paged_get(api, "vsvip", params={"page_size": 200, "include_name": True}, debug=debug):
         uuid = vv.get("uuid")
         if not uuid:
             continue
@@ -220,15 +232,14 @@ def extract_vips_from_vs(vs_cfg: dict, vsvip_cache: Dict[str, Tuple[str, str]]) 
             return vsvip_cache[uuid]
     return "null", "null"
 
-# ---------------- Metrics (official pattern) ----------------
-def fetch_vs_metrics(api: ApiSession, vs_uuid: str, metric_ids: List[str], step: int, limit: int) -> Dict[str, str]:
+# ---------------- Metrics (single call, official pattern) ----------------
+def fetch_vs_metrics(api: ApiSession, vs_uuid: str, metric_ids: List[str], step: int, limit: int, debug: bool = False) -> Dict[str, str]:
     """
-    Fetch latest datapoint for each metric (as in metricscollection.py).
+    Fetch latest datapoint for all metrics in one call.
     Returns dict: {metric_name: value or 'N/A'}
     """
     if not metric_ids:
         return {}
-
     step = validate_step(step)
     end_time = int(time.time())
     start_time = end_time - step
@@ -242,12 +253,13 @@ def fetch_vs_metrics(api: ApiSession, vs_uuid: str, metric_ids: List[str], step:
         ('include_refs', 'true'),
         ('limit_by_value', 'false'),
     ]
+    t0 = time.time()
     try:
         resp = api.get(f"analytics/metrics/virtualservice/{vs_uuid}", params=params, verify=False)
     except Exception as e:
         logging.warning(f"[{vs_uuid}] Metrics API error: {e}")
         return {m: "N/A" for m in metric_ids}
-
+    dt = time.time() - t0
     if resp.status_code != 200:
         logging.warning(f"[{vs_uuid}] Metrics HTTP {resp.status_code}: {resp.text[:160]}...")
         return {m: "N/A" for m in metric_ids}
@@ -260,10 +272,14 @@ def fetch_vs_metrics(api: ApiSession, vs_uuid: str, metric_ids: List[str], step:
         if not name:
             continue
         val = data[-1].get("value", "N/A") if data else "N/A"
-        # bandwidth conversion to MiB/s (your original convention)
+        # bandwidth conversion to MiB/s (optional, matches your earlier convention)
         if name == "l4_client.avg_bandwidth" and isinstance(val, (int, float)):
             val = round(val / 1048576, 2)
         out[name] = val
+
+    if debug:
+        nz = sum(1 for v in out.values() if v not in ("N/A", None))
+        logging.debug(f"[{vs_uuid}] Metrics fetched in {dt:.3f}s | metrics={len(metric_ids)} | non-empty={nz}")
     return out
 
 # ---------------- Per-controller worker ----------------
@@ -273,7 +289,8 @@ def process_controller(controller: str,
                        metric_headers: List[str],
                        api_version: str,
                        step: int,
-                       limit: int):
+                       limit: int,
+                       debug: bool):
     user, pwd = creds
     try:
         api = ApiSession.get_session(controller, user, pwd, tenant='admin', api_version=api_version)
@@ -283,25 +300,29 @@ def process_controller(controller: str,
         return
 
     # Build vsvip cache once
-    vsvip_cache = build_vsvip_cache(api)
+    vsvip_cache = build_vsvip_cache(api, debug=debug)
 
     # Pull all VS CONFIG (include_name for friendly names)
     cfg_map: Dict[str, dict] = {}
     cfg_count = 0
-    for cfg in paged_get(api, "virtualservice", params={"include_name": True, "page_size": 200}):
-        cfg_count += 1
-        vs_uuid = cfg.get("uuid", "null")
+    for cfg in paged_get(api, "virtualservice", params={"include_name": True, "page_size": 200}, debug=debug):
+        vs_uuid = cfg.get("uuid", None)
+        if not vs_uuid:
+            continue
         cfg_map[vs_uuid] = cfg
+        cfg_count += 1
     logging.info(f"[{controller}] CONFIG fetched: {cfg_count}")
 
     # Pull all VS INVENTORY (runtime)
     rt_map: Dict[str, dict] = {}
     rt_count = 0
-    for inv in paged_get(api, "virtualservice-inventory", params={"page_size": 200}):
-        rt_count += 1
+    for inv in paged_get(api, "virtualservice-inventory", params={"page_size": 200}, debug=debug):
         cfg = inv.get("config", {}) or {}
         runtime = inv.get("runtime", {}) or {}
-        rt_map[cfg.get("uuid", "null")] = runtime
+        vu = cfg.get("uuid", None)
+        if vu:
+            rt_map[vu] = runtime
+            rt_count += 1
     logging.info(f"[{controller}] RUNTIME fetched: {rt_count}")
 
     # Emit rows (merge cfg + runtime + metrics)
@@ -320,38 +341,36 @@ def process_controller(controller: str,
         )
 
         # Booleans & top-level
-        vs_enabled      = tf(vs_cfg.get("enabled", False))
-        traffic_enabled = tf(vs_cfg.get("traffic_enabled", False))
-        vip_as_snat     = tf(vs_cfg.get("use_vip_as_snat", False))
-        auto_gw         = tf(vs_cfg.get("enable_autogw", False))
+        vs_enabled      = TF(vs_cfg.get("enabled", False))
+        traffic_enabled = TF(vs_cfg.get("traffic_enabled", False))
+        vip_as_snat     = TF(vs_cfg.get("use_vip_as_snat", False))
+        auto_gw         = TF(vs_cfg.get("enable_autogw", False))
         vh_type         = vs_cfg.get("vh_type", "null")
+
+        # Real-time metrics toggle
         rtm_enabled = "FALSE"
         ap = vs_cfg.get("analytics_policy") or {}
         mru = ap.get("metrics_realtime_update")
         if isinstance(mru, dict) and mru.get("enabled"):
             rtm_enabled = "TRUE"
         elif isinstance(vs_cfg.get("metrics_realtime_update"), bool):
-            rtm_enabled = tf(vs_cfg.get("metrics_realtime_update"))
+            rtm_enabled = TF(vs_cfg.get("metrics_realtime_update"))
 
-        # Friendly names from refs (thanks to include_name=true it should contain '#Name')
-        app_prof = safe_name_from_ref(vs_cfg.get("application_profile_ref"))
-        ssl_prof = safe_name_from_ref(vs_cfg.get("ssl_profile_ref"))
-        analytics_prof = safe_name_from_ref(vs_cfg.get("analytics_profile_ref"))
-        net_prof = safe_name_from_ref(vs_cfg.get("network_profile_ref"))
-        pool_name = safe_name_from_ref(vs_cfg.get("pool_ref"))
-        se_group  = safe_name_from_ref(vs_cfg.get("se_group_ref"))
-        cloud_name = safe_name_from_ref(vs_cfg.get("cloud_ref"))
-        tenant_name = safe_name_from_ref(vs_cfg.get("tenant_ref"))
-        active_stby = vs_cfg.get("active_standby_se_tag", "null")
-        cloud_type  = vs_cfg.get("cloud_type", "null")  # may be filled by runtime if null
+        # Friendly names from refs
+        app_prof      = safe_name_from_ref(vs_cfg.get("application_profile_ref"))
+        ssl_prof      = safe_name_from_ref(vs_cfg.get("ssl_profile_ref"))
+        analytics_pr  = safe_name_from_ref(vs_cfg.get("analytics_profile_ref"))
+        net_prof      = safe_name_from_ref(vs_cfg.get("network_profile_ref"))
+        pool_name     = safe_name_from_ref(vs_cfg.get("pool_ref"))
+        se_group      = safe_name_from_ref(vs_cfg.get("se_group_ref"))
+        cloud_name    = safe_name_from_ref(vs_cfg.get("cloud_ref"))
+        tenant_name   = safe_name_from_ref(vs_cfg.get("tenant_ref"))
+        active_stby   = vs_cfg.get("active_standby_se_tag", "null")
+        cloud_type    = vs_cfg.get("cloud_type", "null")  # may be overridden by runtime below
 
         # SSL cert names
         cert_refs = vs_cfg.get("ssl_key_and_certificate_refs") or []
-        ssl_cert_names = []
-        for ref in cert_refs:
-            nm = safe_name_from_ref(ref)
-            if nm and nm != "null":
-                ssl_cert_names.append(nm)
+        ssl_cert_names = [safe_name_from_ref(ref) for ref in cert_refs if ref]
         ssl_certs = join_semicolon(ssl_cert_names)
 
         # Runtime merge
@@ -368,7 +387,6 @@ def process_controller(controller: str,
         for vsum in rt.get("vip_summary", []) or []:
             for se in vsum.get("service_engine", []) or []:
                 se_name = se.get("name") or "null"
-                # If name missing, try to pull from 'se_ref' #Name
                 if (not se_name or se_name == "null") and se.get("se_ref"):
                     se_name = safe_name_from_ref(se["se_ref"])
                 se_ip = (se.get("mgmt_ip") or {}).get("addr", "null")
@@ -384,8 +402,8 @@ def process_controller(controller: str,
                 elif se.get("is_standby") or se.get("standby"):
                     sec_name, sec_ip, sec_uuid = se_name, se_ip, se_uuid
 
-        # Metrics
-        metrics_map = fetch_vs_metrics(api, vs_uuid, metric_headers, step, limit)
+        # Metrics (one call)
+        metrics_map = fetch_vs_metrics(api, vs_uuid, metric_headers, step, limit, debug=debug)
         if any(metrics_map.get(k) not in (None, "N/A") for k in metric_headers):
             metrics_non_empty += 1
 
@@ -397,14 +415,14 @@ def process_controller(controller: str,
             vip_types,
             vs_enabled,
             traffic_enabled,
-            tf(ssl_enabled),
+            TF(ssl_enabled),
             vip_as_snat,
             auto_gw,
             vh_type,
             app_prof,
             ssl_prof,
             ssl_certs,
-            analytics_prof,
+            analytics_pr,
             net_prof,
             state,
             reason,
@@ -426,6 +444,9 @@ def process_controller(controller: str,
         with CSV_LOCK:
             writer.writerow(row)
 
+        if debug:
+            logging.debug(f"[{controller}] Wrote VS: {vs_name} ({vs_uuid})")
+
     logging.info(f"[{controller}] Rows written: {len(cfg_map)} | Metrics non-empty rows: {metrics_non_empty}")
 
 # ---------------- Main ----------------
@@ -434,9 +455,9 @@ def main():
         description="NSX ALB (Avi) VS inventory + metrics (Avi SDK, consolidated CSV).",
         epilog=(
             "Examples:\n"
-            "  python3 alb-vsInventory-v1.3-final.py --config config.ini --debug\n"
-            "  python3 alb-vsInventory-v1.3-final.py --controllers m00avientlb.local --user admin --password '***'\n"
-            "  python3 alb-vsInventory-v1.3-final.py --controllers 'm00.local,m01.local' --threads 8 --output-dir /tmp/reports\n"
+            "  python3 alb-vsInventory-v1.3.1.py --config config.ini --debug\n"
+            "  python3 alb-vsInventory-v1.3.1.py --controllers m00avientlb.local --user admin --password '***'\n"
+            "  python3 alb-vsInventory-v1.3.1.py --controllers 'm00.local,m01.local' --threads 5 --output-dir /tmp/reports\n"
         ),
         formatter_class=argparse.RawTextHelpFormatter
     )
@@ -446,7 +467,7 @@ def main():
     parser.add_argument("--password", help="Override [DEFAULT] avi_pass")
     parser.add_argument("--api-version", help="Override API version (default from [SETTINGS].avi_version)")
     parser.add_argument("--output-dir", help="Override [SETTINGS].report_output_dir")
-    parser.add_argument("--threads", type=int, default=8, help="Parallel workers (default: 8)")
+    parser.add_argument("--threads", type=int, default=5, help="Parallel workers (default: 5)")
     parser.add_argument("--debug", action="store_true", help="Enable verbose logging")
     args = parser.parse_args()
 
@@ -523,7 +544,7 @@ def main():
 
         with ThreadPoolExecutor(max_workers=args.threads) as ex:
             futures = [
-                ex.submit(process_controller, c, creds, writer, metric_ids, avi_version, api_step, api_limit)
+                ex.submit(process_controller, c, creds, writer, metric_ids, avi_version, api_step, api_limit, args.debug)
                 for c, creds in controllers_cfg.items()
             ]
             for fut in as_completed(futures):
