@@ -1,5 +1,5 @@
 {
-  "_last_modified": "1758976999582306",
+  "_last_modified": "1754331382390894",
   "active_standby_se_tag": "ACTIVE_STANDBY_SE_1",
   "advertise_down_vs": false,
   "allow_invalid_client_cert": false,
@@ -15,14 +15,14 @@
       "enabled": false
     },
     "metrics_realtime_update": {
-      "duration": 30,
+      "duration": 0,
       "enabled": false
     },
     "significant_log_throttle": 10,
     "udf_log_throttle": 10
   },
   "analytics_profile_ref": "https://m00avientlb.local/api/analyticsprofile/analyticsprofile-29a7e0d1-88d4-4a49-84b9-6a97075374df#System-Analytics-Profile",
-  "application_profile_ref": "https://m00avientlb.local/api/applicationprofile/applicationprofile-66a55356-d416-4314-a205-48369fac8032#System-Secure-HTTP",
+  "application_profile_ref": "https://m00avientlb.local/api/applicationprofile/applicationprofile-881063ce-8ea7-4318-b637-892c794b142b#VS_ATM_PCMS_44.18_9443-Application-profile",
   "application_profile_ref_data": {
     "http_profile": {
       "allow_dots_in_header_name": false,
@@ -33,7 +33,7 @@
       "client_max_request_size": 48,
       "close_server_side_connection_on_error": false,
       "collect_client_tls_fingerprint": false,
-      "connection_multiplexing_enabled": true,
+      "connection_multiplexing_enabled": false,
       "detect_ntlm_app": true,
       "disable_keepalive_posts_msie6": true,
       "disable_sni_hostname_check": false,
@@ -56,15 +56,15 @@
         "max_http2_queued_frames_to_client_per_connection": 1000,
         "max_http2_requests_per_connection": 1000
       },
-      "http_to_https": true,
+      "http_to_https": false,
       "http_upstream_buffer_size": 0,
-      "httponly_enabled": true,
+      "httponly_enabled": false,
       "keepalive_header": false,
       "keepalive_timeout": 30000,
       "max_bad_rps_cip": 0,
       "max_bad_rps_cip_uri": 0,
       "max_bad_rps_uri": 0,
-      "max_header_count": 0,
+      "max_header_count": 256,
       "max_keepalive_requests": 100,
       "max_response_headers_size": 48,
       "max_rps_cip": 0,
@@ -76,8 +76,8 @@
       "post_accept_timeout": 30000,
       "reset_conn_http_on_ssl_port": false,
       "respond_with_100_continue": true,
-      "secure_cookie_enabled": true,
-      "server_side_redirect_to_https": true,
+      "secure_cookie_enabled": false,
+      "server_side_redirect_to_https": false,
       "ssl_client_certificate_mode": "SSL_CLIENT_CERTIFICATE_NONE",
       "use_app_keepalive_timeout": false,
       "use_true_client_ip": false,
@@ -85,16 +85,19 @@
       "x_forwarded_proto_enabled": true,
       "xff_alternate_name": "X-Forwarded-For",
       "xff_enabled": true,
-      "xff_update": "REPLACE_XFF_HEADERS"
+      "xff_update": "APPEND_TO_THE_XFF_HEADER"
     },
-    "name": "System-Secure-HTTP",
+    "l4_ssl_profile": {
+      "ssl_stream_idle_timeout": 3600
+    },
+    "name": "VS_ATM_PCMS_44.18_9443-Application-profile",
     "preserve_client_ip": false,
     "preserve_client_port": false,
     "preserve_dest_ip_port": false,
     "tenant_ref": "https://m00avientlb.local/api/tenant/admin#admin",
     "type": "APPLICATION_PROFILE_TYPE_HTTP",
-    "url": "https://m00avientlb.local/api/applicationprofile/applicationprofile-66a55356-d416-4314-a205-48369fac8032#System-Secure-HTTP",
-    "uuid": "applicationprofile-66a55356-d416-4314-a205-48369fac8032"
+    "url": "https://m00avientlb.local/api/applicationprofile/applicationprofile-881063ce-8ea7-4318-b637-892c794b142b#VS_ATM_PCMS_44.18_9443-Application-profile",
+    "uuid": "applicationprofile-881063ce-8ea7-4318-b637-892c794b142b"
   },
   "bulk_sync_kvcache": false,
   "close_client_conn_on_config_update": false,
@@ -155,7 +158,12 @@
   },
   "cloud_type": "CLOUD_NSXT",
   "content_rewrite": {
-    "rewritable_content_ref": "https://m00avientlb.local/api/stringgroup/stringgroup-686c2246-fd75-49fb-90d0-e25778b8c720#System-Rewritable-Content-Types"
+    "rewritable_content_ref": "https://m00avientlb.local/api/stringgroup/stringgroup-686c2246-fd75-49fb-90d0-e25778b8c720#System-Rewritable-Content-Types",
+    "rsp_rewrite_rules": [
+      {
+        "enable": false
+      }
+    ]
   },
   "delay_fairness": false,
   "east_west_placement": false,
@@ -167,13 +175,13 @@
   "flow_label_type": "NO_LABEL",
   "http_policies": [
     {
-      "http_policy_set_ref": "https://m00avientlb.local/api/httppolicyset/httppolicyset-1c3fc77b-d183-41c0-a1f2-7861c05fc488#VS_CMP_FASTPLUS_IPV6_011E_443-HTTPPolicySet-0",
+      "http_policy_set_ref": "https://m00avientlb.local/api/httppolicyset/httppolicyset-df0b45eb-5849-4a06-98c9-541c885c0d0f#VS_ATM_PCMS_44.18_9443-NSX-T-DMZ-HTTP-Policy-Set-0",
       "http_policy_set_ref_data": {
         "is_internal_policy": false,
-        "name": "VS_CMP_FASTPLUS_IPV6_011E_443-HTTPPolicySet-0",
+        "name": "VS_ATM_PCMS_44.18_9443-NSX-T-DMZ-HTTP-Policy-Set-0",
         "tenant_ref": "https://m00avientlb.local/api/tenant/admin#admin",
-        "url": "https://m00avientlb.local/api/httppolicyset/httppolicyset-1c3fc77b-d183-41c0-a1f2-7861c05fc488#VS_CMP_FASTPLUS_IPV6_011E_443-HTTPPolicySet-0",
-        "uuid": "httppolicyset-1c3fc77b-d183-41c0-a1f2-7861c05fc488"
+        "url": "https://m00avientlb.local/api/httppolicyset/httppolicyset-df0b45eb-5849-4a06-98c9-541c885c0d0f#VS_ATM_PCMS_44.18_9443-NSX-T-DMZ-HTTP-Policy-Set-0",
+        "uuid": "httppolicyset-df0b45eb-5849-4a06-98c9-541c885c0d0f"
       },
       "index": 11
     }
@@ -181,16 +189,8 @@
   "ign_pool_net_reach": false,
   "limit_doser": false,
   "marked_for_delete": false,
-  "markers": [
-    {
-      "key": "app",
-      "values": [
-        "cmp_scfu"
-      ]
-    }
-  ],
   "max_cps_per_client": 0,
-  "name": "VS_CMP_FASTPLUS_IPV6_011E_443",
+  "name": "VS_ATM_PCMS_44.18_9443",
   "network_profile_ref": "https://m00avientlb.local/api/networkprofile/networkprofile-1815ba16-867f-4fa2-b469-c6225518bbcc#System-TCP-Proxy",
   "network_profile_ref_data": {
     "connection_mirror": false,
@@ -222,20 +222,21 @@
     "url": "https://m00avientlb.local/api/networkprofile/networkprofile-1815ba16-867f-4fa2-b469-c6225518bbcc#System-TCP-Proxy",
     "uuid": "networkprofile-1815ba16-867f-4fa2-b469-c6225518bbcc"
   },
-  "network_security_policy_ref": "https://m00avientlb.local/api/networksecuritypolicy/networksecuritypolicy-313eec22-ff8b-4bcd-935f-d6d8c9e94754#VS_CMP_FASTPLUS_IPV6_011E_443-NetworkSecurityPolicy",
+  "network_security_policy_ref": "https://m00avientlb.local/api/networksecuritypolicy/networksecuritypolicy-253ad14d-b8d0-4250-8637-c6d5e035b92f#vs-VS_ATM_PCMS_44.18_9443-NSX-T-DMZ-ns",
   "network_security_policy_ref_data": {
-    "name": "VS_CMP_FASTPLUS_IPV6_011E_443-NetworkSecurityPolicy",
+    "name": "vs-VS_ATM_PCMS_44.18_9443-NSX-T-DMZ-ns",
     "tenant_ref": "https://m00avientlb.local/api/tenant/admin#admin",
-    "url": "https://m00avientlb.local/api/networksecuritypolicy/networksecuritypolicy-313eec22-ff8b-4bcd-935f-d6d8c9e94754#VS_CMP_FASTPLUS_IPV6_011E_443-NetworkSecurityPolicy",
-    "uuid": "networksecuritypolicy-313eec22-ff8b-4bcd-935f-d6d8c9e94754"
+    "url": "https://m00avientlb.local/api/networksecuritypolicy/networksecuritypolicy-253ad14d-b8d0-4250-8637-c6d5e035b92f#vs-VS_ATM_PCMS_44.18_9443-NSX-T-DMZ-ns",
+    "uuid": "networksecuritypolicy-253ad14d-b8d0-4250-8637-c6d5e035b92f"
   },
-  "pool_ref": "https://m00avientlb.local/api/pool/pool-cc698058-731a-4e3f-ba33-501988a62092#VS_CMP_FASTPLUS_IPV6_011E_443-Pool",
+  "pool_ref": "https://m00avientlb.local/api/pool/pool-68927616-8d8c-4457-a4f4-0331a665f35a#VS_ATM_PCMS_44.18_9443-pool",
   "pool_ref_data": {
     "analytics_policy": {
       "enable_realtime_metrics": false
     },
     "analytics_profile_ref": "https://m00avientlb.local/api/analyticsprofile/analyticsprofile-29a7e0d1-88d4-4a49-84b9-6a97075374df#System-Analytics-Profile",
     "append_port": "NON_DEFAULT_80_443",
+    "application_persistence_profile_ref": "https://m00avientlb.local/api/applicationpersistenceprofile/applicationpersistenceprofile-c864c67e-b14f-4be9-85a7-c98215d0ef0c#System-Persistence-Client-IP",
     "capacity_estimation": false,
     "capacity_estimation_ttfb_thresh": 0,
     "cloud_ref": "https://m00avientlb.local/api/cloud/cloud-eac4bc2f-5aa1-44e4-9bc3-6831c23260f1#NSX-T-DMZ",
@@ -246,7 +247,7 @@
       "upstream_connpool_server_max_cache": 0
     },
     "connection_ramp_duration": 10,
-    "default_server_port": 443,
+    "default_server_port": 8501,
     "delete_server_on_dns_refresh": true,
     "enable_http2": false,
     "enabled": true,
@@ -257,12 +258,8 @@
     "graceful_disable_timeout": 1,
     "graceful_hm_down_disable_timeout": -1,
     "health_monitor_refs": [
-      "https://m00avientlb.local/api/healthmonitor/healthmonitor-9f2120a1-1e7a-450e-8e6e-a78fc2cc59a0#System-TCP"
+      "https://m00avientlb.local/api/healthmonitor/healthmonitor-ee5022ff-e5df-4132-8f29-692d856b31e8#System-HTTPS"
     ],
-    "horizon_profile": {
-      "blast_port": 8443,
-      "pcoip_port": 4172
-    },
     "host_check_enabled": false,
     "http2_properties": {
       "max_http2_control_frames_per_connection": 0,
@@ -275,25 +272,17 @@
     "lb_algorithm_core_nonaffinity": 2,
     "lb_algorithm_hash": "LB_ALGORITHM_CONSISTENT_HASH_SOURCE_IP_ADDRESS",
     "lookup_server_by_name": false,
-    "markers": [
-      {
-        "key": "app",
-        "values": [
-          "cmp_scfu"
-        ]
-      }
-    ],
     "max_concurrent_connections_per_server": 0,
-    "name": "VS_CMP_FASTPLUS_IPV6_011E_443-Pool",
+    "name": "VS_ATM_PCMS_44.18_9443-pool",
     "placement_networks": [
       {
         "network_ref": "https://m00avientlb.local/api/network/network-d542fc49-43fe-4ebd-8c60-66fc93c64247#m02-dmz-vlan202",
         "subnet": {
           "ip_addr": {
-            "addr": "2405:a700:14:100::",
-            "type": "V6"
+            "addr": "10.189.44.0",
+            "type": "V4"
           },
-          "mask": 64
+          "mask": 22
         }
       }
     ],
@@ -314,11 +303,28 @@
     "servers": [
       {
         "enabled": true,
-        "hostname": "2405:a700:14:11a::196",
+        "hostname": "S1",
         "ip": {
-          "addr": "2405:a700:14:11a::196",
-          "type": "V6"
+          "addr": "10.189.45.170",
+          "type": "V4"
         },
+        "port": 8501,
+        "prst_hdr_val": "",
+        "ratio": 1,
+        "resolve_server_by_dns": false,
+        "rewrite_host_header": false,
+        "static": false,
+        "verify_network": false
+      },
+      {
+        "enabled": true,
+        "hostname": "S2",
+        "ip": {
+          "addr": "10.189.45.171",
+          "type": "V4"
+        },
+        "port": 8501,
+        "prst_hdr_val": "",
         "ratio": 1,
         "resolve_server_by_dns": false,
         "rewrite_host_header": false,
@@ -327,16 +333,16 @@
       }
     ],
     "sni_enabled": true,
-    "ssl_key_and_certificate_ref": "https://m00avientlb.local/api/sslkeyandcertificate/sslkeyandcertificate-c0c2e8a7-04a2-43b5-b6e5-45d126009ffe#VS_CMP_FASTPLUS_IPV6_011E_443_v2",
+    "ssl_key_and_certificate_ref": "https://m00avientlb.local/api/sslkeyandcertificate/sslkeyandcertificate-12ae0c8e-68ca-4e03-b08f-323642db29fb#VS_ATM_PCMS_44.18_9443_V2",
     "ssl_profile_ref": "https://m00avientlb.local/api/sslprofile/sslprofile-3acb25ed-48b0-4b0d-99bf-4f9bdaae634d#System-Standard-PFS",
     "tenant_ref": "https://m00avientlb.local/api/tenant/admin#admin",
-    "url": "https://m00avientlb.local/api/pool/pool-cc698058-731a-4e3f-ba33-501988a62092#VS_CMP_FASTPLUS_IPV6_011E_443-Pool",
+    "url": "https://m00avientlb.local/api/pool/pool-68927616-8d8c-4457-a4f4-0331a665f35a#VS_ATM_PCMS_44.18_9443-pool",
     "use_service_port": false,
     "use_service_ssl_mode": false,
-    "uuid": "pool-cc698058-731a-4e3f-ba33-501988a62092",
+    "uuid": "pool-68927616-8d8c-4457-a4f4-0331a665f35a",
     "vrf_ref": "https://m00avientlb.local/api/vrfcontext/vrfcontext-41217508-7d69-4b84-874e-1ed08beca820#global"
   },
-  "redis_db": 5,
+  "redis_db": 11,
   "redis_port": 5027,
   "remove_listening_port_on_vs_down": false,
   "revoke_vip_route": false,
@@ -349,15 +355,15 @@
       "enable_ssl": true,
       "horizon_internal_ports": false,
       "is_active_ftp_data_port": false,
-      "port": 443,
-      "port_range_end": 443
+      "port": 9443,
+      "port_range_end": 9443
     }
   ],
   "sideband_profile": {
     "sideband_max_request_body_size": 1024
   },
   "ssl_key_and_certificate_refs": [
-    "https://m00avientlb.local/api/sslkeyandcertificate/sslkeyandcertificate-c0c2e8a7-04a2-43b5-b6e5-45d126009ffe#VS_CMP_FASTPLUS_IPV6_011E_443_v2"
+    "https://m00avientlb.local/api/sslkeyandcertificate/sslkeyandcertificate-12ae0c8e-68ca-4e03-b08f-323642db29fb#VS_ATM_PCMS_44.18_9443_V2"
   ],
   "ssl_key_and_certificate_refs_data": [
     {
@@ -372,36 +378,36 @@
         }
       ],
       "certificate": {
-        "certificate": "-----BEGIN CERTIFICATE-----\nMIIG+TCCBeGgAwIBAgIQBFszCZNFCF+W4nuM6WCqJDANBgkqhkiG9w0BAQsFADBE\nMQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMR4wHAYDVQQDExVE\naWdpQ2VydCBFViBSU0EgQ0EgRzIwHhcNMjUwODI4MDAwMDAwWhcNMjYwOTI4MjM1\nOTU5WjCBvjETMBEGCysGAQQBgjc8AgEDEwJJTjEaMBgGA1UEDwwRR292ZXJubWVu\ndCBFbnRpdHkxGjAYBgNVBAUTEUdvdmVybm1lbnQgRW50aXR5MQswCQYDVQQGEwJJ\nTjEUMBIGA1UECBMLTWFoYXJhc2h0cmExFDASBgNVBAcTC05hdmkgTXVtYmFpMRww\nGgYDVQQKExNTVEFURSBCQU5LIE9GIElORElBMRgwFgYDVQQDEw9jbXAuc2JpLmJh\nbmsuaW4wggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDQtpAtQqsDtiHP\nHcC5NRHWd83CuuwlMCXh3vj1uYzu3z2dnMspd6fiJuioWMPqrLa0+Mkyyb94Wfxf\ndvqW0pwgUBQxDFMdEnyGSuCfeZc7wSgERzcsXwxH6nM4g8+OCT16d8qkqtwpJX/U\nTGc8unYYJLGmBAWf9do39KcwwR+Ju6XD9OxqNatz88FvJLCKwXVfNx0qoK9RPIdp\nsUt4Zc30t2jy9fKwtHdHKyzV1phzECQYUTjKOyMunRyzHNi7Fef3+G4mOezDRejz\nKa+Q7uD9gnTVciVKpy4YhlSc+o8exSbTWfG2AoZUxY+xeHaygvu7sNAwFToF4Nla\nf/NQO5B/AgMBAAGjggNqMIIDZjAfBgNVHSMEGDAWgBRqTlC/mGidW3sgddRZAXlI\nZpIyBjAdBgNVHQ4EFgQUT+PzvaZvg0cIrdQqopW9a04GReMwLwYDVR0RBCgwJoIP\nY21wLnNiaS5iYW5rLmlughN3d3cuY21wLnNiaS5iYW5rLmluMEoGA1UdIARDMEEw\nCwYJYIZIAYb9bAIBMDIGBWeBDAEBMCkwJwYIKwYBBQUHAgEWG2h0dHA6Ly93d3cu\nZGlnaWNlcnQuY29tL0NQUzAOBgNVHQ8BAf8EBAMCBaAwHQYDVR0lBBYwFAYIKwYB\nBQUHAwEGCCsGAQUFBwMCMHUGA1UdHwRuMGwwNKAyoDCGLmh0dHA6Ly9jcmwzLmRp\nZ2ljZXJ0LmNvbS9EaWdpQ2VydEVWUlNBQ0FHMi5jcmwwNKAyoDCGLmh0dHA6Ly9j\ncmw0LmRpZ2ljZXJ0LmNvbS9EaWdpQ2VydEVWUlNBQ0FHMi5jcmwwcwYIKwYBBQUH\nAQEEZzBlMCQGCCsGAQUFBzABhhhodHRwOi8vb2NzcC5kaWdpY2VydC5jb20wPQYI\nKwYBBQUHMAKGMWh0dHA6Ly9jYWNlcnRzLmRpZ2ljZXJ0LmNvbS9EaWdpQ2VydEVW\nUlNBQ0FHMi5jcnQwDAYDVR0TAQH/BAIwADCCAXwGCisGAQQB1nkCBAIEggFsBIIB\naAFmAHUA2AlVO5RPev/IFhlvlE+Fq7D4/F6HVSYPFdEucrtFSxQAAAGY8MPFlgAA\nBAMARjBEAiAbbJGtoZ4EbMa7MC0htGYyT1Zx4TOCRMLL+jk81WQkegIgSN/7CZIu\nhHhF8lkmcTDAyzIcDyEtLa5FSiUuw1Hkc7gAdQDCMX5XRRmjRe5/ON6ykEHrx8Ih\nWiK/f9W1rXaa2Q5SzQAAAZjww8WnAAAEAwBGMEQCIGmE0LVnmCjcI2DDxjlnaIns\n96m8z/mEzXolWfNv55lBAiAwcQx9P9lGZ2HnT0h8AODF1Nymk1Lz0oXMNeRXsgKO\nlwB2AJROQ4f67MHvgfMZJCaoGGUBx9NfOAIBP3JnfVU3LhnYAAABmPDDxa0AAAQD\nAEcwRQIhAOHi/rxYCTBE8xzdLQXQj0zKeqntGt5Gupt/BR+fn/TIAiBCGQiG4Cfl\n8GSlbJW+lAv5yCyGN0Bfpp6/o0w47n9jJzANBgkqhkiG9w0BAQsFAAOCAQEAZlCM\nIRBU6ADoZME5Kbw1Bm/1xBqjHb7yoBx5VYc9Ijl5XnEx+uG7OTad1vKhTKZP97Tf\n+Zsn5LyZL0w7w/Ap3smQz4JIuRcFstwIl1UWWgQamv/BTp0HnnzlAOlpF67I1E5+\nN0IaNRRarnfieF9S+4Y64n74cVXm2uP75MCpxqmHMVl3A9g602dvrklDXntsWIbJ\nSGt5ECqzW2TQ6yCtMlrBhE/bdxsChrx3RIPECt93M1tlzpynK9sxU2L8sAqoXfWM\nrDFkEQZB5Sq2m+0gMKue8bgwBH7VCrtm2ROc1HgS7QjupQeR9sDulIfnvrzLH5rx\nxwpiF9pFkAa0lh+2MQ==\n-----END CERTIFICATE-----",
+        "certificate": "-----BEGIN CERTIFICATE-----\nMIIG6jCCBdKgAwIBAgIQBig6kHrMGn0ruJfDBmJYeTANBgkqhkiG9w0BAQsFADBE\nMQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMR4wHAYDVQQDExVE\naWdpQ2VydCBFViBSU0EgQ0EgRzIwHhcNMjQwNzIwMDAwMDAwWhcNMjUwODIwMjM1\nOTU5WjCBtTETMBEGCysGAQQBgjc8AgEDEwJJTjEaMBgGA1UEDwwRR292ZXJubWVu\ndCBFbnRpdHkxGjAYBgNVBAUTEUdvdmVybm1lbnQgRW50aXR5MQswCQYDVQQGEwJJ\nTjEUMBIGA1UECBMLTWFoYXJhc2h0cmExDzANBgNVBAcTBk11bWJhaTEcMBoGA1UE\nChMTU1RBVEUgQkFOSyBPRiBJTkRJQTEUMBIGA1UEAxMLcHJlcGFpZC5zYmkwggEi\nMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDij4RwZCMZeUZVE15fRMGEQ2zo\nM/TugFVW9LjkrHb5UKQw+gBotk4ggqq7WbHYjFF0wLl91rXzEmyFVRDGWQKeK5AK\nry83YfsspIRK5Cv1pN8kkNMnBPybXJTOKtlTxMB4nK+6N5xckrQLcMSKQn1CfhGl\nvYk0efXQWequL9basRMLF7zH7SazsTNzOMEVapVyiZ5BMcqZwIAzj9Opr3CeoESU\n2jAz1yC9V6tczibUKWuoU4DjjiLENR9SFTNGy0JljOz1cImxhgLyY/5mdRPY+5Dg\ncuG0Vx7xpBWKqb5FIPhFypz7d3t5PF53SNfT1BZfVC06pT9FXnf6vhZGD1rfAgMB\nAAGjggNkMIIDYDAfBgNVHSMEGDAWgBRqTlC/mGidW3sgddRZAXlIZpIyBjAdBgNV\nHQ4EFgQUrw3V72aBtuxNibhOIM6UTS/af7EwJwYDVR0RBCAwHoILcHJlcGFpZC5z\nYmmCD3d3dy5wcmVwYWlkLnNiaTBKBgNVHSAEQzBBMAsGCWCGSAGG/WwCATAyBgVn\ngQwBATApMCcGCCsGAQUFBwIBFhtodHRwOi8vd3d3LmRpZ2ljZXJ0LmNvbS9DUFMw\nDgYDVR0PAQH/BAQDAgWgMB0GA1UdJQQWMBQGCCsGAQUFBwMBBggrBgEFBQcDAjB1\nBgNVHR8EbjBsMDSgMqAwhi5odHRwOi8vY3JsMy5kaWdpY2VydC5jb20vRGlnaUNl\ncnRFVlJTQUNBRzIuY3JsMDSgMqAwhi5odHRwOi8vY3JsNC5kaWdpY2VydC5jb20v\nRGlnaUNlcnRFVlJTQUNBRzIuY3JsMHMGCCsGAQUFBwEBBGcwZTAkBggrBgEFBQcw\nAYYYaHR0cDovL29jc3AuZGlnaWNlcnQuY29tMD0GCCsGAQUFBzAChjFodHRwOi8v\nY2FjZXJ0cy5kaWdpY2VydC5jb20vRGlnaUNlcnRFVlJTQUNBRzIuY3J0MAwGA1Ud\nEwEB/wQCMAAwggF+BgorBgEEAdZ5AgQCBIIBbgSCAWoBaAB3AN3cyjSV1+EWBeeV\nMvrHn/g9HFDf2wA6FBJ2Ciysu8gqAAABkM9RxY4AAAQDAEgwRgIhAPEvYK4AAQwl\nrTmrtgEuegUWWEPgjJcCzUvmNl1jNzHBAiEA8WNsGNuBqHgzP59Hdh1zQ9JAvrWk\nqDnRcXDIBB4yaysAdgDm0jFjQHeMwRBBBtdxuc7B0kD2loSG+7qHMh39HjeOUAAA\nAZDPUcWpAAAEAwBHMEUCIQDrvH/LxovhZsg6k6bfYDrJlA9XQfxsOFPCpivp3Zvw\nFQIgOWU8AvM/B6zVhWTZt7q10j9hLJwOKRBBGzzk6WN7MsMAdQDM+w9qhXEJZf6V\nm1PO6bJ8IumFXA2XjbapflTA/kwNsAAAAZDPUcWbAAAEAwBGMEQCIBM2l5AFM/r5\nYAJJ/B8M1mmHVuUqqHXJLoHhxClh0v5mAiAjUnUGFm9S5z4dpESM6jCN7x8nuyKN\nfO7KjQfRKhyLtDANBgkqhkiG9w0BAQsFAAOCAQEAM5Rd8K8JdK9wrA9ZMTzzVO/E\nRbWOgSJkOKRFAgd6TVmW6MeIMJ/PzAmTaWteGHVfDXHOBo7FwNAn6la8FHxv6t/n\nrsBgvB8Ms6n/qfHo2w89ZDGe9QOqWQutEA8VWr3lznzV49Q0cM30a87QpQdz9GDY\nHsvMY5TsCo1SIWqL6PLiZPtB5oo26q/P7R93VNeOvOGtdlry9wOQX6LTIwfJGR9b\nr48iDEVgEMGJZLP+FQBLI+WGpmN4CDdNXIrD3I+qnT8iM5p6knv9l6dNW5rry1rP\nqZaJIR/IN2jtsCdLNQ5AkHKS7d31kefw5YjPzZWzEJZwwgkQcrKgY3AgKf2E7w==\n-----END CERTIFICATE-----",
         "days_until_expire": 365,
-        "expiry_status": "SSL_CERTIFICATE_GOOD",
-        "fingerprint": "SHA1 Fingerprint=FF:9C:54:F3:60:53:42:B5:7D:52:9A:4B:A6:D5:AD:F1:EE:7B:52:4D",
+        "expiry_status": "SSL_CERTIFICATE_EXPIRED",
+        "fingerprint": "SHA1 Fingerprint=A8:67:A2:E0:38:BA:9B:EB:22:B9:1A:03:09:DF:9C:20:1A:B9:34:2B\n",
         "issuer": {
           "common_name": "DigiCert EV RSA CA G2",
           "country": "US",
           "distinguished_name": "C=US, O=DigiCert Inc, CN=DigiCert EV RSA CA G2",
           "organization": "DigiCert Inc"
         },
-        "not_after": "2026-09-28 23:59:59",
-        "not_before": "2025-08-28 00:00:00",
-        "public_key": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0LaQLUKrA7Yhzx3AuTUR\n1nfNwrrsJTAl4d749bmM7t89nZzLKXen4iboqFjD6qy2tPjJMsm/eFn8X3b6ltKc\nIFAUMQxTHRJ8hkrgn3mXO8EoBEc3LF8MR+pzOIPPjgk9enfKpKrcKSV/1ExnPLp2\nGCSxpgQFn/XaN/SnMMEfibulw/TsajWrc/PBbySwisF1XzcdKqCvUTyHabFLeGXN\n9Ldo8vXysLR3Ryss1daYcxAkGFE4yjsjLp0csxzYuxXn9/huJjnsw0Xo8ymvkO7g\n/YJ01XIlSqcuGIZUnPqPHsUm01nxtgKGVMWPsXh2soL7u7DQMBU6BeDZWn/zUDuQ\nfwIDAQAB\n-----END PUBLIC KEY-----\n",
+        "not_after": "2025-08-20 23:59:59",
+        "not_before": "2024-07-20 00:00:00",
+        "public_key": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4o+EcGQjGXlGVRNeX0TB\nhENs6DP07oBVVvS45Kx2+VCkMPoAaLZOIIKqu1mx2IxRdMC5fda18xJshVUQxlkC\nniuQCq8vN2H7LKSESuQr9aTfJJDTJwT8m1yUzirZU8TAeJyvujecXJK0C3DEikJ9\nQn4Rpb2JNHn10Fnqri/W2rETCxe8x+0ms7EzczjBFWqVcomeQTHKmcCAM4/Tqa9w\nnqBElNowM9cgvVerXM4m1ClrqFOA444ixDUfUhUzRstCZYzs9XCJsYYC8mP+ZnUT\n2PuQ4HLhtFce8aQViqm+RSD4Rcqc+3d7eTxed0jX09QWX1QtOqU/RV53+r4WRg9a\n3wIDAQAB\n-----END PUBLIC KEY-----\n",
         "self_signed": false,
-        "serial_number": "5790446158787333536918235829525064228",
+        "serial_number": "8184247675667219349440745989514352761",
         "signature_algorithm": "sha256WithRSAEncryption",
         "subject": {
-          "common_name": "cmp.sbi.bank.in",
+          "common_name": "prepaid.sbi",
           "country": "IN",
-          "distinguished_name": "C=IN, ST=Maharashtra, L=Navi Mumbai, O=STATE BANK OF INDIA, CN=cmp.sbi.bank.in",
-          "locality": "Navi Mumbai",
+          "distinguished_name": "C=IN, ST=Maharashtra, L=Mumbai, O=STATE BANK OF INDIA, CN=prepaid.sbi",
+          "locality": "Mumbai",
           "organization": "STATE BANK OF INDIA",
           "state": "Maharashtra"
         },
         "subject_alt_names": [
-          "cmp.sbi.bank.in",
-          "www.cmp.sbi.bank.in"
+          "prepaid.sbi",
+          "www.prepaid.sbi"
         ],
-        "text": "Certificate:\n    Data:\n        Version: 3 (0x2)\n        Serial Number:\n            04:5b:33:09:93:45:08:5f:96:e2:7b:8c:e9:60:aa:24\n        Signature Algorithm: sha256WithRSAEncryption\n        Issuer: C = US, O = DigiCert Inc, CN = DigiCert EV RSA CA G2\n        Validity\n            Not Before: Aug 28 00:00:00 2025 GMT\n            Not After : Sep 28 23:59:59 2026 GMT\n        Subject: jurisdictionC = IN, businessCategory = Government Entity, serialNumber = Government Entity, C = IN, ST = Maharashtra, L = Navi Mumbai, O = STATE BANK OF INDIA, CN = cmp.sbi.bank.in\n        Subject Public Key Info:\n            Public Key Algorithm: rsaEncryption\n                RSA Public-Key: (2048 bit)\n                Modulus:\n                    00:d0:b6:90:2d:42:ab:03:b6:21:cf:1d:c0:b9:35:\n                    11:d6:77:cd:c2:ba:ec:25:30:25:e1:de:f8:f5:b9:\n                    8c:ee:df:3d:9d:9c:cb:29:77:a7:e2:26:e8:a8:58:\n                    c3:ea:ac:b6:b4:f8:c9:32:c9:bf:78:59:fc:5f:76:\n                    fa:96:d2:9c:20:50:14:31:0c:53:1d:12:7c:86:4a:\n                    e0:9f:79:97:3b:c1:28:04:47:37:2c:5f:0c:47:ea:\n                    73:38:83:cf:8e:09:3d:7a:77:ca:a4:aa:dc:29:25:\n                    7f:d4:4c:67:3c:ba:76:18:24:b1:a6:04:05:9f:f5:\n                    da:37:f4:a7:30:c1:1f:89:bb:a5:c3:f4:ec:6a:35:\n                    ab:73:f3:c1:6f:24:b0:8a:c1:75:5f:37:1d:2a:a0:\n                    af:51:3c:87:69:b1:4b:78:65:cd:f4:b7:68:f2:f5:\n                    f2:b0:b4:77:47:2b:2c:d5:d6:98:73:10:24:18:51:\n                    38:ca:3b:23:2e:9d:1c:b3:1c:d8:bb:15:e7:f7:f8:\n                    6e:26:39:ec:c3:45:e8:f3:29:af:90:ee:e0:fd:82:\n                    74:d5:72:25:4a:a7:2e:18:86:54:9c:fa:8f:1e:c5:\n                    26:d3:59:f1:b6:02:86:54:c5:8f:b1:78:76:b2:82:\n                    fb:bb:b0:d0:30:15:3a:05:e0:d9:5a:7f:f3:50:3b:\n                    90:7f\n                Exponent: 65537 (0x10001)\n        X509v3 extensions:\n            X509v3 Authority Key Identifier: \n                keyid:6A:4E:50:BF:98:68:9D:5B:7B:20:75:D4:59:01:79:48:66:92:32:06\n\n            X509v3 Subject Key Identifier: \n                4F:E3:F3:BD:A6:6F:83:47:08:AD:D4:2A:A2:95:BD:6B:4E:06:45:E3\n            X509v3 Subject Alternative Name: \n                DNS:cmp.sbi.bank.in, DNS:www.cmp.sbi.bank.in\n            X509v3 Certificate Policies: \n                Policy: 2.16.840.1.114412.2.1\n                Policy: 2.23.140.1.1\n                  CPS: http://www.digicert.com/CPS\n\n            X509v3 Key Usage: critical\n                Digital Signature, Key Encipherment\n            X509v3 Extended Key Usage: \n                TLS Web Server Authentication, TLS Web Client Authentication\n            X509v3 CRL Distribution Points: \n\n                Full Name:\n                  URI:http://crl3.digicert.com/DigiCertEVRSACAG2.crl\n\n                Full Name:\n                  URI:http://crl4.digicert.com/DigiCertEVRSACAG2.crl\n\n            Authority Information Access: \n                OCSP - URI:http://ocsp.digicert.com\n                CA Issuers - URI:http://cacerts.digicert.com/DigiCertEVRSACAG2.crt\n\n            X509v3 Basic Constraints: critical\n                CA:FALSE\n            CT Precertificate SCTs: \n                Signed Certificate Timestamp:\n                    Version   : v1 (0x0)\n                    Log ID    : D8:09:55:3B:94:4F:7A:FF:C8:16:19:6F:94:4F:85:AB:\n                                B0:F8:FC:5E:87:55:26:0F:15:D1:2E:72:BB:45:4B:14\n                    Timestamp : Aug 28 13:00:18.710 2025 GMT\n                    Extensions: none\n                    Signature : ecdsa-with-SHA256\n                                30:44:02:20:1B:6C:91:AD:A1:9E:04:6C:C6:BB:30:2D:\n                                21:B4:66:32:4F:56:71:E1:33:82:44:C2:CB:FA:39:3C:\n                                D5:64:24:7A:02:20:48:DF:FB:09:92:2E:84:78:45:F2:\n                                59:26:71:30:C0:CB:32:1C:0F:21:2D:2D:AE:45:4A:25:\n                                2E:C3:51:E4:73:B8\n                Signed Certificate Timestamp:\n                    Version   : v1 (0x0)\n                    Log ID    : C2:31:7E:57:45:19:A3:45:EE:7F:38:DE:B2:90:41:EB:\n                                C7:C2:21:5A:22:BF:7F:D5:B5:AD:76:9A:D9:0E:52:CD\n                    Timestamp : Aug 28 13:00:18.727 2025 GMT\n                    Extensions: none\n                    Signature : ecdsa-with-SHA256\n                                30:44:02:20:69:84:D0:B5:67:98:28:DC:23:60:C3:C6:\n                                39:67:68:89:EC:F7:A9:BC:CF:F9:84:CD:7A:25:59:F3:\n                                6F:E7:99:41:02:20:30:71:0C:7D:3F:D9:46:67:61:E7:\n                                4F:48:7C:00:E0:C5:D4:DC:A6:93:52:F3:D2:85:CC:35:\n                                E4:57:B2:02:8E:97\n                Signed Certificate Timestamp:\n                    Version   : v1 (0x0)\n                    Log ID    : 94:4E:43:87:FA:EC:C1:EF:81:F3:19:24:26:A8:18:65:\n                                01:C7:D3:5F:38:02:01:3F:72:67:7D:55:37:2E:19:D8\n                    Timestamp : Aug 28 13:00:18.733 2025 GMT\n                    Extensions: none\n                    Signature : ecdsa-with-SHA256\n                                30:45:02:21:00:E1:E2:FE:BC:58:09:30:44:F3:1C:DD:\n                                2D:05:D0:8F:4C:CA:7A:A9:ED:1A:DE:46:BA:9B:7F:05:\n                                1F:9F:9F:F4:C8:02:20:42:19:08:86:E0:27:E5:F0:64:\n                                A5:6C:95:BE:94:0B:F9:C8:2C:86:37:40:5F:A6:9E:BF:\n                                A3:4C:38:EE:7F:63:27\n    Signature Algorithm: sha256WithRSAEncryption\n         66:50:8c:21:10:54:e8:00:e8:64:c1:39:29:bc:35:06:6f:f5:\n         c4:1a:a3:1d:be:f2:a0:1c:79:55:87:3d:22:39:79:5e:71:31:\n         fa:e1:bb:39:36:9d:d6:f2:a1:4c:a6:4f:f7:b4:df:f9:9b:27:\n         e4:bc:99:2f:4c:3b:c3:f0:29:de:c9:90:cf:82:48:b9:17:05:\n         b2:dc:08:97:55:16:5a:04:1a:9a:ff:c1:4e:9d:07:9e:7c:e5:\n         00:e9:69:17:ae:c8:d4:4e:7e:37:42:1a:35:14:5a:ae:77:e2:\n         78:5f:52:fb:86:3a:e2:7e:f8:71:55:e6:da:e3:fb:e4:c0:a9:\n         c6:a9:87:31:59:77:03:d8:3a:d3:67:6f:ae:49:43:5e:7b:6c:\n         58:86:c9:48:6b:79:10:2a:b3:5b:64:d0:eb:20:ad:32:5a:c1:\n         84:4f:db:77:1b:02:86:bc:77:44:83:c4:0a:df:77:33:5b:65:\n         ce:9c:a7:2b:db:31:53:62:fc:b0:0a:a8:5d:f5:8c:ac:31:64:\n         11:06:41:e5:2a:b6:9b:ed:20:30:ab:9e:f1:b8:30:04:7e:d5:\n         0a:bb:66:d9:13:9c:d4:78:12:ed:08:ee:a5:07:91:f6:c0:ee:\n         94:87:e7:be:bc:cb:1f:9a:f1:c7:0a:62:17:da:45:90:06:b4:\n         96:1f:b6:31\n",
-        "version": "3"
+        "text": "Certificate:\n    Data:\n        Version: 3 (0x2)\n        Serial Number:\n            06:28:3a:90:7a:cc:1a:7d:2b:b8:97:c3:06:62:58:79\n        Signature Algorithm: sha256WithRSAEncryption\n        Issuer: C=US, O=DigiCert Inc, CN=DigiCert EV RSA CA G2\n        Validity\n            Not Before: Jul 20 00:00:00 2024 GMT\n            Not After : Aug 20 23:59:59 2025 GMT\n        Subject: jurisdictionC=IN/businessCategory=Government Entity/serialNumber=Government Entity, C=IN, ST=Maharashtra, L=Mumbai, O=STATE BANK OF INDIA, CN=prepaid.sbi\n        Subject Public Key Info:\n            Public Key Algorithm: rsaEncryption\n                RSA Public-Key: (2048 bit)\n                Modulus:\n                    00:e2:8f:84:70:64:23:19:79:46:55:13:5e:5f:44:\n                    c1:84:43:6c:e8:33:f4:ee:80:55:56:f4:b8:e4:ac:\n                    76:f9:50:a4:30:fa:00:68:b6:4e:20:82:aa:bb:59:\n                    b1:d8:8c:51:74:c0:b9:7d:d6:b5:f3:12:6c:85:55:\n                    10:c6:59:02:9e:2b:90:0a:af:2f:37:61:fb:2c:a4:\n                    84:4a:e4:2b:f5:a4:df:24:90:d3:27:04:fc:9b:5c:\n                    94:ce:2a:d9:53:c4:c0:78:9c:af:ba:37:9c:5c:92:\n                    b4:0b:70:c4:8a:42:7d:42:7e:11:a5:bd:89:34:79:\n                    f5:d0:59:ea:ae:2f:d6:da:b1:13:0b:17:bc:c7:ed:\n                    26:b3:b1:33:73:38:c1:15:6a:95:72:89:9e:41:31:\n                    ca:99:c0:80:33:8f:d3:a9:af:70:9e:a0:44:94:da:\n                    30:33:d7:20:bd:57:ab:5c:ce:26:d4:29:6b:a8:53:\n                    80:e3:8e:22:c4:35:1f:52:15:33:46:cb:42:65:8c:\n                    ec:f5:70:89:b1:86:02:f2:63:fe:66:75:13:d8:fb:\n                    90:e0:72:e1:b4:57:1e:f1:a4:15:8a:a9:be:45:20:\n                    f8:45:ca:9c:fb:77:7b:79:3c:5e:77:48:d7:d3:d4:\n                    16:5f:54:2d:3a:a5:3f:45:5e:77:fa:be:16:46:0f:\n                    5a:df\n                Exponent: 65537 (0x10001)\n        X509v3 extensions:\n            X509v3 Authority Key Identifier: \n                keyid:6A:4E:50:BF:98:68:9D:5B:7B:20:75:D4:59:01:79:48:66:92:32:06\n\n            X509v3 Subject Key Identifier: \n                AF:0D:D5:EF:66:81:B6:EC:4D:89:B8:4E:20:CE:94:4D:2F:DA:7F:B1\n            X509v3 Subject Alternative Name: \n                DNS:prepaid.sbi, DNS:www.prepaid.sbi\n            X509v3 Certificate Policies: \n                Policy: 2.16.840.1.114412.2.1\n                Policy: 2.23.140.1.1\n                  CPS: http://www.digicert.com/CPS\n\n            X509v3 Key Usage: critical\n                Digital Signature, Key Encipherment\n            X509v3 Extended Key Usage: \n                TLS Web Server Authentication, TLS Web Client Authentication\n            X509v3 CRL Distribution Points: \n\n                Full Name:\n                  URI:http://crl3.digicert.com/DigiCertEVRSACAG2.crl\n\n                Full Name:\n                  URI:http://crl4.digicert.com/DigiCertEVRSACAG2.crl\n\n            Authority Information Access: \n                OCSP - URI:http://ocsp.digicert.com\n                CA Issuers - URI:http://cacerts.digicert.com/DigiCertEVRSACAG2.crt\n\n            X509v3 Basic Constraints: critical\n                CA:FALSE\n            CT Precertificate SCTs: \n                Signed Certificate Timestamp:\n                    Version   : v1 (0x0)\n                    Log ID    : DD:DC:CA:34:95:D7:E1:16:05:E7:95:32:FA:C7:9F:F8:\n                                3D:1C:50:DF:DB:00:3A:14:12:76:0A:2C:AC:BB:C8:2A\n                    Timestamp : Jul 20 08:46:01.102 2024 GMT\n                    Extensions: none\n                    Signature : ecdsa-with-SHA256\n                                30:46:02:21:00:F1:2F:60:AE:00:01:0C:25:AD:39:AB:\n                                B6:01:2E:7A:05:16:58:43:E0:8C:97:02:CD:4B:E6:36:\n                                5D:63:37:31:C1:02:21:00:F1:63:6C:18:DB:81:A8:78:\n                                33:3F:9F:47:76:1D:73:43:D2:40:BE:B5:A4:A8:39:D1:\n                                71:70:C8:04:1E:32:6B:2B\n                Signed Certificate Timestamp:\n                    Version   : v1 (0x0)\n                    Log ID    : E6:D2:31:63:40:77:8C:C1:10:41:06:D7:71:B9:CE:C1:\n                                D2:40:F6:96:84:86:FB:BA:87:32:1D:FD:1E:37:8E:50\n                    Timestamp : Jul 20 08:46:01.129 2024 GMT\n                    Extensions: none\n                    Signature : ecdsa-with-SHA256\n                                30:45:02:21:00:EB:BC:7F:CB:C6:8B:E1:66:C8:3A:93:\n                                A6:DF:60:3A:C9:94:0F:57:41:FC:6C:38:53:C2:A6:2B:\n                                E9:DD:9B:F0:15:02:20:39:65:3C:02:F3:3F:07:AC:D5:\n                                85:64:D9:B7:BA:B5:D2:3F:61:2C:9C:0E:29:10:41:1B:\n                                3C:E4:E9:63:7B:32:C3\n                Signed Certificate Timestamp:\n                    Version   : v1 (0x0)\n                    Log ID    : CC:FB:0F:6A:85:71:09:65:FE:95:9B:53:CE:E9:B2:7C:\n                                22:E9:85:5C:0D:97:8D:B6:A9:7E:54:C0:FE:4C:0D:B0\n                    Timestamp : Jul 20 08:46:01.115 2024 GMT\n                    Extensions: none\n                    Signature : ecdsa-with-SHA256\n                                30:44:02:20:13:36:97:90:05:33:FA:F9:60:02:49:FC:\n                                1F:0C:D6:69:87:56:E5:2A:A8:75:C9:2E:81:E1:C4:29:\n                                61:D2:FE:66:02:20:23:52:75:06:16:6F:52:E7:3E:1D:\n                                A4:44:8C:EA:30:8D:EF:1F:27:BB:22:8D:7C:EE:CA:8D:\n                                07:D1:2A:1C:8B:B4\n    Signature Algorithm: sha256WithRSAEncryption\n         33:94:5d:f0:af:09:74:af:70:ac:0f:59:31:3c:f3:54:ef:c4:\n         45:b5:8e:81:22:64:38:a4:45:02:07:7a:4d:59:96:e8:c7:88:\n         30:9f:cf:cc:09:93:69:6b:5e:18:75:5f:0d:71:ce:06:8e:c5:\n         c0:d0:27:ea:56:bc:14:7c:6f:ea:df:e7:ae:c0:60:bc:1f:0c:\n         b3:a9:ff:a9:f1:e8:db:0f:3d:64:31:9e:f5:03:aa:59:0b:ad:\n         10:0f:15:5a:bd:e5:ce:7c:d5:e3:d4:34:70:cd:f4:6b:ce:d0:\n         a5:07:73:f4:60:d8:1e:cb:cc:63:94:ec:0a:8d:52:21:6a:8b:\n         e8:f2:e2:64:fb:41:e6:8a:36:ea:af:cf:ed:1f:77:54:d7:8e:\n         bc:e1:ad:76:5a:f2:f7:03:90:5f:a2:d3:23:07:c9:19:1f:5b:\n         af:8f:22:0c:45:60:10:c1:89:64:b3:fe:15:00:4b:23:e5:86:\n         a6:63:78:08:37:4d:5c:8a:c3:dc:8f:aa:9d:3f:22:33:9a:7a:\n         92:7b:fd:97:a7:4d:5b:9a:eb:cb:5a:cf:a9:96:89:21:1f:c8:\n         37:68:ed:b0:27:4b:35:0e:40:90:72:92:ed:dd:f5:91:e7:f0:\n         e5:88:cf:cd:95:b3:10:96:70:c2:09:10:72:b2:a0:63:70:20:\n         29:fd:84:ef\n",
+        "version": "2"
       },
       "certificate_base64": false,
       "enable_ocsp_stapling": false,
@@ -417,7 +423,7 @@
           "key_size": "SSL_KEY_2048_BITS"
         }
       },
-      "name": "VS_CMP_FASTPLUS_IPV6_011E_443_v2",
+      "name": "VS_ATM_PCMS_44.18_9443_V2",
       "ocsp_config": {
         "failed_ocsp_jobs_retry_interval": 3600,
         "max_tries": 10,
@@ -428,8 +434,8 @@
       "status": "SSL_CERTIFICATE_FINISHED",
       "tenant_ref": "https://m00avientlb.local/api/tenant/admin#admin",
       "type": "SSL_CERTIFICATE_TYPE_VIRTUALSERVICE",
-      "url": "https://m00avientlb.local/api/sslkeyandcertificate/sslkeyandcertificate-c0c2e8a7-04a2-43b5-b6e5-45d126009ffe#VS_CMP_FASTPLUS_IPV6_011E_443_v2",
-      "uuid": "sslkeyandcertificate-c0c2e8a7-04a2-43b5-b6e5-45d126009ffe"
+      "url": "https://m00avientlb.local/api/sslkeyandcertificate/sslkeyandcertificate-12ae0c8e-68ca-4e03-b08f-323642db29fb#VS_ATM_PCMS_44.18_9443_V2",
+      "uuid": "sslkeyandcertificate-12ae0c8e-68ca-4e03-b08f-323642db29fb"
     }
   ],
   "ssl_profile_ref": "https://m00avientlb.local/api/sslprofile/sslprofile-3acb25ed-48b0-4b0d-99bf-4f9bdaae634d#System-Standard-PFS",
@@ -478,34 +484,34 @@
   "tenant_ref": "https://m00avientlb.local/api/tenant/admin#admin",
   "tls_ticket_key": [
     {
-      "aes_key": "FcNZbD8f1gmB45v1dzFvmQ==",
-      "hmac_key": "RulbCgZV4IkB3gUw9jAn8g==",
-      "name": "d3b6a6bd-9568-4f06-9507-9d6a02eaa9a7"
+      "aes_key": "q9mwQecl+cqpbtmQRTQuUA==",
+      "hmac_key": "ILYMbRt26K81p5hlzV6oIA==",
+      "name": "9335e515-f1b6-457a-967e-5cf414fcaa5f"
     },
     {
-      "aes_key": "uXpvtCLUyedzHOTVolhFmw==",
-      "hmac_key": "AlEMpNFvMdmtnczJXfBk6A==",
-      "name": "456fad82-8185-49d3-bd52-39b59dcd77aa"
+      "aes_key": "rgf9o/9kFzUBtLCHDhOGEg==",
+      "hmac_key": "0tmvhE/CPxMwBvtD8wnCqQ==",
+      "name": "30dfe1c1-9493-475c-8f9f-ff5e200e9ca0"
     },
     {
-      "aes_key": "IG6Mu1qJarHiCmmQH775QA==",
-      "hmac_key": "NfSDwOOJK7ksZAcNODHPcw==",
-      "name": "5880ba8f-d19d-4b93-8eae-32e535c154bc"
+      "aes_key": "zqlsbJ5FchjQx3QvGQkQ0w==",
+      "hmac_key": "zjYLzv8dBU9Z+f3at7HRcA==",
+      "name": "82557749-08fe-45f6-bd2f-86f91fb5b752"
     }
   ],
   "traffic_enabled": true,
   "type": "VS_TYPE_NORMAL",
-  "url": "https://m00avientlb.local/api/virtualservice/virtualservice-77a9d649-2711-4e0e-b0f0-5412105cdef4#VS_CMP_FASTPLUS_IPV6_011E_443",
+  "url": "https://m00avientlb.local/api/virtualservice/virtualservice-6d75325a-f0e0-4e36-9f53-50ae432612ae#VS_ATM_PCMS_44.18_9443",
   "use_bridge_ip_as_vip": false,
   "use_vip_as_snat": true,
-  "uuid": "virtualservice-77a9d649-2711-4e0e-b0f0-5412105cdef4",
-  "version": 97,
+  "uuid": "virtualservice-6d75325a-f0e0-4e36-9f53-50ae432612ae",
+  "version": 5022,
   "vh_type": "VS_TYPE_VH_SNI",
   "vip_runtime": [
     {
       "first_se_assigned_time": {
-        "secs": 1758975359,
-        "usecs": 691234
+        "secs": 1754342628,
+        "usecs": 363195
       },
       "num_additional_se": 0,
       "requested_resource": {
@@ -522,7 +528,7 @@
           "cloud_programming_status": "Virtual Service IP is reachable in the Cloud",
           "delete_in_progress": false,
           "detach_ip_in_progress": false,
-          "incarnation": "2025-09-27 12:15:59.691797",
+          "incarnation": "2025-09-18 17:46:28.534751",
           "is_portchannel": false,
           "is_primary": true,
           "is_standby": false,
@@ -537,8 +543,12 @@
           "se_ready_in_progress": false,
           "se_ref": "https://m00avientlb.local/api/serviceengine/se-005056ad6223#avie_dmz_Avi-se-pjfzu",
           "sec_idx": 0,
+          "snat_ip": {
+            "addr": "10.189.44.18",
+            "type": "V4"
+          },
           "snat_ip6_address": {
-            "addr": "2405:a700:14:100::11e",
+            "addr": "2405:a700:14:100::28",
             "type": "V6"
           },
           "vcpus": 8,
@@ -546,6 +556,10 @@
           "vip_intf_list": [
             {
               "is_portchannel": false,
+              "vip_intf_ip": {
+                "addr": "10.189.45.123",
+                "type": "V4"
+              },
               "vip_intf_ip6": {
                 "addr": "2405:a700:14:100::192",
                 "type": "V6"
@@ -577,7 +591,7 @@
           "cloud_programming_status": "Virtual Service IP is not reachable in the Cloud",
           "delete_in_progress": false,
           "detach_ip_in_progress": false,
-          "incarnation": "2025-09-27 12:15:59.705732",
+          "incarnation": "2025-09-18 17:48:53.876869",
           "is_portchannel": false,
           "is_primary": false,
           "is_standby": true,
@@ -597,6 +611,10 @@
           "vip_intf_list": [
             {
               "is_portchannel": false,
+              "vip_intf_ip": {
+                "addr": "10.189.44.58",
+                "type": "V4"
+              },
               "vip_intf_ip6": {
                 "addr": "2405:a700:14:100::143",
                 "type": "V6"
@@ -624,14 +642,14 @@
     }
   ],
   "vrf_context_ref": "https://m00avientlb.local/api/vrfcontext/vrfcontext-41217508-7d69-4b84-874e-1ed08beca820#global",
-  "vsvip_ref": "https://m00avientlb.local/api/vsvip/vsvip-d4e2518c-6b21-4f5d-83e0-42e4b92c55f7#VS_CMP_FASTPLUS_IPV6_011E_443-VsVip",
+  "vsvip_ref": "https://m00avientlb.local/api/vsvip/vsvip-7e408b8b-91e8-4889-94c8-4f7098beee48#vsvip-VS_ATM_PCMS_44.18_443-NSX-T-DMZ",
   "vsvip_ref_data": {
     "cloud_ref": "https://m00avientlb.local/api/cloud/cloud-eac4bc2f-5aa1-44e4-9bc3-6831c23260f1#NSX-T-DMZ",
     "east_west_placement": false,
-    "name": "VS_CMP_FASTPLUS_IPV6_011E_443-VsVip",
+    "name": "vsvip-VS_ATM_PCMS_44.18_443-NSX-T-DMZ",
     "tenant_ref": "https://m00avientlb.local/api/tenant/admin#admin",
-    "url": "https://m00avientlb.local/api/vsvip/vsvip-d4e2518c-6b21-4f5d-83e0-42e4b92c55f7#VS_CMP_FASTPLUS_IPV6_011E_443-VsVip",
-    "uuid": "vsvip-d4e2518c-6b21-4f5d-83e0-42e4b92c55f7",
+    "url": "https://m00avientlb.local/api/vsvip/vsvip-7e408b8b-91e8-4889-94c8-4f7098beee48#vsvip-VS_ATM_PCMS_44.18_443-NSX-T-DMZ",
+    "uuid": "vsvip-7e408b8b-91e8-4889-94c8-4f7098beee48",
     "vip": [
       {
         "auto_allocate_floating_ip": false,
@@ -641,12 +659,23 @@
         "avi_allocated_vip": false,
         "enabled": true,
         "ip6_address": {
-          "addr": "2405:a700:14:100::11e",
+          "addr": "2405:a700:14:100::28",
           "type": "V6"
+        },
+        "ip_address": {
+          "addr": "10.189.44.18",
+          "type": "V4"
         },
         "placement_networks": [
           {
             "network_ref": "https://m00avientlb.local/api/network/network-d542fc49-43fe-4ebd-8c60-66fc93c64247#m02-dmz-vlan202",
+            "subnet": {
+              "ip_addr": {
+                "addr": "10.189.44.0",
+                "type": "V4"
+              },
+              "mask": 22
+            },
             "subnet6": {
               "ip_addr": {
                 "addr": "2405:a700:14:100::",
