@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-alb-vsInventory-v0.9_combined_vip.py — NSX ALB (Avi) Virtual Service Inventory Collector
+alb-vsInventory-v1.1_robust_vip_extraction.py — NSX ALB (Avi) Virtual Service Inventory Collector
 ====================================================================================
-v0.9 FIXES (Targeting VIP formatting):
-• Combined all IPv4 and IPv6 addresses into a single column named 'VS_VIP_Addresses'.
-• IPs are formatted as 'IP_ADDRESS (TYPE)' and separated by a semicolon.
+v1.1 FIXES (Targeting VIP formatting and extraction):
+• Implemented robust VIP extraction logic to check for 'ip_address', 'ip6_address', 
+  and runtime summary fields to ensure all V4 and V6 addresses are captured.
+• IP addresses (V4 and V6) are combined into a single, semicolon-separated column: 'VS_VIP_Addresses'.
+• IP types (V4 and V6) are combined into a single, semicolon-separated column: 'VS_VIP_Types'.
 """
 
 import argparse
@@ -21,6 +23,9 @@ from typing import Dict, Any, List, Tuple
 
 import requests
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
+requests.packages.remove_warnings(InsecureRequestWarning) # Removed redundant import, kept only the disable_warnings call
+
+# Disable warnings for unverified HTTPS requests
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 
@@ -39,7 +44,7 @@ def setup_logger(debug: bool = False):
     )
 
 # -----------------------------------------------------------------------------
-# HTTP helpers (REMAINS UNCHANGED)
+# HTTP helpers
 # -----------------------------------------------------------------------------
 def retry_get_json(session: requests.Session, url: str, retries: int = 3, delay: int = 2) -> Dict[str, Any]:
     """
@@ -99,7 +104,7 @@ def paginate_all(session: requests.Session, first_url: str, debug: bool = False)
     return results
 
 # -----------------------------------------------------------------------------
-# Auth (REMAINS UNCHANGED)
+# Auth
 # -----------------------------------------------------------------------------
 def login_controller(controller: str, user: str, password: str) -> Tuple[requests.Session, str]:
     base_url = f"https://{controller}"
@@ -172,52 +177,76 @@ def ssl_enabled_from_services(vs_data: Dict[str, Any]) -> bool:
             return True
     return False
 
-# --- VIP EXTRACTION LOGIC CHANGE STARTS HERE ---
-def get_all_vip_addresses(vs_inv: Dict[str, Any]) -> str | None:
+# --- VIP EXTRACTION LOGIC (v1.1) ---
+def get_all_vip_addresses(vs_inv: Dict[str, Any]) -> Tuple[str | None, str | None]:
     """
-    Collects all IPv4 and IPv6 addresses and formats them into a single, semicolon-separated string.
-    Format: "IP_ADDRESS (TYPE); IP_ADDRESS (TYPE)"
+    Collects all unique IPv4 and IPv6 addresses and their types by checking
+    multiple possible nested structures (ip_address, ip6_address, or top-level addr).
+    Returns: (semicolon_separated_ips, semicolon_separated_types)
     """
-    ip_entries: List[str] = []
+    ip_list: List[str] = []
+    type_list: List[str] = []
     
     # Define search paths for VIP list (prioritized)
     search_paths = [
-        # 1. Check vsvip_ref_data (Joined object data - most reliable)
         vs_inv.get("vsvip_ref_data", {}).get("vip", []),
-        # 2. Check config.vip[] (common in config)
         vs_inv.get("config", {}).get("vip", []),
-        # 3. Check runtime.vip_summary[] (common in runtime)
         vs_inv.get("runtime", {}).get("vip_summary", []),
-        # 4. Check top level vip_summary (some versions)
         vs_inv.get("vip_summary", [])
     ]
     
-    # Set to track unique formatted entries to prevent duplicates
-    unique_entries = set() 
+    # Set to track unique IP addresses
+    unique_ips = set() 
     
     for vip_list in search_paths:
         if not vip_list or not isinstance(vip_list, list):
             continue
             
         for vip_entry in vip_list:
+            addr = None
+            addr_type = None
+
+            # 1. Check for the generic/standard 'ip_address' structure (V4 or V6)
             ip_address_data = vip_entry.get("ip_address")
-            if not ip_address_data or not isinstance(ip_address_data, dict):
-                continue
+            if isinstance(ip_address_data, dict):
+                addr = ip_address_data.get("addr")
+                addr_type = ip_address_data.get("type") 
 
-            addr = ip_address_data.get("addr")
-            addr_type = ip_address_data.get("type")
+            # 2. Check for the specific 'ip6_address' structure
+            elif 'ip6_address' in vip_entry:
+                ip6_address_data = vip_entry.get("ip6_address")
+                if isinstance(ip6_address_data, dict):
+                    addr = ip6_address_data.get("addr") 
+                    addr_type = ip6_address_data.get("type", "V6") 
 
+            # 3. Check for the simpler structure (often seen in runtime/status summaries)
+            elif 'addr' in vip_entry and 'type' in vip_entry:
+                addr = vip_entry.get('addr')
+                addr_type = vip_entry.get('type')
+
+
+            # 4. Check if we found a valid address
             if addr and addr_type:
-                formatted_entry = f"{addr} ({addr_type})"
-                if formatted_entry not in unique_entries:
-                    unique_entries.add(formatted_entry)
-                    ip_entries.append(formatted_entry)
+                # Ensure it's not a duplicate before adding
+                if addr not in unique_ips:
+                    unique_ips.add(addr)
+                    ip_list.append(addr)
+                    # Standardize type output for clarity
+                    if 'V4' in addr_type.upper():
+                         type_list.append("V4")
+                    elif 'V6' in addr_type.upper():
+                         type_list.append("V6")
+                    else:
+                         type_list.append("Unknown")
     
-    return "; ".join(ip_entries) if ip_entries else None
-# --- VIP EXTRACTION LOGIC CHANGE ENDS HERE ---
+    ip_str = "; ".join(ip_list) if ip_list else None
+    type_str = "; ".join(type_list) if type_list else None
+    
+    return ip_str, type_str
+# --- VIP EXTRACTION LOGIC ENDS ---
 
 # -----------------------------------------------------------------------------
-# Inventory fetchers (REMAINS UNCHANGED)
+# Inventory fetchers
 # -----------------------------------------------------------------------------
 def build_se_cache(session: requests.Session, base_url: str, debug: bool = False) -> Dict[str, Dict[str, Any]]:
     """
@@ -244,9 +273,7 @@ def build_se_cache(session: requests.Session, base_url: str, debug: bool = False
 def fetch_vs_inventory(session: requests.Session, base_url: str, debug: bool = False) -> List[Dict[str, Any]]:
     """
     Use /api/virtualservice-inventory?include_name=true to fetch ALL VS inventory.
-    Updated 'join' parameter to include 'vsvip' (from user suggestion) and use page_size=200.
     """
-    # Updated JOIN: added vsvip, pool_group_ref, and networkprofile (which seems redundant but kept for robustness)
     join_params = (
         "vsvip," 
         "network_profile_ref,server_network_profile_ref,application_profile_ref,"
@@ -262,9 +289,9 @@ def fetch_vs_inventory(session: requests.Session, base_url: str, debug: bool = F
 # -----------------------------------------------------------------------------
 # Row assembly (CSV)
 # -----------------------------------------------------------------------------
-# --- CSV COLUMN CHANGE START ---
+# --- CSV COLUMN DEFINITION (v1.1) ---
 FIXED_COLS = [
-    "Controller", "Virtual_Service_Name", "VS_VIP_Addresses", "Port",
+    "Controller", "Virtual_Service_Name", "VS_VIP_Addresses", "VS_VIP_Types", "Port",
     "VS_Enabled", "Traffic_Enabled", "SSL_Enabled", "VIP_as_SNAT", "Auto_Gateway_Enabled",
     "VH_Type", "Application_Profile", "SSL_Profile", "SSL_Certificate_Name",
     "Analytics_Profile", "Network_Profile", "State", "Reason", "Pool",
@@ -273,7 +300,7 @@ FIXED_COLS = [
     "Active_Standby_SE_Tag", "Cloud", "Cloud_Type", "Tenant",
     "VS_UUID" 
 ]
-# --- CSV COLUMN CHANGE END ---
+# ------------------------------------
 
 
 def process_vs_row(vs_inv: Dict[str, Any],
@@ -282,36 +309,31 @@ def process_vs_row(vs_inv: Dict[str, Any],
     """
     Build a single CSV row from VS inventory + SE cache.
     """
-    # Initialize cfg safely to ensure .get() works even if 'config' key is missing
     cfg = vs_inv.get("config", {}) 
     
     # VS basics
     name = vs_inv.get("name") or cfg.get("name")
     uuid = vs_inv.get("uuid") or cfg.get("uuid")
 
-    # --- VIP EXTRACTION UPDATE ---
-    vip_addresses_str = get_all_vip_addresses(vs_inv)
-    # --- VIP EXTRACTION UPDATE ---
+    # --- VIP EXTRACTION ---
+    # Now returns IP string and Type string
+    vip_addresses_str, vip_types_str = get_all_vip_addresses(vs_inv)
+    # ----------------------
 
     # Ports & flags - Use vs_inv keys first, fall back to cfg
     port = first_port(vs_inv)
     vs_enabled = str(vs_inv.get("enabled", cfg.get("enabled", False))).upper()
     traffic_enabled = str(vs_inv.get("traffic_enabled", cfg.get("traffic_enabled", False))).upper()
-    ssl_enabled = str(ssl_enabled_from_services(vs_inv)).upper() # Uses the dedicated function
+    ssl_enabled = str(ssl_enabled_from_services(vs_inv)).upper() 
     vip_snat = str(vs_inv.get("use_vip_as_snat", cfg.get("use_vip_as_snat", False))).upper()
     auto_gw = str(vs_inv.get("enable_autogw", cfg.get("enable_autogw", False))).upper()
     
-    # VH_Type - Use vs_inv first
+    # Profiles & refs 
     vh_type = vs_inv.get("vh_type") or cfg.get("vh_type")
-
-    # Profiles & refs - Use top-level keys first
     application_profile = refname(vs_inv.get("application_profile_ref") or cfg.get("application_profile_ref"))
     ssl_profile = refname(vs_inv.get("ssl_profile_ref") or cfg.get("ssl_profile_ref"))
-    
-    # For SSL certs, we pass the raw value to refname, which handles the list-to-string conversion
     ssl_cert_refs = vs_inv.get("ssl_key_and_certificate_refs") or cfg.get("ssl_key_and_certificate_refs")
     ssl_cert = refname(ssl_cert_refs)
-    
     analytics_profile = refname(vs_inv.get("analytics_profile_ref") or cfg.get("analytics_profile_ref"))
     network_profile = refname(vs_inv.get("network_profile_ref") or cfg.get("network_profile_ref"))
 
@@ -320,21 +342,18 @@ def process_vs_row(vs_inv: Dict[str, Any],
     state = oper.get("state", "UNKNOWN")
     reason = oper.get("reason")
 
-    # Pool, SE group, cloud/tenant - Use top-level keys first
+    # Pool, SE group, cloud/tenant 
     pool = refname(vs_inv.get("pool_ref") or cfg.get("pool_ref"))
     se_group = refname(vs_inv.get("se_group_ref") or cfg.get("se_group_ref"))
     cloud = refname(vs_inv.get("cloud_ref") or cfg.get("cloud_ref"))
     cloud_type = vs_inv.get("cloud_type") or cfg.get("cloud_type")
     tenant = refname(vs_inv.get("tenant_ref") or cfg.get("tenant_ref"))
-    
-    # Active/Standby tag - Use top-level key
     active_standby_tag = vs_inv.get("active_standby_se_tag") or cfg.get("active_standby_se_tag")
 
-    # Primary/Secondary SEs (Names/IPs/UUIDs) - *LOGIC REMAINS UNCHANGED*
+    # Primary/Secondary SEs (Names/IPs/UUIDs) - Logic remains the same
     primary_name = primary_ip = primary_uuid = None
     secondary_name = secondary_ip = secondary_uuid = None
 
-    # --- SE List Collection ---
     se_runtime_list = []
     try:
         se_runtime_list = vs_inv.get("vip_runtime", [{}])[0].get("se_list", [])
@@ -348,21 +367,18 @@ def process_vs_row(vs_inv: Dict[str, Any],
         except Exception:
             pass
 
-    # Final unified SE list check
     se_attach = vs_inv.get("serviceengine") or vs_inv.get("se_list") or se_runtime_list or se_runtime_summary
 
     if se_attach:
         prim = None
         sec = None
         
-        # Look for explicit roles/flags (Prioritizes is_primary/is_standby/primary/standby)
         for se in se_attach:
             # Check is_primary/is_standby flags
             if se.get("is_primary") and not prim:
                 prim = se
             elif se.get("is_standby") and not sec:
                 sec = se
-            # Check primary/standby flags (legacy/alternative)
             elif se.get("primary") and not prim:
                 prim = se
             elif se.get("standby") and not sec:
@@ -375,7 +391,6 @@ def process_vs_row(vs_inv: Dict[str, Any],
             elif role in ("secondary", "standby") and not sec:
                 sec = se
                 
-        # Fallback to position if roles/flags aren't explicit
         if not prim and se_attach:
             prim = se_attach[0]
         if not sec and len(se_attach) > 1 and se_attach[1] is not prim:
@@ -400,9 +415,10 @@ def process_vs_row(vs_inv: Dict[str, Any],
     row = {
         "Controller": controller,
         "Virtual_Service_Name": name,
-        # --- NEW COMBINED VIP COLUMN ---
+        # --- NEW COMBINED IP & TYPE COLUMNS ---
         "VS_VIP_Addresses": vip_addresses_str,
-        # -----------------------------
+        "VS_VIP_Types": vip_types_str,
+        # ------------------------------------
         "Port": port,
         "VS_Enabled": vs_enabled,
         "Traffic_Enabled": traffic_enabled,
@@ -438,7 +454,7 @@ def process_vs_row(vs_inv: Dict[str, Any],
     return final_row
 
 # -----------------------------------------------------------------------------
-# Debug Dump Function (REMAINS UNCHANGED)
+# Debug Dump Function
 # -----------------------------------------------------------------------------
 def dump_debug_jsons(report_dir: str):
     """
@@ -458,7 +474,7 @@ def dump_debug_jsons(report_dir: str):
 
 
 # -----------------------------------------------------------------------------
-# Per-controller worker (REMAINS UNCHANGED)
+# Per-controller worker
 # -----------------------------------------------------------------------------
 def controller_worker(controller: str, user: str, password: str,
                       debug: bool) -> Tuple[List[Dict[str, Any]], str, int, int, float, float]:
@@ -467,12 +483,12 @@ def controller_worker(controller: str, user: str, password: str,
     if not session:
         return [], controller, 0, 0, 0.0, 0.0
 
-    # Build SE cache (INVENTORY + pagination)
+    # Build SE cache
     se_cache = build_se_cache(session, base_url, debug=debug)
     se_count = len(se_cache)
 
     t1 = time.time()
-    # Fetch VS inventory (INVENTORY + pagination)
+    # Fetch VS inventory
     vs_list = fetch_vs_inventory(session, base_url, debug=debug) 
     vs_count = len(vs_list)
     t2 = time.time()
@@ -491,7 +507,7 @@ def controller_worker(controller: str, user: str, password: str,
 
 
 # -----------------------------------------------------------------------------
-# Main (REMAINS UNCHANGED)
+# Main
 # -----------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(description="NSX ALB (Avi) VS inventory collector (Inventory API, NO METRICS)")
@@ -511,7 +527,7 @@ def main():
     default_user = cfg.get("DEFAULT", "avi_user", fallback="admin")
     default_pass = cfg.get("DEFAULT", "avi_pass", fallback="Admin@123")
 
-    # Controllers — ONLY keys in [CONTROLLERS]
+    # Controllers
     if "CONTROLLERS" not in cfg or not cfg["CONTROLLERS"].keys():
         logging.error("No [CONTROLLERS] defined in config.")
         sys.exit(1)
@@ -555,7 +571,7 @@ def main():
     if args.debug:
         dump_debug_jsons(report_dir)
 
-    # CSV Header — uses only FIXED_COLS
+    # CSV Header
     fieldnames = FIXED_COLS
 
     outfile = os.path.join(report_dir, f"avi-VSInventory-NO_METRICS_{time.strftime('%Y%m%dT%H%M%S')}.csv")
