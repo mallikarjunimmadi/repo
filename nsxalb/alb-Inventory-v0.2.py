@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-alb-vsInventory-v0.8_robust_profiles_fixed.py — NSX ALB (Avi) Virtual Service Inventory Collector
+alb-vsInventory-v0.9_combined_vip.py — NSX ALB (Avi) Virtual Service Inventory Collector
 ====================================================================================
-v0.8 FIXES (Targeting URL/VIP):
-• The VS inventory API call now includes 'vsvip' in the join parameters for richer data.
-• Enhanced vip_from_inventory to check the vsvip_ref_data join field.
-• Confirmed SE role logic is already correct (prioritizes is_primary/is_standby).
+v0.9 FIXES (Targeting VIP formatting):
+• Combined all IPv4 and IPv6 addresses into a single column named 'VS_VIP_Addresses'.
+• IPs are formatted as 'IP_ADDRESS (TYPE)' and separated by a semicolon.
 """
 
 import argparse
@@ -40,7 +39,7 @@ def setup_logger(debug: bool = False):
     )
 
 # -----------------------------------------------------------------------------
-# HTTP helpers
+# HTTP helpers (REMAINS UNCHANGED)
 # -----------------------------------------------------------------------------
 def retry_get_json(session: requests.Session, url: str, retries: int = 3, delay: int = 2) -> Dict[str, Any]:
     """
@@ -100,7 +99,7 @@ def paginate_all(session: requests.Session, first_url: str, debug: bool = False)
     return results
 
 # -----------------------------------------------------------------------------
-# Auth
+# Auth (REMAINS UNCHANGED)
 # -----------------------------------------------------------------------------
 def login_controller(controller: str, user: str, password: str) -> Tuple[requests.Session, str]:
     base_url = f"https://{controller}"
@@ -173,84 +172,52 @@ def ssl_enabled_from_services(vs_data: Dict[str, Any]) -> bool:
             return True
     return False
 
-
-def vip_from_inventory(vs_inv: Dict[str, Any]) -> Any:
+# --- VIP EXTRACTION LOGIC CHANGE STARTS HERE ---
+def get_all_vip_addresses(vs_inv: Dict[str, Any]) -> str | None:
     """
-    Prioritize: vsvip_ref_data, config.vip[].ip_address.addr, then runtime.vip_summary[].ip_address.addr, etc.
+    Collects all IPv4 and IPv6 addresses and formats them into a single, semicolon-separated string.
+    Format: "IP_ADDRESS (TYPE); IP_ADDRESS (TYPE)"
     """
-    # 1. Check vsvip_ref_data (Joined object data)
-    try:
-        vsvip_data = vs_inv.get("vsvip_ref_data", {})
-        if vsvip_data and isinstance(vsvip_data, dict):
-            # VSVIP has 'vip' list
-            vip_list = vsvip_data.get("vip")
-            if vip_list and isinstance(vip_list, list) and vip_list:
-                return vip_list[0]["ip_address"]["addr"]
-    except Exception:
-        pass
-        
-    # 2. Check config.vip[] (common in inventory)
-    try:
-        vip_list = vs_inv.get("config", {}).get("vip")
-        if vip_list and isinstance(vip_list, list) and vip_list:
-            return vip_list[0]["ip_address"]["addr"]
-    except Exception:
-        pass
+    ip_entries: List[str] = []
     
-    # 3. Check runtime.vip_summary[] (common in runtime)
-    try:
-        vsum_list = vs_inv.get("runtime", {}).get("vip_summary")
-        if vsum_list and isinstance(vsum_list, list) and vsum_list:
-            return vsum_list[0]["ip_address"]["addr"]
-    except Exception:
-        pass
-
-    # 4. Check top level vip_summary (some versions)
-    try:
-        vsum = vs_inv.get("vip_summary") or vs_inv.get("vsvip_summary")
-        if vsum and isinstance(vsum, list) and vsum:
-            return vsum[0]["ip_address"]["addr"]
-    except Exception:
-        pass
-                
-    return None
-
-
-def ip_type_from_inventory(vs_inv: Dict[str, Any]) -> Any:
-    """
-    Derive IP type (V4/V6) from config vip ip_address.type if present.
-    Also checks vsvip_ref_data.
-    """
-    # 1. Check vsvip_ref_data
-    try:
-        vsvip_data = vs_inv.get("vsvip_ref_data", {})
-        if vsvip_data and isinstance(vsvip_data, dict):
-            vip_list = vsvip_data.get("vip")
-            if vip_list and isinstance(vip_list, list) and vip_list:
-                return vip_list[0]["ip_address"]["type"]
-    except Exception:
-        pass
-        
-    # 2. Check config.vip[] (common in inventory)
-    try:
-        vip_list = vs_inv.get("config", {}).get("vip")
-        if vip_list and isinstance(vip_list, list) and vip_list:
-            return vip_list[0]["ip_address"]["type"]
-    except Exception:
-        pass
+    # Define search paths for VIP list (prioritized)
+    search_paths = [
+        # 1. Check vsvip_ref_data (Joined object data - most reliable)
+        vs_inv.get("vsvip_ref_data", {}).get("vip", []),
+        # 2. Check config.vip[] (common in config)
+        vs_inv.get("config", {}).get("vip", []),
+        # 3. Check runtime.vip_summary[] (common in runtime)
+        vs_inv.get("runtime", {}).get("vip_summary", []),
+        # 4. Check top level vip_summary (some versions)
+        vs_inv.get("vip_summary", [])
+    ]
     
-    # 3. Check runtime.vip_summary[]
-    try:
-        vsum_list = vs_inv.get("runtime", {}).get("vip_summary")
-        if vsum_list and isinstance(vsum_list, list) and vsum_list:
-            return vsum_list[0]["ip_address"]["type"]
-    except Exception:
-        return None
-    return None
+    # Set to track unique formatted entries to prevent duplicates
+    unique_entries = set() 
+    
+    for vip_list in search_paths:
+        if not vip_list or not isinstance(vip_list, list):
+            continue
+            
+        for vip_entry in vip_list:
+            ip_address_data = vip_entry.get("ip_address")
+            if not ip_address_data or not isinstance(ip_address_data, dict):
+                continue
 
+            addr = ip_address_data.get("addr")
+            addr_type = ip_address_data.get("type")
+
+            if addr and addr_type:
+                formatted_entry = f"{addr} ({addr_type})"
+                if formatted_entry not in unique_entries:
+                    unique_entries.add(formatted_entry)
+                    ip_entries.append(formatted_entry)
+    
+    return "; ".join(ip_entries) if ip_entries else None
+# --- VIP EXTRACTION LOGIC CHANGE ENDS HERE ---
 
 # -----------------------------------------------------------------------------
-# Inventory fetchers
+# Inventory fetchers (REMAINS UNCHANGED)
 # -----------------------------------------------------------------------------
 def build_se_cache(session: requests.Session, base_url: str, debug: bool = False) -> Dict[str, Dict[str, Any]]:
     """
@@ -295,8 +262,9 @@ def fetch_vs_inventory(session: requests.Session, base_url: str, debug: bool = F
 # -----------------------------------------------------------------------------
 # Row assembly (CSV)
 # -----------------------------------------------------------------------------
+# --- CSV COLUMN CHANGE START ---
 FIXED_COLS = [
-    "Controller", "Virtual_Service_Name", "VS_VIP", "Port", "Type(IPv4_/IPv6)",
+    "Controller", "Virtual_Service_Name", "VS_VIP_Addresses", "Port",
     "VS_Enabled", "Traffic_Enabled", "SSL_Enabled", "VIP_as_SNAT", "Auto_Gateway_Enabled",
     "VH_Type", "Application_Profile", "SSL_Profile", "SSL_Certificate_Name",
     "Analytics_Profile", "Network_Profile", "State", "Reason", "Pool",
@@ -305,6 +273,7 @@ FIXED_COLS = [
     "Active_Standby_SE_Tag", "Cloud", "Cloud_Type", "Tenant",
     "VS_UUID" 
 ]
+# --- CSV COLUMN CHANGE END ---
 
 
 def process_vs_row(vs_inv: Dict[str, Any],
@@ -320,8 +289,9 @@ def process_vs_row(vs_inv: Dict[str, Any],
     name = vs_inv.get("name") or cfg.get("name")
     uuid = vs_inv.get("uuid") or cfg.get("uuid")
 
-    vip = vip_from_inventory(vs_inv)
-    ip_type = ip_type_from_inventory(vs_inv)
+    # --- VIP EXTRACTION UPDATE ---
+    vip_addresses_str = get_all_vip_addresses(vs_inv)
+    # --- VIP EXTRACTION UPDATE ---
 
     # Ports & flags - Use vs_inv keys first, fall back to cfg
     port = first_port(vs_inv)
@@ -360,7 +330,7 @@ def process_vs_row(vs_inv: Dict[str, Any],
     # Active/Standby tag - Use top-level key
     active_standby_tag = vs_inv.get("active_standby_se_tag") or cfg.get("active_standby_se_tag")
 
-    # Primary/Secondary SEs (Names/IPs/UUIDs)
+    # Primary/Secondary SEs (Names/IPs/UUIDs) - *LOGIC REMAINS UNCHANGED*
     primary_name = primary_ip = primary_uuid = None
     secondary_name = secondary_ip = secondary_uuid = None
 
@@ -425,13 +395,15 @@ def process_vs_row(vs_inv: Dict[str, Any],
                 secondary_name = se_cache[secondary_uuid].get("name")
                 secondary_ip = se_cache[secondary_uuid].get("mgmt_ip")
 
+
     # Build row in the fixed column order
     row = {
         "Controller": controller,
         "Virtual_Service_Name": name,
-        "VS_VIP": vip,
+        # --- NEW COMBINED VIP COLUMN ---
+        "VS_VIP_Addresses": vip_addresses_str,
+        # -----------------------------
         "Port": port,
-        "Type(IPv4_/IPv6)": ip_type,
         "VS_Enabled": vs_enabled,
         "Traffic_Enabled": traffic_enabled,
         "SSL_Enabled": ssl_enabled,
@@ -466,7 +438,7 @@ def process_vs_row(vs_inv: Dict[str, Any],
     return final_row
 
 # -----------------------------------------------------------------------------
-# Debug Dump Function
+# Debug Dump Function (REMAINS UNCHANGED)
 # -----------------------------------------------------------------------------
 def dump_debug_jsons(report_dir: str):
     """
@@ -486,7 +458,7 @@ def dump_debug_jsons(report_dir: str):
 
 
 # -----------------------------------------------------------------------------
-# Per-controller worker
+# Per-controller worker (REMAINS UNCHANGED)
 # -----------------------------------------------------------------------------
 def controller_worker(controller: str, user: str, password: str,
                       debug: bool) -> Tuple[List[Dict[str, Any]], str, int, int, float, float]:
@@ -519,7 +491,7 @@ def controller_worker(controller: str, user: str, password: str,
 
 
 # -----------------------------------------------------------------------------
-# Main
+# Main (REMAINS UNCHANGED)
 # -----------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(description="NSX ALB (Avi) VS inventory collector (Inventory API, NO METRICS)")
