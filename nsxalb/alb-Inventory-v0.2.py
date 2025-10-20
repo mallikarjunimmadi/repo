@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-alb-vsInventory-v1.4_dual_ip_extraction_fix.py — NSX ALB (Avi) Virtual Service Inventory Collector
+alb-vsInventory-v1.5_refname_fix.py — NSX ALB (Avi) Virtual Service Inventory Collector
 =====================================================================================================
-v1.4 FIXES (Targeting Dual-Stack Extraction):
-• Implemented a fix in get_all_vip_addresses to ensure BOTH 'ip_address' (IPv4) 
-  and 'ip6_address' (IPv6) are extracted from a single VSVIP entry if both are configured.
-• The 'Placement_Network' column extraction is now fully integrated.
+v1.5 FIXES (Targeting Network Name):
+• Corrected the 'refname' utility to ensure the human-readable part after '#' is 
+  always extracted from references (like network_ref), fixing the UUID display in 
+  the 'Placement_Network' column.
 """
 
 import argparse
@@ -124,6 +124,7 @@ def login_controller(controller: str, user: str, password: str) -> Tuple[request
 def refname(ref: Any) -> Any:
     """
     Extract trailing name after '#' or the last segment after '/' from Avi ref strings.
+    The part after '#' is prioritized, as it typically contains the name.
     """
     if not ref:
         return None
@@ -131,15 +132,21 @@ def refname(ref: Any) -> Any:
     def extract_single_ref(r: str) -> str:
         if not isinstance(r, str):
             return ""
+        
+        # Priority 1: Extract the part after the last '#' (usually the name)
         if "#" in r:
             return r.split("#")[-1]
+            
+        # Priority 2: Extract the last segment after '/' (usually the UUID or name)
         elif "/" in r:
             return r.split("/")[-1]
+            
         return r
 
     if isinstance(ref, list):
         if not ref:
             return None
+        # Process and join all names if it's a list
         results = [extract_single_ref(r) for r in ref if isinstance(r, str)]
         return ", ".join(results)
         
@@ -214,7 +221,7 @@ def get_placement_network(vip_entry: Dict[str, Any]) -> str | None:
 # -------------------------------------------------
 
 
-# --- VIP EXTRACTION LOGIC (v1.4) ---
+# --- VIP EXTRACTION LOGIC (v1.5) ---
 def get_all_vip_addresses(session: requests.Session, base_url: str, vs_inv: Dict[str, Any]) -> Tuple[str | None, str | None, str | None]:
     """
     Collects all unique IPv4/IPv6 addresses and their placement networks.
@@ -520,7 +527,7 @@ def dump_debug_jsons(report_dir: str):
         
     outfile = os.path.join(report_dir, f"avi-VSInventory-DEBUG-JSON_{time.strftime('%Y%m%dT%H%M%S')}.json")
     try:
-        with open(outfile, "w", encoding="utf-8") as fh:
+        with open(outfile, "w", newline="", encoding="utf-8") as fh:
             # We only dump the primary VS objects, not the secondary VSVIP objects 
             # as they were fetched separately and aren't aggregated in DEBUG_JSONS
             json.dump(DEBUG_JSONS, fh, indent=2)
