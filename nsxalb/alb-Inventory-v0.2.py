@@ -1,46 +1,47 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-alb-vsInventory-v0.4.py — NSX ALB (Avi) VS Inventory + Metrics (Inventory API edition)
+alb-vsInventory-v0.5.py — NSX ALB (Avi) Virtual Service Inventory + Metrics
 
-Key features
-------------
-• Inventory endpoints (fewer calls, richer data):
-  - /api/serviceengine-inventory?include_name=true
-  - /api/virtualservice-inventory?include_name=true
-• Robust pagination for absolute or relative `next` URLs.
-• VIP, IP type, runtime state, and attached SEs resolved from inventory.
-• Metrics fetched in ONE call per VS with %2C-joined metric IDs and &end=<epoch>.
-• Metrics written as INTEGER values only (missing/empty → 0).
-• Exact CSV column order preserved; metrics expanded to dedicated columns.
-• One consolidated CSV for all controllers + per-controller summary.
+What this does
+--------------
+• Logs into one or more controllers defined in config.ini
+• Collects Service Engine cache from: /api/serviceengine-inventory?include_name=true
+• Collects Virtual Services from:   /api/virtualservice-inventory?include_name=true
+• Follows Avi pagination for both absolute and relative `next` URLs
+• Extracts VS fields robustly across 22.1.x and 30.x layouts (config / runtime / runtime_summary)
+• Resolves primary/secondary SE name/IP/UUID from multiple shapes
+• Fetches metrics in ONE call per VS:
+  /api/analytics/metrics/virtualservice/<vs-uuid>/?metric_id=a%2Cb%2C...&limit=<n>&step=<secs>&end=<epoch>
+• Writes your desired CSV columns with metrics as individual integer columns (missing → 0)
+• Adds a per-controller summary: counts + timings
 
 CLI
 ---
---config PATH        config file path (default ./config.ini)
---threads N          parallel controllers (default 5)
---skip-metrics       skip metrics collection
---debug              verbose logging
+--config PATH        Path to config.ini (default: ./config.ini)
+--threads N          Parallel controllers (default 5)
+--skip-metrics       Skip metrics collection
+--debug              Verbose logging (including “found under …” traces)
 
-Config (same layout you already use)
-------------------------------------
+Config sample
+-------------
 [DEFAULT]
 avi_user = admin
 avi_pass = <secret>
 
 [CONTROLLERS]
 m00aviblb.local =
-# or: controller.fqdn = username,password
+# or with specific creds: controller.fqdn = username,password
 
 [SETTINGS]
-avi_version = 22.1.7
-api_step = 21600
-api_limit = 1
-metrics_list = l4_client.avg_bandwidth,l4_client.avg_new_established_conns,...
+avi_version   = 22.1.7
+api_step      = 21600
+api_limit     = 1
+metrics_list  = l4_client.avg_bandwidth,l4_client.avg_new_established_conns,...
 report_output_dir = .
-log_output_dir = .
+log_output_dir    = .
 
-Dependencies
+Requirements
 ------------
 pip install requests
 """
@@ -52,8 +53,8 @@ import logging
 import os
 import sys
 import time
+from typing import Any, Dict, List, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Dict, Any, List, Tuple
 
 import requests
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
@@ -75,10 +76,7 @@ def setup_logger(debug: bool = False):
 # -----------------------------------------------------------------------------
 # HTTP helpers
 # -----------------------------------------------------------------------------
-def retry_get_json(session: requests.Session, url: str, retries: int = 3, delay: int = 2) -> Dict[str, Any]:
-    """
-    GET JSON with simple backoff. Returns {} on failure.
-    """
+def retry_get_json(session: requests.Session, url: str, retries: int = 3, delay: float = 2.0) -> Dict[str, Any]:
     for attempt in range(retries):
         try:
             r = session.get(url, timeout=45, verify=False)
@@ -86,7 +84,7 @@ def retry_get_json(session: requests.Session, url: str, retries: int = 3, delay:
                 try:
                     return r.json()
                 except ValueError:
-                    logging.warning(f"GET {url} returned non-JSON 200.")
+                    logging.warning(f"GET {url} returned 200 but not JSON.")
                     return {}
             else:
                 logging.warning(f"GET {url} failed {r.status_code}: {r.text[:180]}...")
@@ -99,14 +97,13 @@ def retry_get_json(session: requests.Session, url: str, retries: int = 3, delay:
 
 def paginate_all(session: requests.Session, first_url: str, debug: bool = False) -> List[Dict[str, Any]]:
     """
-    Follow Avi pagination. Some versions return absolute 'next', others relative.
-    Returns list of aggregated 'results'.
+    Avi returns either absolute or relative 'next'. We normalize both.
     """
     results: List[Dict[str, Any]] = []
     url = first_url
     base = None
     if "://" in first_url and "/api/" in first_url:
-        base = first_url.split("/api/")[0]
+        base = first_url.split("/api/")[0]  # https://host
     page = 1
     while url:
         if debug:
@@ -118,7 +115,8 @@ def paginate_all(session: requests.Session, first_url: str, debug: bool = False)
         results.extend(items)
         nxt = data.get("next")
         if nxt:
-            if nxt.startswith("/"):  # normalize relative next
+            # normalize relative next
+            if nxt.startswith("/"):
                 nxt = f"{base}{nxt}"
         url = nxt
         page += 1
@@ -147,10 +145,10 @@ def login_controller(controller: str, user: str, password: str) -> Tuple[request
 # -----------------------------------------------------------------------------
 # Utilities
 # -----------------------------------------------------------------------------
-def refname(ref):
+def refname(ref) -> str | None:
     """
     Extract trailing name after '#' from Avi ref strings.
-    Accepts None | str | list[str] | dict (returns best-effort).
+    Accepts None | str | list[str] | dict (various shapes).
     """
     if not ref:
         return None
@@ -159,7 +157,6 @@ def refname(ref):
             return None
         ref = ref[0]
     if isinstance(ref, dict):
-        # try common shapes like {"ref": "...#Name"}
         for k in ("ref", "url"):
             if k in ref and isinstance(ref[k], str):
                 s = ref[k]
@@ -170,47 +167,71 @@ def refname(ref):
     return None
 
 
-def first_port_from_config(vs_cfg: Dict[str, Any]):
+def get_in(d: Dict[str, Any], path: List[Any], default=None):
+    """
+    Safe deep get with list of keys/indexes, returns default if any part missing.
+    """
+    cur = d
     try:
-        return vs_cfg.get("services", [{}])[0].get("port")
+        for p in path:
+            if isinstance(p, int):
+                cur = cur[p]
+            else:
+                cur = cur.get(p, default if p == path[-1] else {})
+        return cur
+    except Exception:
+        return default
+
+
+def first_port_from_config(cfg: Dict[str, Any]):
+    try:
+        return get_in(cfg, ["services", 0, "port"])
     except Exception:
         return None
 
 
-def ssl_enabled_from_services(vs_cfg: Dict[str, Any]) -> bool:
-    for s in vs_cfg.get("services", []):
+def ssl_enabled_from_services(cfg: Dict[str, Any]) -> bool:
+    for s in cfg.get("services", []):
         if s.get("enable_ssl"):
             return True
     return False
 
 
-def vip_from_vs_inventory(vs_inv: Dict[str, Any]):
+def vip_from_vs_inventory(vs: Dict[str, Any], debug: bool = False):
     """
-    Prefer vip_summary[].vip (inventory). Fallback to config.vip[].ip_address.addr.
+    Try (in order):
+    - runtime.vip_summary[0].vip (commonly present in 30.x inventory)
+    - vsvip_summary[0].vip
+    - config.vip[0].ip_address.addr
     """
-    try:
-        vsum = vs_inv.get("vip_summary") or vs_inv.get("vsvip_summary")
-        if isinstance(vsum, list) and vsum:
-            if isinstance(vsum[0], dict) and "vip" in vsum[0]:
-                return vsum[0]["vip"]
-    except Exception:
-        pass
-    try:
-        cfg = vs_inv.get("config", {})
-        return cfg.get("vip", [{}])[0]["ip_address"]["addr"]
-    except Exception:
-        return None
+    vip = get_in(vs, ["runtime", "vip_summary", 0, "vip"])
+    if vip:
+        if debug: logging.debug("VIP found under runtime.vip_summary[].vip")
+        return vip
+    vip = get_in(vs, ["vsvip_summary", 0, "vip"])
+    if vip:
+        if debug: logging.debug("VIP found under vsvip_summary[].vip")
+        return vip
+    vip = get_in(vs, ["config", "vip", 0, "ip_address", "addr"])
+    if vip and debug:
+        logging.debug("VIP found under config.vip[].ip_address.addr")
+    return vip
 
 
-def ip_type_from_vs_inventory(vs_inv: Dict[str, Any]):
+def ip_type_from_vs_inventory(vs: Dict[str, Any], debug: bool = False):
     """
-    Derive V4/V6 from config.vip ip_address.type if present.
+    Try (in order):
+    - runtime.vip_summary[0].ip_version (some builds)
+    - config.vip[0].ip_address.type
     """
-    try:
-        cfg = vs_inv.get("config", {})
-        return cfg.get("vip", [{}])[0]["ip_address"]["type"]
-    except Exception:
-        return None
+    ipt = get_in(vs, ["runtime", "vip_summary", 0, "ip_version"])
+    if ipt:
+        if debug: logging.debug("IP type from runtime.vip_summary[].ip_version")
+        return ipt
+    ipt = get_in(vs, ["config", "vip", 0, "ip_address", "type"])
+    if ipt and debug:
+        logging.debug("IP type from config.vip[].ip_address.type")
+    return ipt
 
 
 def normalize_metric_value(datapoints: Any) -> int:
@@ -229,24 +250,18 @@ def normalize_metric_value(datapoints: Any) -> int:
 
     first = datapoints[0]
 
-    # dict form
     if isinstance(first, dict):
-        if "value" in first:
-            val = first["value"]
-        else:
-            # try common numeric keys
+        # Prefer 'value'; else try common numeric aggregates
+        val = first.get("value")
+        if val is None:
             for k in ("avg", "sum", "min", "max"):
                 if k in first:
-                    val = first[k]
-                    break
-            else:
-                return 0
+                    val = first[k]; break
         try:
-            return int(float(val))
+            return int(float(val)) if val is not None else 0
         except Exception:
             return 0
 
-    # list/tuple
     if isinstance(first, (list, tuple)):
         if len(first) > 1:
             val = first[1]
@@ -259,7 +274,6 @@ def normalize_metric_value(datapoints: Any) -> int:
         except Exception:
             return 0
 
-    # scalar
     try:
         return int(float(first))
     except Exception:
@@ -270,28 +284,22 @@ def normalize_metric_value(datapoints: Any) -> int:
 # Inventory + metrics fetchers
 # -----------------------------------------------------------------------------
 def build_se_cache(session: requests.Session, base_url: str, debug: bool = False) -> Dict[str, Dict[str, Any]]:
-    """
-    Build { se_uuid: {"name": ..., "mgmt_ip": ...} } using serviceengine-inventory.
-    Handles variations where uuid/name/ip live in different levels.
-    """
     url = f"{base_url}/api/serviceengine-inventory?include_name=true"
     se_inv = paginate_all(session, url, debug=debug)
     cache: Dict[str, Dict[str, Any]] = {}
     for se in se_inv:
-        cfg = se.get("config", {})
+        cfg = se.get("config", {}) or {}
         uuid = se.get("uuid") or cfg.get("uuid")
-
-        # Try to salvage uuid if missing using ref/url
         if not uuid:
             maybe = se.get("url") or cfg.get("url") or se.get("serviceengine_ref")
             if isinstance(maybe, str) and "/serviceengine/" in maybe:
                 uuid = maybe.split("/serviceengine/")[-1].split("#")[0]
 
-        name = se.get("name") or cfg.get("name")
+        name = se.get("name") or cfg.get("name") or refname(se.get("serviceengine_ref"))
         mgmt_ip = (
-            se.get("mgmt_ip") or
-            (se.get("mgmt_ip_address") or {}).get("addr") or
-            (cfg.get("mgmt_ip_address") or {}).get("addr")
+            get_in(se, ["mgmt_ip", "addr"]) or
+            get_in(se, ["mgmt_ip_address", "addr"]) or
+            get_in(cfg, ["mgmt_ip_address", "addr"])
         )
         if uuid:
             cache[uuid] = {"name": name, "mgmt_ip": mgmt_ip}
@@ -311,11 +319,18 @@ def fetch_vs_metrics(session: requests.Session, base_url: str, vs_uuid: str,
     if not metrics:
         return {}
     metric_param = "%2C".join(metrics)  # URL-encoded comma
-    end = int(time.time())              # current epoch so we get recent sample
+    end = int(time.time())
     url = f"{base_url}/api/analytics/metrics/virtualservice/{vs_uuid}/?metric_id={metric_param}&limit={limit}&step={step}&end={end}"
     if debug:
         logging.debug(f"[{vs_uuid}] Metrics URL: {url}")
-    return retry_get_json(session, url)
+    data = retry_get_json(session, url)
+    # Normalize older/newer shapes: ensure 'series' exists
+    if not isinstance(data, dict):
+        return {}
+    if "series" not in data and "results" in data and isinstance(data["results"], list):
+        # some builds wrap series in 'results'
+        data = {"series": data["results"]}
+    return data
 
 
 # -----------------------------------------------------------------------------
@@ -333,110 +348,112 @@ FIXED_COLS = [
 ]
 
 
-def resolve_attached_ses(vs_inv: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+def resolve_attached_ses(vs: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any], str]:
     """
-    Try multiple inventory locations to find primary/secondary SEs.
-    Returns (primary_dict, secondary_dict) where dict has keys: uuid, name, mgmt_ip.
+    Resolve primary/secondary SEs from multiple shapes:
+    - runtime.se_list[]
+    - vip_runtime[].se_list[]
+    - runtime.serviceengine[] (30.x summary)
+    Returns (primary, secondary, source_hint)
     """
-    # Priority 1: runtime.se_list (has is_primary/is_standby, mgmt_ip, se_ref)
-    runtime = vs_inv.get("runtime") or {}
-    se_list = runtime.get("se_list") or []
-
-    # Priority 2: vip_runtime[].se_list (common in runtime payloads)
-    if not se_list:
-        for vr in vs_inv.get("vip_runtime") or []:
+    # Try common places in order
+    candidates = []
+    # 1) runtime.se_list
+    se_list = get_in(vs, ["runtime", "se_list"])
+    if isinstance(se_list, list) and se_list:
+        candidates = se_list
+        source = "runtime.se_list"
+    else:
+        # 2) vip_runtime[].se_list
+        viprt = vs.get("vip_runtime") or []
+        for vr in viprt:
             if isinstance(vr, dict) and isinstance(vr.get("se_list"), list) and vr["se_list"]:
-                se_list = vr["se_list"]
+                candidates = vr["se_list"]
+                source = "vip_runtime[].se_list"
                 break
-
-    # Priority 3: a flattened 'serviceengine' list (some inventory builds)
-    if not se_list:
-        se_list = vs_inv.get("serviceengine") or vs_inv.get("se_list") or []
+        # 3) runtime.serviceengine
+        if not candidates:
+            se2 = get_in(vs, ["runtime", "serviceengine"])
+            if isinstance(se2, list) and se2:
+                candidates = se2
+                source = "runtime.serviceengine"
 
     prim = None
     sec = None
-    # Identify roles where present
-    for se in se_list:
-        is_prim = se.get("is_primary") or (str(se.get("role", "")).lower() in ("primary", "active"))
-        is_stby = se.get("is_standby") or (str(se.get("role", "")).lower() in ("secondary", "standby"))
-        if is_prim and prim is None:
+    for se in candidates:
+        role = str(se.get("role", "")).lower()
+        is_primary = se.get("is_primary") or ("primary" in role or "active" in role)
+        is_standby = se.get("is_standby") or ("secondary" in role or "standby" in role)
+        if is_primary and prim is None:
             prim = se
-        elif is_stby and sec is None:
+        elif is_standby and sec is None:
             sec = se
 
-    # Fallback: first=primary, second=secondary
-    if prim is None and se_list:
-        prim = se_list[0]
-    if sec is None and len(se_list) > 1:
-        sec = se_list[1]
+    if prim is None and candidates:
+        prim = candidates[0]
+    if sec is None and len(candidates) > 1:
+        sec = candidates[1]
 
-    def extract_se_min(sed: Dict[str, Any]) -> Dict[str, Any]:
+    def extract_min(sed: Dict[str, Any]) -> Dict[str, Any]:
         if not sed:
             return {}
-        # uuid
         uuid = sed.get("uuid")
         if not uuid:
             se_ref = sed.get("se_ref") or sed.get("url")
             if isinstance(se_ref, str) and "/serviceengine/" in se_ref:
                 uuid = se_ref.split("/serviceengine/")[-1].split("#")[0]
-        # name
-        name = sed.get("name")
-        if not name:
-            se_ref = sed.get("se_ref") or sed.get("url")
-            if isinstance(se_ref, str) and "#" in se_ref:
-                name = se_ref.split("#")[-1]
-        # mgmt_ip
-        mgmt_ip = None
-        if isinstance(sed.get("mgmt_ip"), dict):
-            mgmt_ip = sed["mgmt_ip"].get("addr")
-        if not mgmt_ip:
-            mgmt_ip = sed.get("mgmt_ip_addr") or sed.get("mgmt_ip_address")  # some variants
+        name = sed.get("name") or refname(sed.get("se_ref") or sed.get("url"))
+        mgmt_ip = get_in(sed, ["mgmt_ip", "addr"]) or sed.get("mgmt_ip") or sed.get("mgmt_ip_addr")
         return {"uuid": uuid, "name": name, "mgmt_ip": mgmt_ip}
 
-    return extract_se_min(prim), extract_se_min(sec)
+    return extract_min(prim), extract_min(sec), locals().get("source", "unknown")
 
 
-def process_vs_row(vs_inv: Dict[str, Any],
+def process_vs_row(vs: Dict[str, Any],
                    se_cache: Dict[str, Dict[str, Any]],
                    metrics_data: Dict[str, Any],
                    controller: str,
-                   metrics_list: List[str]) -> Dict[str, Any]:
-    cfg = vs_inv.get("config", {})
+                   metrics_list: List[str],
+                   debug: bool = False) -> Dict[str, Any]:
+    cfg = vs.get("config", {}) or {}
+    runtime = vs.get("runtime", {}) or {}
+    rsum = vs.get("runtime_summary", {}) or {}
 
     # VS basics
-    name = vs_inv.get("name") or cfg.get("name")
-    uuid = vs_inv.get("uuid") or cfg.get("uuid")
+    name = vs.get("name") or cfg.get("name")
+    uuid = vs.get("uuid") or cfg.get("uuid")
 
-    vip = vip_from_vs_inventory(vs_inv)
-    ip_type = ip_type_from_vs_inventory(vs_inv)
+    # VIP + type
+    vip = vip_from_vs_inventory(vs, debug=debug)
+    ip_type = ip_type_from_vs_inventory(vs, debug=debug)
 
-    # Ports & flags (merge inventory + config fallbacks)
+    # Ports & flags
     port = first_port_from_config(cfg)
     vs_enabled = str(cfg.get("enabled", False)).upper()
     traffic_enabled = str(cfg.get("traffic_enabled", False)).upper()
     ssl_enabled = str(ssl_enabled_from_services(cfg)).upper()
     vip_snat = str(cfg.get("use_vip_as_snat", False)).upper()
     auto_gw = str(cfg.get("enable_autogw", False)).upper()
-    vh_type = vs_inv.get("vh_type") or cfg.get("vh_type")
+    vh_type = vs.get("vh_type") or cfg.get("vh_type") or rsum.get("vh_type")
 
-    # Profiles (prefer config refs; fallback to top-level if present)
-    application_profile = refname(cfg.get("application_profile_ref") or vs_inv.get("application_profile_ref"))
-    ssl_profile = refname(cfg.get("ssl_profile_ref") or vs_inv.get("ssl_profile_ref"))
-    ssl_cert = refname(cfg.get("ssl_key_and_certificate_refs") or vs_inv.get("ssl_key_and_certificate_refs"))
-    analytics_profile = refname(cfg.get("analytics_profile_ref") or vs_inv.get("analytics_profile_ref"))
-    network_profile = refname(cfg.get("network_profile_ref") or vs_inv.get("network_profile_ref"))
+    # Profiles (config preferred; fallback to direct/inventory)
+    application_profile = refname(cfg.get("application_profile_ref") or vs.get("application_profile_ref"))
+    ssl_profile = refname(cfg.get("ssl_profile_ref") or vs.get("ssl_profile_ref"))
+    ssl_cert = refname(cfg.get("ssl_key_and_certificate_refs") or vs.get("ssl_key_and_certificate_refs"))
+    analytics_profile = refname(cfg.get("analytics_profile_ref") or vs.get("analytics_profile_ref"))
+    network_profile = refname(cfg.get("network_profile_ref") or vs.get("network_profile_ref"))
 
     # Runtime status
-    oper = vs_inv.get("oper_status", {}) or (vs_inv.get("runtime", {}) or {}).get("oper_status", {})
+    oper = runtime.get("oper_status") or vs.get("oper_status") or {}
     state = oper.get("state", "UNKNOWN")
     reason = oper.get("reason")
 
     # Pool / SE group / Cloud / Tenant
-    pool = refname(cfg.get("pool_ref") or vs_inv.get("pool_ref"))
-    se_group = refname(cfg.get("se_group_ref") or vs_inv.get("se_group_ref"))
-    cloud = refname(vs_inv.get("cloud_ref") or cfg.get("cloud_ref"))
-    cloud_type = vs_inv.get("cloud_type") or cfg.get("cloud_type") or "UNKNOWN"
-    tenant = refname(vs_inv.get("tenant_ref") or cfg.get("tenant_ref"))
+    pool = refname(cfg.get("pool_ref") or vs.get("pool_ref"))
+    se_group = refname(cfg.get("se_group_ref") or vs.get("se_group_ref"))
+    cloud = refname(vs.get("cloud_ref") or cfg.get("cloud_ref"))
+    cloud_type = vs.get("cloud_type") or cfg.get("cloud_type") or rsum.get("cloud_type") or "UNKNOWN"
+    tenant = refname(vs.get("tenant_ref") or cfg.get("tenant_ref"))
 
     # Real-time metrics flag
     rt_enabled = False
@@ -447,29 +464,29 @@ def process_vs_row(vs_inv: Dict[str, Any],
     real_time_metrics_enabled = str(rt_enabled).upper()
 
     # Active/Standby tag
-    active_standby_tag = cfg.get("active_standby_se_tag") or (vs_inv.get("runtime") or {}).get("active_standby_se_tag")
+    active_standby_tag = cfg.get("active_standby_se_tag") or runtime.get("active_standby_se_tag") or rsum.get("active_standby_se_tag")
 
     # Resolve attached SEs
-    prim, sec = resolve_attached_ses(vs_inv)
+    prim, sec, src = resolve_attached_ses(vs)
+    if debug:
+        logging.debug(f"[{uuid}] SEs resolved from: {src}")
 
     # Enrich from SE cache if missing name/ip
-    if prim:
-        if (not prim.get("name") or not prim.get("mgmt_ip")) and prim.get("uuid") in se_cache:
-            prim.setdefault("name", se_cache[prim["uuid"]].get("name"))
-            prim.setdefault("mgmt_ip", se_cache[prim["uuid"]].get("mgmt_ip"))
-    if sec:
-        if (not sec.get("name") or not sec.get("mgmt_ip")) and sec.get("uuid") in se_cache:
-            sec.setdefault("name", se_cache[sec["uuid"]].get("name"))
-            sec.setdefault("mgmt_ip", se_cache[sec["uuid"]].get("mgmt_ip"))
+    if prim and prim.get("uuid") in se_cache:
+        prim.setdefault("name", se_cache[prim["uuid"]].get("name"))
+        prim.setdefault("mgmt_ip", se_cache[prim["uuid"]].get("mgmt_ip"))
+    if sec and sec.get("uuid") in se_cache:
+        sec.setdefault("name", se_cache[sec["uuid"]].get("name"))
+        sec.setdefault("mgmt_ip", se_cache[sec["uuid"]].get("mgmt_ip"))
 
-    # Metrics (ONLY integer values)
+    # Metrics (values only → int)
     series_map: Dict[str, int] = {}
     for s in (metrics_data or {}).get("series", []):
-        mname = s.get("header", {}).get("name")
+        mname = s.get("header", {}).get("name") or s.get("name")
         datapoints = s.get("data", [])
         series_map[mname] = normalize_metric_value(datapoints)
 
-    # Build row (metrics appended later)
+    # Build row
     row = {
         "Controller": controller,
         "Virtual_Service_Name": name,
@@ -505,9 +522,24 @@ def process_vs_row(vs_inv: Dict[str, Any],
         "VS_UUID": uuid,
     }
 
-    # Add metrics columns in the same order requested
+    # Append metrics in requested order
     for m in metrics_list:
         row[m] = series_map.get(m, 0)
+
+    # Helpful DEBUG traces if fields are still blank
+    if debug:
+        def dbg(label, val, probes: List[str]):
+            if val in (None, "", []):
+                logging.debug(f"[{uuid}] Missing {label}; checked: {', '.join(probes)}")
+        dbg("VIP", row["VS_VIP"], ["runtime.vip_summary[].vip", "vsvip_summary[].vip", "config.vip[].ip_address.addr"])
+        dbg("Type(IPv4_/IPv6)", row["Type(IPv4_/IPv6)"], ["runtime.vip_summary[].ip_version", "config.vip[].ip_address.type"])
+        dbg("Application_Profile", row["Application_Profile"], ["config.application_profile_ref", "application_profile_ref"])
+        dbg("SSL_Profile", row["SSL_Profile"], ["config.ssl_profile_ref", "ssl_profile_ref"])
+        dbg("SSL_Certificate_Name", row["SSL_Certificate_Name"], ["config.ssl_key_and_certificate_refs", "ssl_key_and_certificate_refs"])
+        dbg("Analytics_Profile", row["Analytics_Profile"], ["config.analytics_profile_ref", "analytics_profile_ref"])
+        dbg("Network_Profile", row["Network_Profile"], ["config.network_profile_ref", "network_profile_ref"])
+        dbg("Primary_SE", row["Primary_SE_UUID"], ["runtime.se_list", "vip_runtime[].se_list", "runtime.serviceengine"])
+        dbg("Secondary_SE", row["Secondary_SE_UUID"], ["runtime.se_list", "vip_runtime[].se_list", "runtime.serviceengine"])
 
     return row
 
@@ -523,24 +555,23 @@ def controller_worker(controller: str, user: str, password: str,
     if not session:
         return [], controller, 0, 0, 0.0, 0.0, 0.0
 
-    # Build SE cache
+    # SE cache
     se_cache = build_se_cache(session, base_url, debug=debug)
     se_count = len(se_cache)
 
-    # Fetch VS inventory
+    # VS inventory
     t1 = time.time()
     vs_list = fetch_vs_inventory(session, base_url, debug=debug)
     t2 = time.time()
     vs_count = len(vs_list)
 
-    # Build rows
     rows: List[Dict[str, Any]] = []
     for vs in vs_list:
-        vs_uuid = vs.get("uuid") or (vs.get("config", {}) or {}).get("uuid")
+        vs_uuid = vs.get("uuid") or get_in(vs, ["config", "uuid"])
         metrics_data = {}
         if not skip_metrics and metrics_list and vs_uuid:
             metrics_data = fetch_vs_metrics(session, base_url, vs_uuid, metrics_list, limit, step, debug)
-        row = process_vs_row(vs, se_cache, metrics_data, controller, metrics_list)
+        row = process_vs_row(vs, se_cache, metrics_data, controller, metrics_list, debug=debug)
         rows.append(row)
 
     t3 = time.time()
@@ -555,7 +586,7 @@ def controller_worker(controller: str, user: str, password: str,
 # Main
 # -----------------------------------------------------------------------------
 def main():
-    parser = argparse.ArgumentParser(description="NSX ALB (Avi) VS inventory + metrics collector (Inventory API)")
+    parser = argparse.ArgumentParser(description="NSX ALB (Avi) VS inventory + metrics collector (v0.5, inventory API)")
     parser.add_argument("--config", default="./config.ini", help="Path to config.ini")
     parser.add_argument("--threads", type=int, default=5, help="Parallel controllers (default 5)")
     parser.add_argument("--skip-metrics", action="store_true", help="Skip metrics collection")
@@ -569,17 +600,14 @@ def main():
         logging.error(f"Config not found/readable: {args.config}")
         sys.exit(1)
 
-    # Defaults
     default_user = cfg.get("DEFAULT", "avi_user", fallback="admin")
     default_pass = cfg.get("DEFAULT", "avi_pass", fallback="Admin@123")
 
-    # Controllers — ONLY keys under [CONTROLLERS]
     if "CONTROLLERS" not in cfg or not list(cfg["CONTROLLERS"].keys()):
         logging.error("No [CONTROLLERS] defined in config.")
         sys.exit(1)
     controllers = list(cfg["CONTROLLERS"].keys())
 
-    # Settings
     step = cfg.get("SETTINGS", "api_step", fallback="3600")
     limit = cfg.get("SETTINGS", "api_limit", fallback="1")
     metrics_list = [m.strip() for m in cfg.get("SETTINGS", "metrics_list", fallback="").split(",") if m.strip()]
@@ -617,9 +645,7 @@ def main():
         logging.error("No data collected — check credentials/connectivity.")
         sys.exit(2)
 
-    # CSV header: fixed cols + metrics + VS_UUID (already in fixed cols)
-    # Your requested order places metrics before VS_UUID; we already include VS_UUID in FIXED_COLS tail.
-    # We'll re-order to: FIXED_COLS (without VS_UUID) + metrics_list + VS_UUID
+    # CSV header: fixed cols (without VS_UUID) + metrics + VS_UUID at the very end
     fixed_wo_uuid = [c for c in FIXED_COLS if c != "VS_UUID"]
     fieldnames = fixed_wo_uuid + metrics_list + ["VS_UUID"]
 
@@ -632,11 +658,8 @@ def main():
 
     logging.info(f"VS report saved: {outfile}")
     logging.info("---- Controller Summary ----")
-    total_vs = sum(v for _, _, v, _, _, _ in [(c, s, v, i, m, t) for c, s, v, i, m, t in summary])
-    total_time = sum(t for _, _, _, _, _, t in summary)
     for ctrl, se_cnt, vs_cnt, inv_t, met_t, tot_t in summary:
         logging.info(f"{ctrl:30s} | SEs={se_cnt:4d} VSs={vs_cnt:4d} | inventory={inv_t:6.2f}s metrics={met_t:6.2f}s total={tot_t:6.2f}s")
-    logging.info(f"TOTAL Controllers={len(summary)} | VS={total_vs} | Time={total_time:.2f}s")
 
 
 if __name__ == "__main__":
