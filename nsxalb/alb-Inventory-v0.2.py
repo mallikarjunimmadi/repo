@@ -10,7 +10,7 @@ VS metrics in a **single** API call per VS (metric_id joined and URL-encoded wit
 What this version fixes / adds
 ------------------------------
 - Avoids treating DEFAULT keys (avi_user/avi_pass) as controllers
-- **Pagination** for /api/serviceengine and /api/virtualservice (follows absolute 'next')
+- **Pagination** for /api/serviceengine-inventory and /api/virtualservice-inventory (follows absolute 'next')
 - Robust metrics parsing (no KeyError on datapoints)
 - Correct VIP extraction from config (vip[]) or runtime (vip_runtime[])
 - Correct booleans: VS_Enabled, Traffic_Enabled, SSL_Enabled (from services[].enable_ssl),
@@ -152,7 +152,7 @@ def build_se_cache(session: requests.Session, base_url: str, debug: bool = False
     Build Service Engine cache: { uuid: {name, mgmt_ip} }
     Uses pagination to fetch ALL SEs.
     """
-    url = f"{base_url}/api/serviceengine?include_name=true"
+    url = f"{base_url}/api/serviceengine-inventory?include_name=true"
     se_list = paginate_all(session, url, debug=debug)
     cache = {}
     for se in se_list:
@@ -168,7 +168,7 @@ def fetch_vs_inventory(session: requests.Session, base_url: str, debug: bool = F
     """
     Fetch ALL Virtual Services with include_name=true via pagination.
     """
-    url = f"{base_url}/api/virtualservice?include_name=true"
+    url = f"{base_url}/api/virtualservice-inventory?include_name=true"
     vs_list = paginate_all(session, url, debug=debug)
     logging.info(f"[{base_url.split('//')[1]}] VS inventory fetched: {len(vs_list)} items")
     return vs_list
