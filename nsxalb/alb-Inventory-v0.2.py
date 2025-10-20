@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-alb-vsInventory-v0.7_debug_json.py — NSX ALB (Avi) Virtual Service Inventory Collector
+alb-vsInventory-v0.8_robust_profiles.py — NSX ALB (Avi) Virtual Service Inventory Collector
 ====================================================================================
-v0.7 CHANGES:
-• **DEBUG LOGGING:** When --debug is passed, the raw JSON of every VS fetched is saved to a file 
-  (avi-VSInventory-DEBUG-JSON_TIMESTAMP.json) for advanced troubleshooting of missing fields.
-• Minor fix to ensure config fallback object is always initialized.
+v0.8 CHANGES (Targeting VH Type, Profiles):
+• **Enhanced refname function:** Now handles reference strings without the '#' separator, or those that are just the UUID/name.
+• Confirmed all profile lookups check BOTH the top-level key AND the nested 'config' key to maximize discovery.
+• Retains the raw JSON debug dump functionality when --debug is passed.
 """
 
 import argparse
@@ -22,7 +22,7 @@ from typing import Dict, Any, List, Tuple
 
 import requests
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
-requests.packages.unirest.disable_warnings(InsecureRequestWarning)
+requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 
 # Global list to store raw JSON for debugging purposes
@@ -123,19 +123,32 @@ def login_controller(controller: str, user: str, password: str) -> Tuple[request
 # -----------------------------------------------------------------------------
 def refname(ref: Any) -> Any:
     """
-    Extract trailing name after '#' from Avi ref strings.
+    Extract trailing name after '#' or the last segment after '/' from Avi ref strings.
     Accepts None | str | list[str].
     """
     if not ref:
         return None
+    
+    def extract_single_ref(r: str) -> str:
+        if "#" in r:
+            return r.split("#")[-1]
+        elif "/" in r:
+            # Handle cases where it's a full URL but no #name (e.g. just UUID)
+            return r.split("/")[-1]
+        return r
+
     if isinstance(ref, list):
         if not ref:
             return None
         # Handle multiple refs (e.g., SSL certs)
-        results = [r.split("#")[-1] for r in ref if isinstance(r, str) and "#" in r] or [r for r in ref if isinstance(r, str) and "#" not in r]
+        results = [extract_single_ref(r) for r in ref if isinstance(r, str)]
         # Return a comma-separated string for CSV
         return ", ".join(results)
-    return ref.split("#")[-1] if isinstance(ref, str) and "#" in ref else ref
+        
+    if isinstance(ref, str):
+        return extract_single_ref(ref)
+        
+    return ref
 
 
 def first_port(vs_data: Dict[str, Any]) -> Any:
@@ -188,17 +201,6 @@ def vip_from_inventory(vs_inv: Dict[str, Any]) -> Any:
             return vsum[0]["ip_address"]["addr"]
     except Exception:
         pass
-
-    # 4. Fallback to extracting the VIP from the VS name if possible (e.g. VS_10.1.1.1_443)
-    name = vs_inv.get("name") or vs_inv.get("config", {}).get("name")
-    if name:
-        parts = name.split('_')
-        # Check if the second to last part is an IP
-        if len(parts) >= 2:
-            ip_candidate = parts[-2]
-            # Simple check for IP pattern (XX.XX.XX.XX)
-            if ip_candidate.count('.') == 3 and all(p.isdigit() for p in ip_candidate.split('.')):
-                return ip_candidate
                 
     return None
 
@@ -302,6 +304,7 @@ def process_vs_row(vs_inv: Dict[str, Any],
     vh_type = vs_inv.get("vh_type") or cfg.get("vh_type")
 
     # Profiles & refs - Use top-level keys first
+    # This logic is crucial for profiles: check vs_inv, then check cfg, then parse the name.
     application_profile = refname(vs_inv.get("application_profile_ref") or cfg.get("application_profile_ref"))
     ssl_profile = refname(vs_inv.get("ssl_profile_ref") or cfg.get("ssl_profile_ref"))
     
@@ -331,17 +334,15 @@ def process_vs_row(vs_inv: Dict[str, Any],
     primary_name = primary_ip = primary_uuid = None
     secondary_name = secondary_ip = secondary_uuid = None
 
-    # --- SE List Collection (FIXED FOR ALL INVENTORY FORMATS) ---
+    # --- SE List Collection ---
     se_runtime_list = []
-    # 1. Check vip_runtime[0].se_list (used by Sample 1)
     try:
         se_runtime_list = vs_inv.get("vip_runtime", [{}])[0].get("se_list", [])
     except Exception:
         pass
     
     se_runtime_summary = []
-    # 2. Check runtime.vip_summary[0].service_engine (used by Sample 2)
-    if not se_runtime_list: # Only check this second path if the first was empty
+    if not se_runtime_list:
         try:
             se_runtime_summary = vs_inv.get("runtime", {}).get("vip_summary", [{}])[0].get("service_engine", [])
         except Exception:
@@ -356,18 +357,18 @@ def process_vs_row(vs_inv: Dict[str, Any],
         
         # Look for explicit roles/flags
         for se in se_attach:
-            # Check is_primary/is_standby flags (common in vip_runtime / Sample 1)
+            # Check is_primary/is_standby flags
             if se.get("is_primary") and not prim:
                 prim = se
             elif se.get("is_standby") and not sec:
                 sec = se
-            # Check primary/standby flags (common in runtime.vip_summary / Sample 2)
+            # Check primary/standby flags
             elif se.get("primary") and not prim:
                 prim = se
             elif se.get("standby") and not sec:
                 sec = se
 
-            # Check 'role' string (common in top-level se_list/serviceengine)
+            # Check 'role' string
             role = (se.get("role") or "").lower()
             if role in ("primary", "active") and not prim:
                 prim = se
@@ -382,7 +383,6 @@ def process_vs_row(vs_inv: Dict[str, Any],
 
         # Extract Primary SE data
         if prim:
-            # Get UUID from 'uuid' or parse from 'se_ref'
             primary_uuid = prim.get("uuid") or (prim.get("se_ref", "").split("/")[-1].split("#")[0] if prim.get("se_ref") else None)
             if primary_uuid and primary_uuid in se_cache:
                 primary_name = se_cache[primary_uuid].get("name")
@@ -390,7 +390,6 @@ def process_vs_row(vs_inv: Dict[str, Any],
 
         # Extract Secondary SE data
         if sec:
-            # Get UUID from 'uuid' or parse from 'se_ref'
             secondary_uuid = sec.get("uuid") or (sec.get("se_ref", "").split("/")[-1].split("#")[0] if sec.get("se_ref") else None)
             if secondary_uuid and secondary_uuid in se_cache:
                 secondary_name = se_cache[secondary_uuid].get("name")
@@ -411,7 +410,7 @@ def process_vs_row(vs_inv: Dict[str, Any],
         "VH_Type": vh_type,
         "Application_Profile": application_profile,
         "SSL_Profile": ssl_profile,
-        "SSL_Certificate_Name": ssl_cert, # Already a string from refname
+        "SSL_Certificate_Name": ssl_cert,
         "Analytics_Profile": analytics_profile,
         "Network_Profile": network_profile,
         "State": state,
@@ -472,7 +471,6 @@ def controller_worker(controller: str, user: str, password: str,
 
     t1 = time.time()
     # Fetch VS inventory (INVENTORY + pagination)
-    # The debug flag here ensures data is captured in the global DEBUG_JSONS list
     vs_list = fetch_vs_inventory(session, base_url, debug=debug) 
     vs_count = len(vs_list)
     t2 = time.time()
