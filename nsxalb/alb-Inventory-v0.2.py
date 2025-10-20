@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-alb-vsInventory-v1.1_robust_vip_extraction.py — NSX ALB (Avi) Virtual Service Inventory Collector
-====================================================================================
-v1.1 FIXES (Targeting VIP formatting and extraction):
-• Implemented robust VIP extraction logic to check for 'ip_address', 'ip6_address', 
-  and runtime summary fields to ensure all V4 and V6 addresses are captured.
-• IP addresses (V4 and V6) are combined into a single, semicolon-separated column: 'VS_VIP_Addresses'.
-• IP types (V4 and V6) are combined into a single, semicolon-separated column: 'VS_VIP_Types'.
+alb-vsInventory-v1.3_robust_vsvip_ref_extraction.py — NSX ALB (Avi) Virtual Service Inventory Collector
+=====================================================================================================
+v1.3 FIXES (Targeting VIP/Network Extraction):
+• Implemented robust extraction for VIPs defined using either 'ip_address' (V4/V6) 
+  or 'ip6_address' keys within the VSVIP object.
+• Added a new column 'Placement_Network' derived from vsvip_ref_data->vip->placement_networks->network_ref.
 """
 
 import argparse
@@ -23,7 +22,6 @@ from typing import Dict, Any, List, Tuple
 
 import requests
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
-requests.packages.remove_warnings(InsecureRequestWarning) # Removed redundant import, kept only the disable_warnings call
 
 # Disable warnings for unverified HTTPS requests
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
@@ -87,11 +85,9 @@ def paginate_all(session: requests.Session, first_url: str, debug: bool = False)
             break
         items = data.get("results", [])
         
-        # --- DEBUG LOGGING ADDITION ---
         if debug:
             global DEBUG_JSONS
             DEBUG_JSONS.extend(items)
-        # ------------------------------
 
         results.extend(items)
         nxt = data.get("next")
@@ -106,7 +102,7 @@ def paginate_all(session: requests.Session, first_url: str, debug: bool = False)
 # -----------------------------------------------------------------------------
 # Auth
 # -----------------------------------------------------------------------------
-def login_controller(controller: str, user: str, password: str) -> Tuple[requests.Session, str]:
+def login_controller(controller: str, user: str, password: str) -> Tuple[requests.Session | None, str]:
     base_url = f"https://{controller}"
     login_url = f"{base_url}/login"
     try:
@@ -128,7 +124,6 @@ def login_controller(controller: str, user: str, password: str) -> Tuple[request
 def refname(ref: Any) -> Any:
     """
     Extract trailing name after '#' or the last segment after '/' from Avi ref strings.
-    Accepts None | str | list[str].
     """
     if not ref:
         return None
@@ -137,16 +132,13 @@ def refname(ref: Any) -> Any:
         if "#" in r:
             return r.split("#")[-1]
         elif "/" in r:
-            # Handle cases where it's a full URL but no #name (e.g. just UUID)
             return r.split("/")[-1]
         return r
 
     if isinstance(ref, list):
         if not ref:
             return None
-        # Handle multiple refs (e.g., SSL certs)
         results = [extract_single_ref(r) for r in ref if isinstance(r, str)]
-        # Return a comma-separated string for CSV
         return ", ".join(results)
         
     if isinstance(ref, str):
@@ -158,7 +150,6 @@ def refname(ref: Any) -> Any:
 def first_port(vs_data: Dict[str, Any]) -> Any:
     """
     Get first service port from VS config services[].
-    Handles both top-level and nested 'config' services.
     """
     services = vs_data.get("services") or vs_data.get("config", {}).get("services", [])
     try:
@@ -177,72 +168,127 @@ def ssl_enabled_from_services(vs_data: Dict[str, Any]) -> bool:
             return True
     return False
 
-# --- VIP EXTRACTION LOGIC (v1.1) ---
-def get_all_vip_addresses(vs_inv: Dict[str, Any]) -> Tuple[str | None, str | None]:
+# --- NEW UTILITY FOR VSVIP REFERENCE LOOKUP ---
+def fetch_vsvip_data(session: requests.Session, base_url: str, vs_inv: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
-    Collects all unique IPv4 and IPv6 addresses and their types by checking
-    multiple possible nested structures (ip_address, ip6_address, or top-level addr).
-    Returns: (semicolon_separated_ips, semicolon_separated_types)
+    Fetches the actual VSVIP object data if a vsvip_ref is present in the VS.
+    Returns the 'vip' list from the fetched VSVIP object, or an empty list.
+    """
+    vsvip_ref = vs_inv.get("vsvip_ref")
+    if not vsvip_ref:
+        return []
+
+    # Get the raw UUID from the reference string
+    vsvip_uuid = vsvip_ref.split("/")[-1].split("#")[0]
+    
+    # Construct the API URL for the VSVIP object
+    vsvip_url = f"{base_url}/api/vsvip/{vsvip_uuid}"
+
+    logging.debug(f"Fetching VSVIP data from: {vsvip_url}")
+    
+    # Use the existing retry function
+    vsvip_data = retry_get_json(session, vsvip_url, retries=2, delay=1)
+    
+    # The VIPs will be in the 'vip' list inside the fetched VSVIP object
+    return vsvip_data.get("vip", [])
+# -----------------------------------------------
+
+# --- UTILITY FOR PLACEMENT NETWORK EXTRACTION ---
+def get_placement_network(vip_entry: Dict[str, Any]) -> str | None:
+    """
+    Extracts the network name from the first placement_networks entry.
+    """
+    placement_networks = vip_entry.get("placement_networks")
+    if placement_networks and isinstance(placement_networks, list):
+        try:
+            # Get the network_ref from the first entry
+            network_ref = placement_networks[0].get("network_ref")
+            if network_ref:
+                # Use refname utility to extract the part after '#'
+                return refname(network_ref)
+        except Exception:
+            pass
+    return None
+# -------------------------------------------------
+
+
+# --- VIP EXTRACTION LOGIC (v1.3) ---
+def get_all_vip_addresses(session: requests.Session, base_url: str, vs_inv: Dict[str, Any]) -> Tuple[str | None, str | None, str | None]:
+    """
+    Collects all unique IPv4/IPv6 addresses and their placement networks.
+    
+    Returns: (semicolon_separated_ips, semicolon_separated_types, semicolon_separated_networks)
     """
     ip_list: List[str] = []
     type_list: List[str] = []
-    
-    # Define search paths for VIP list (prioritized)
-    search_paths = [
-        vs_inv.get("vsvip_ref_data", {}).get("vip", []),
-        vs_inv.get("config", {}).get("vip", []),
-        vs_inv.get("runtime", {}).get("vip_summary", []),
-        vs_inv.get("vip_summary", [])
-    ]
-    
-    # Set to track unique IP addresses
+    network_list: List[str] = []
     unique_ips = set() 
     
-    for vip_list in search_paths:
+    # 1. Load VIP lists from different possible sources (Priority: VSVIP object reference lookup)
+    vip_lists_to_check: List[List[Dict[str, Any]]] = []
+
+    # A. Fetch VSVIP object via reference (if session is available)
+    if session:
+        vsvip_vips = fetch_vsvip_data(session, base_url, vs_inv)
+        if vsvip_vips:
+             vip_lists_to_check.append(vsvip_vips)
+    
+    # B. Embedded config/runtime paths (Fallback if no reference used)
+    vip_lists_to_check.append(vs_inv.get("vsvip_ref_data", {}).get("vip", []))
+    vip_lists_to_check.append(vs_inv.get("config", {}).get("vip", []))
+    vip_lists_to_check.append(vs_inv.get("runtime", {}).get("vip_summary", []))
+    vip_lists_to_check.append(vs_inv.get("vip_summary", []))
+
+    
+    # 2. Iterate through all discovered VIP lists
+    for vip_list in vip_lists_to_check:
         if not vip_list or not isinstance(vip_list, list):
             continue
             
         for vip_entry in vip_list:
             addr = None
             addr_type = None
-
-            # 1. Check for the generic/standard 'ip_address' structure (V4 or V6)
+            
+            # --- Primary check for the presence of V4/V6 IP keys in the entry ---
+            
+            # a. Check for the specific 'ip_address' structure (V4 or V6 VIP)
             ip_address_data = vip_entry.get("ip_address")
-            if isinstance(ip_address_data, dict):
+            if isinstance(ip_address_data, dict) and ip_address_data.get("addr"):
                 addr = ip_address_data.get("addr")
-                addr_type = ip_address_data.get("type") 
-
-            # 2. Check for the specific 'ip6_address' structure
+                addr_type = ip_address_data.get("type", "V4")
+            
+            # b. Check for the specific 'ip6_address' structure (V6 only VIP)
             elif 'ip6_address' in vip_entry:
                 ip6_address_data = vip_entry.get("ip6_address")
-                if isinstance(ip6_address_data, dict):
+                if isinstance(ip6_address_data, dict) and ip6_address_data.get("addr"):
                     addr = ip6_address_data.get("addr") 
                     addr_type = ip6_address_data.get("type", "V6") 
-
-            # 3. Check for the simpler structure (often seen in runtime/status summaries)
+            
+            # c. Fallback for simpler runtime/status summaries (addr/type at top level)
             elif 'addr' in vip_entry and 'type' in vip_entry:
                 addr = vip_entry.get('addr')
                 addr_type = vip_entry.get('type')
 
 
-            # 4. Check if we found a valid address
+            # 3. Process the discovered address
             if addr and addr_type:
-                # Ensure it's not a duplicate before adding
                 if addr not in unique_ips:
                     unique_ips.add(addr)
                     ip_list.append(addr)
-                    # Standardize type output for clarity
-                    if 'V4' in addr_type.upper():
-                         type_list.append("V4")
-                    elif 'V6' in addr_type.upper():
-                         type_list.append("V6")
-                    else:
-                         type_list.append("Unknown")
+                    
+                    # Standardize type output
+                    type_str = "V4" if 'V4' in addr_type.upper() else "V6" if 'V6' in addr_type.upper() else "Unknown"
+                    type_list.append(type_str)
+                    
+                    # Extract Placement Network for this VIP entry
+                    network_list.append(get_placement_network(vip_entry) or "N/A")
     
     ip_str = "; ".join(ip_list) if ip_list else None
     type_str = "; ".join(type_list) if type_list else None
-    
-    return ip_str, type_str
+    network_str = "; ".join(network_list) if network_list else None
+
+    # Returns three strings now
+    return ip_str, type_str, network_str
 # --- VIP EXTRACTION LOGIC ENDS ---
 
 # -----------------------------------------------------------------------------
@@ -289,10 +335,10 @@ def fetch_vs_inventory(session: requests.Session, base_url: str, debug: bool = F
 # -----------------------------------------------------------------------------
 # Row assembly (CSV)
 # -----------------------------------------------------------------------------
-# --- CSV COLUMN DEFINITION (v1.1) ---
+# --- CSV COLUMN DEFINITION (NEW COLUMN ADDED) ---
 FIXED_COLS = [
-    "Controller", "Virtual_Service_Name", "VS_VIP_Addresses", "VS_VIP_Types", "Port",
-    "VS_Enabled", "Traffic_Enabled", "SSL_Enabled", "VIP_as_SNAT", "Auto_Gateway_Enabled",
+    "Controller", "Virtual_Service_Name", "VS_VIP_Addresses", "VS_VIP_Types", "Placement_Network",
+    "Port", "VS_Enabled", "Traffic_Enabled", "SSL_Enabled", "VIP_as_SNAT", "Auto_Gateway_Enabled",
     "VH_Type", "Application_Profile", "SSL_Profile", "SSL_Certificate_Name",
     "Analytics_Profile", "Network_Profile", "State", "Reason", "Pool",
     "Service_Engine_Group", "Primary_SE_Name", "Primary_SE_IP", "Primary_SE_UUID",
@@ -300,12 +346,14 @@ FIXED_COLS = [
     "Active_Standby_SE_Tag", "Cloud", "Cloud_Type", "Tenant",
     "VS_UUID" 
 ]
-# ------------------------------------
+# -----------------------------
 
 
 def process_vs_row(vs_inv: Dict[str, Any],
                    se_cache: Dict[str, Dict[str, Any]],
-                   controller: str) -> Dict[str, Any]:
+                   controller: str,
+                   session: requests.Session,
+                   base_url: str) -> Dict[str, Any]:
     """
     Build a single CSV row from VS inventory + SE cache.
     """
@@ -315,10 +363,9 @@ def process_vs_row(vs_inv: Dict[str, Any],
     name = vs_inv.get("name") or cfg.get("name")
     uuid = vs_inv.get("uuid") or cfg.get("uuid")
 
-    # --- VIP EXTRACTION ---
-    # Now returns IP string and Type string
-    vip_addresses_str, vip_types_str = get_all_vip_addresses(vs_inv)
-    # ----------------------
+    # --- VIP EXTRACTION (Updated Call for 3 values) ---
+    vip_addresses_str, vip_types_str, placement_network_str = get_all_vip_addresses(session, base_url, vs_inv)
+    # --------------------------------------------------
 
     # Ports & flags - Use vs_inv keys first, fall back to cfg
     port = first_port(vs_inv)
@@ -415,10 +462,9 @@ def process_vs_row(vs_inv: Dict[str, Any],
     row = {
         "Controller": controller,
         "Virtual_Service_Name": name,
-        # --- NEW COMBINED IP & TYPE COLUMNS ---
         "VS_VIP_Addresses": vip_addresses_str,
         "VS_VIP_Types": vip_types_str,
-        # ------------------------------------
+        "Placement_Network": placement_network_str, # <--- NEW VALUE
         "Port": port,
         "VS_Enabled": vs_enabled,
         "Traffic_Enabled": traffic_enabled,
@@ -467,6 +513,8 @@ def dump_debug_jsons(report_dir: str):
     outfile = os.path.join(report_dir, f"avi-VSInventory-DEBUG-JSON_{time.strftime('%Y%m%dT%H%M%S')}.json")
     try:
         with open(outfile, "w", encoding="utf-8") as fh:
+            # We only dump the primary VS objects, not the secondary VSVIP objects 
+            # as they were fetched separately and aren't aggregated in DEBUG_JSONS
             json.dump(DEBUG_JSONS, fh, indent=2)
         logging.info(f"DEBUG: Raw VS JSON data saved: {outfile} ({len(DEBUG_JSONS)} VS objects)")
     except Exception as e:
@@ -496,13 +544,18 @@ def controller_worker(controller: str, user: str, password: str,
     # Build rows
     rows: List[Dict[str, Any]] = []
     for vs in vs_list:
-        row = process_vs_row(vs, se_cache, controller)
+        # PASS session and base_url to process_vs_row for VSVIP lookup
+        row = process_vs_row(vs, se_cache, controller, session, base_url)
         rows.append(row)
 
     t3 = time.time()
     inventory_time = round(t2 - t1, 2)
     total_time = round(t3 - t0, 2)
     logging.info(f"[{controller}] SEs={se_count} VSs={vs_count} | inventory={inventory_time}s total={total_time}s")
+    
+    # Close session
+    session.close()
+
     return rows, controller, se_count, vs_count, inventory_time, total_time
 
 
