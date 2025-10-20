@@ -540,4 +540,67 @@ def main():
     default_pass = cfg.get("DEFAULT", "avi_pass", fallback="Admin@123")
 
     # Controllers — ONLY keys in [CONTROLLERS]
-    if "CONTROLLERS" not in cfg or
+    if "CONTROLLERS" not in cfg or not cfg["CONTROLLERS"].keys():
+        logging.error("No [CONTROLLERS] defined in config.")
+        sys.exit(1)
+    controllers = list(cfg["CONTROLLERS"].keys())
+
+    # Settings
+    report_dir = cfg.get("SETTINGS", "report_output_dir", fallback=".")
+    os.makedirs(report_dir, exist_ok=True)
+
+    logging.info(f"Controllers: {', '.join(controllers)}")
+    logging.info("Metrics collection is disabled.")
+
+    all_rows: List[Dict[str, Any]] = []
+    summary: List[Tuple[str, int, int, float, float]] = []
+
+    with ThreadPoolExecutor(max_workers=args.threads) as pool:
+        futures = {}
+        for ctrl in controllers:
+            creds = cfg["CONTROLLERS"].get(ctrl)
+            if creds and "," in creds:
+                user, password = creds.split(",", 1)
+            else:
+                user, password = default_user, default_pass
+
+            fut = pool.submit(
+                controller_worker, ctrl, user, password,
+                args.debug
+            )
+            futures[fut] = ctrl
+
+        for fut in as_completed(futures):
+            rows, ctrl, se_cnt, vs_cnt, inv_t, tot_t = fut.result()
+            all_rows.extend(rows)
+            summary.append((ctrl, se_cnt, vs_cnt, inv_t, tot_t))
+
+    if not all_rows:
+        logging.error("No data collected — check credentials/connectivity.")
+        sys.exit(2)
+
+    # DUMP RAW JSON IF DEBUG IS ENABLED
+    if args.debug:
+        dump_debug_jsons(report_dir)
+
+    # CSV Header — uses only FIXED_COLS
+    fieldnames = FIXED_COLS
+
+    outfile = os.path.join(report_dir, f"avi-VSInventory-NO_METRICS_{time.strftime('%Y%m%dT%H%M%S')}.csv")
+    with open(outfile, "w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=fieldnames, extrasaction="ignore") 
+        writer.writeheader()
+        for r in all_rows:
+            writer.writerow(r)
+
+    logging.info(f"VS report saved: {outfile}")
+    logging.info("---- Controller Summary ----")
+    total_vs = sum(v for _, _, v, _, _ in summary)
+    total_time = sum(t for _, _, _, _, t in summary)
+    for ctrl, se_cnt, vs_cnt, inv_t, tot_t in summary:
+        logging.info(f"{ctrl:30s} | SEs={se_cnt:4d} VSs={vs_cnt:4d} | inventory={inv_t:6.2f}s total={tot_t:6.2f}s")
+    logging.info(f"TOTAL Controllers={len(summary)} | VS={total_vs} | Time={total_time:.2f}s")
+
+
+if __name__ == "__main__":
+    main()
