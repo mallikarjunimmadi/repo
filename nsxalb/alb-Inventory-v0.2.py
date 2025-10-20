@@ -1,22 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-alb-vsInventory-v0.3.py — NSX ALB (Avi) Virtual Service Inventory Collector (Inventory API edition)
-===================================================================================================
+alb-vsInventory-v0.4_no_metrics.py — NSX ALB (Avi) Virtual Service Inventory Collector (Inventory API edition, NO METRICS)
+=========================================================================================================================
 
 What this script does
 ---------------------
 • Uses INVENTORY endpoints for speed & completeness:
-    - /api/virtualservice-inventory?include_name=true
-    - /api/serviceengine-inventory?include_name=true
+    - /api/virtualservice-inventory?include_name=true
+    - /api/serviceengine-inventory?include_name=true
 • Paginates across ALL records (handles absolute and relative 'next' URLs).
 • Resolves VIP, runtime state, and **attached Service Engines** (names/IPs/roles).
-• Fetches multiple VS metrics in ONE call per VS:
-    - /api/analytics/metrics/virtualservice/<vs_uuid>/?metric_id=...&limit=...&step=...
-    - Joins metric IDs with URL-encoded %2C (comma).
-    - Writes ONLY the metric **value** (no timestamps) into CSV.
-• Outputs one CSV with your exact column order, metrics expanded into individual columns.
-• Prints per-controller summary: SE count, VS count, timings (inventory/metrics/total).
+• Outputs one CSV with a fixed column order (no metrics columns).
+• Prints per-controller summary: SE count, VS count, timings (inventory/total).
 
 Config.ini (same layout you already use)
 ----------------------------------------
@@ -29,19 +25,19 @@ m00aviblb.local =
 # or: controller.fqdn = user,password
 
 [SETTINGS]
-avi_version = 22.1.7
-api_step = 21600
-api_limit = 1
-metrics_list = l4_client.avg_bandwidth,l4_client.avg_new_established_conns, ...
 report_output_dir = .
 log_output_dir = .
+# The following settings are now ignored:
+# avi_version = 22.1.7
+# api_step = 21600
+# api_limit = 1
+# metrics_list = l4_client.avg_bandwidth,l4_client.avg_new_established_conns, ...
 
 CLI
 ---
---config PATH        config file path (default ./config.ini)
---threads N          parallel controllers (default 5)
---skip-metrics       skip metrics fetch
---debug              verbose logging
+--config PATH        config file path (default ./config.ini)
+--threads N          parallel controllers (default 5)
+--debug              verbose logging
 
 Dependencies
 ------------
@@ -151,7 +147,7 @@ def login_controller(controller: str, user: str, password: str) -> Tuple[request
 # -----------------------------------------------------------------------------
 # Utilities
 # -----------------------------------------------------------------------------
-def refname(ref):
+def refname(ref: Any) -> Any:
     """
     Extract trailing name after '#' from Avi ref strings.
     Accepts None | str | list[str].
@@ -214,47 +210,8 @@ def ip_type_from_inventory(vs_inv: Dict[str, Any]) -> Any:
         return None
 
 
-def metrics_parse_value_list(datapoints: Any):
-    """
-    Normalize datapoints (various shapes across Avi versions) and return ONLY the first VALUE:
-    - [{'timestamp': '...', 'value': X}, ...]     -> X
-    - [[ts, val], ...]                            -> val
-    - [[val], ...]                                -> val
-    - [val, ...]                                  -> val
-    - [] or malformed                             -> "N/A"
-    """
-    if not datapoints:
-        return "N/A"
-
-    first = datapoints[0]
-
-    # dict form with value
-    if isinstance(first, dict):
-        if "value" in first:
-            return first["value"]
-        # sometimes value might be nested oddly, try common fallbacks
-        for k in ("avg", "sum", "min", "max"):
-            if k in first:
-                return first[k]
-        return "N/A"
-
-    # list/tuple forms
-    if isinstance(first, (list, tuple)):
-        if len(first) > 1:
-            return first[1]
-        elif len(first) == 1:
-            return first[0]
-        return "N/A"
-
-    # scalar
-    if isinstance(first, (int, float, str)):
-        return first
-
-    return "N/A"
-
-
 # -----------------------------------------------------------------------------
-# Inventory + metrics fetchers
+# Inventory fetchers
 # -----------------------------------------------------------------------------
 def build_se_cache(session: requests.Session, base_url: str, debug: bool = False) -> Dict[str, Dict[str, Any]]:
     """
@@ -287,23 +244,11 @@ def fetch_vs_inventory(session: requests.Session, base_url: str, debug: bool = F
     return vs_list
 
 
-def fetch_vs_metrics(session: requests.Session, base_url: str, vs_uuid: str,
-                     metrics: List[str], limit: str, step: str, debug: bool = False) -> Dict[str, Any]:
-    """
-    One call per VS with %2C-joined metrics.
-    """
-    if not metrics:
-        return {}
-    metric_param = "%2C".join(metrics)
-    url = f"{base_url}/api/analytics/metrics/virtualservice/{vs_uuid}/?metric_id={metric_param}&limit={limit}&step={step}"
-    if debug:
-        logging.debug(f"[{vs_uuid}] Metrics URL: {url}")
-    return retry_get_json(session, url)
-
-
 # -----------------------------------------------------------------------------
 # Row assembly (CSV)
 # -----------------------------------------------------------------------------
+# Removed "Real_Time_Metrics_Enabled" as it's less relevant without metrics, 
+# and all metrics columns are gone.
 FIXED_COLS = [
     "Controller", "Virtual_Service_Name", "VS_VIP", "Port", "Type(IPv4_/IPv6)",
     "VS_Enabled", "Traffic_Enabled", "SSL_Enabled", "VIP_as_SNAT", "Auto_Gateway_Enabled",
@@ -312,17 +257,15 @@ FIXED_COLS = [
     "Service_Engine_Group", "Primary_SE_Name", "Primary_SE_IP", "Primary_SE_UUID",
     "Secondary_SE_Name", "Secondary_SE_IP", "Secondary_SE_UUID",
     "Active_Standby_SE_Tag", "Cloud", "Cloud_Type", "Tenant",
-    "Real_Time_Metrics_Enabled"
+    "VS_UUID" # Added UUID here to be the final column
 ]
 
 
 def process_vs_row(vs_inv: Dict[str, Any],
                    se_cache: Dict[str, Dict[str, Any]],
-                   metrics_data: Dict[str, Any],
-                   controller: str,
-                   metrics_list: List[str]) -> Dict[str, Any]:
+                   controller: str) -> Dict[str, Any]:
     """
-    Build a single CSV row from VS inventory + SE cache + metrics response.
+    Build a single CSV row from VS inventory + SE cache.
     """
     cfg = vs_inv.get("config", {})  # inventory includes a 'config' subset
     # VS basics
@@ -359,15 +302,7 @@ def process_vs_row(vs_inv: Dict[str, Any],
     cloud = refname(vs_inv.get("cloud_ref") or cfg.get("cloud_ref"))
     cloud_type = vs_inv.get("cloud_type") or cfg.get("cloud_type")
     tenant = refname(vs_inv.get("tenant_ref") or cfg.get("tenant_ref"))
-
-    # Real-time metrics flag (analytics_policy.metrics_realtime_update.enabled)
-    rt_enabled = False
-    try:
-        rt_enabled = bool(cfg.get("analytics_policy", {}).get("metrics_realtime_update", {}).get("enabled", False))
-    except Exception:
-        rt_enabled = False
-    real_time_metrics_enabled = str(rt_enabled).upper()
-
+    
     # Active/Standby tag
     active_standby_tag = cfg.get("active_standby_se_tag")
 
@@ -405,15 +340,7 @@ def process_vs_row(vs_inv: Dict[str, Any],
                 secondary_name = se_cache[secondary_uuid].get("name")
                 secondary_ip = se_cache[secondary_uuid].get("mgmt_ip")
 
-    # Metrics (only VALUES, no timestamps)
-    series_map: Dict[str, Any] = {}
-    for s in (metrics_data or {}).get("series", []):
-        mname = s.get("header", {}).get("name")
-        datapoints = s.get("data", [])
-        val = metrics_parse_value_list(datapoints)
-        series_map[mname] = val
-
-    # Build row in your exact order (metrics appended later in main)
+    # Build row in the fixed column order
     row = {
         "Controller": controller,
         "Virtual_Service_Name": name,
@@ -445,27 +372,24 @@ def process_vs_row(vs_inv: Dict[str, Any],
         "Cloud": cloud,
         "Cloud_Type": cloud_type,
         "Tenant": tenant,
-        "Real_Time_Metrics_Enabled": real_time_metrics_enabled,
         "VS_UUID": uuid,
     }
+    
+    # Ensure all fixed columns are present, even if data is None
+    final_row = {col: row.get(col, None) for col in FIXED_COLS}
 
-    # Add metrics columns in the same order as metrics_list
-    for m in metrics_list:
-        row[m] = series_map.get(m, "N/A")
-
-    return row
+    return final_row
 
 
 # -----------------------------------------------------------------------------
 # Per-controller worker
 # -----------------------------------------------------------------------------
 def controller_worker(controller: str, user: str, password: str,
-                      metrics_list: List[str], limit: str, step: str,
-                      skip_metrics: bool, debug: bool) -> Tuple[List[Dict[str, Any]], str, int, int, float, float, float]:
+                      debug: bool) -> Tuple[List[Dict[str, Any]], str, int, int, float, float]:
     t0 = time.time()
     session, base_url = login_controller(controller, user, password)
     if not session:
-        return [], controller, 0, 0, 0.0, 0.0, 0.0
+        return [], controller, 0, 0, 0.0, 0.0
 
     # Build SE cache (INVENTORY + pagination)
     se_cache = build_se_cache(session, base_url, debug=debug)
@@ -480,29 +404,26 @@ def controller_worker(controller: str, user: str, password: str,
     # Build rows
     rows: List[Dict[str, Any]] = []
     for vs in vs_list:
-        metrics_data = {}
-        if not skip_metrics and metrics_list:
-            metrics_data = fetch_vs_metrics(session, base_url, vs.get("uuid") or vs.get("config", {}).get("uuid"),
-                                            metrics_list, limit, step, debug)
-        row = process_vs_row(vs, se_cache, metrics_data, controller, metrics_list)
+        # No metrics fetch here
+        row = process_vs_row(vs, se_cache, controller)
         rows.append(row)
 
     t3 = time.time()
     inventory_time = round(t2 - t1, 2)
-    metrics_time = round(t3 - t2, 2)
     total_time = round(t3 - t0, 2)
-    logging.info(f"[{controller}] SEs={se_count} VSs={vs_count} | inventory={inventory_time}s metrics={metrics_time}s total={total_time}s")
-    return rows, controller, se_count, vs_count, inventory_time, metrics_time, total_time
+    # Changed the logging to reflect the removal of metrics timing
+    logging.info(f"[{controller}] SEs={se_count} VSs={vs_count} | inventory={inventory_time}s total={total_time}s")
+    return rows, controller, se_count, vs_count, inventory_time, total_time
 
 
 # -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------
 def main():
-    parser = argparse.ArgumentParser(description="NSX ALB (Avi) VS inventory + metrics collector (Inventory API)")
+    parser = argparse.ArgumentParser(description="NSX ALB (Avi) VS inventory collector (Inventory API, NO METRICS)")
     parser.add_argument("--config", default="./config.ini", help="Path to config.ini")
     parser.add_argument("--threads", type=int, default=5, help="Parallel controllers (default 5)")
-    parser.add_argument("--skip-metrics", action="store_true", help="Skip metrics collection")
+    # Removed --skip-metrics as it's now the default/only mode
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     args = parser.parse_args()
 
@@ -524,18 +445,15 @@ def main():
     controllers = list(cfg["CONTROLLERS"].keys())
 
     # Settings
-    step = cfg.get("SETTINGS", "api_step", fallback="3600")
-    limit = cfg.get("SETTINGS", "api_limit", fallback="1")
-    metrics_list = [m.strip() for m in cfg.get("SETTINGS", "metrics_list", fallback="").split(",") if m.strip()]
-
     report_dir = cfg.get("SETTINGS", "report_output_dir", fallback=".")
     os.makedirs(report_dir, exist_ok=True)
 
     logging.info(f"Controllers: {', '.join(controllers)}")
-    logging.info(f"Metrics: {metrics_list} | step={step} | limit={limit}")
+    logging.info("Metrics collection is disabled.")
 
     all_rows: List[Dict[str, Any]] = []
-    summary: List[Tuple[str, int, int, float, float, float]] = []
+    # Summary format changed: (ctrl, se_cnt, vs_cnt, inv_t, tot_t)
+    summary: List[Tuple[str, int, int, float, float]] = []
 
     with ThreadPoolExecutor(max_workers=args.threads) as pool:
         futures = {}
@@ -548,36 +466,39 @@ def main():
 
             fut = pool.submit(
                 controller_worker, ctrl, user, password,
-                metrics_list, limit, step,
-                args.skip_metrics, args.debug
+                args.debug
             )
             futures[fut] = ctrl
 
         for fut in as_completed(futures):
-            rows, ctrl, se_cnt, vs_cnt, inv_t, met_t, tot_t = fut.result()
+            # metrics_time (met_t) is removed from the result tuple
+            rows, ctrl, se_cnt, vs_cnt, inv_t, tot_t = fut.result()
             all_rows.extend(rows)
-            summary.append((ctrl, se_cnt, vs_cnt, inv_t, met_t, tot_t))
+            summary.append((ctrl, se_cnt, vs_cnt, inv_t, tot_t))
 
     if not all_rows:
         logging.error("No data collected — check credentials/connectivity.")
         sys.exit(2)
 
-    # CSV Header — your exact order + metrics + VS_UUID last
-    fieldnames = FIXED_COLS + metrics_list + ["VS_UUID"]
+    # CSV Header — uses only FIXED_COLS
+    fieldnames = FIXED_COLS
 
-    outfile = os.path.join(report_dir, f"avi-VSInventory_{time.strftime('%Y%m%dT%H%M%S')}.csv")
+    outfile = os.path.join(report_dir, f"avi-VSInventory-NO_METRICS_{time.strftime('%Y%m%dT%H%M%S')}.csv")
     with open(outfile, "w", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=fieldnames, extrasaction="ignore")
+        # Setting extrasaction="ignore" is good practice for DictWriter
+        writer = csv.DictWriter(fh, fieldnames=fieldnames, extrasaction="ignore") 
         writer.writeheader()
         for r in all_rows:
             writer.writerow(r)
 
     logging.info(f"VS report saved: {outfile}")
     logging.info("---- Controller Summary ----")
-    total_vs = sum(v for _, _, v, _, _, _ in [(c, s, v, i, m, t) for c, s, v, i, m, t in summary])
-    total_time = sum(t for _, _, _, _, _, t in summary)
-    for ctrl, se_cnt, vs_cnt, inv_t, met_t, tot_t in summary:
-        logging.info(f"{ctrl:30s} | SEs={se_cnt:4d} VSs={vs_cnt:4d} | inventory={inv_t:6.2f}s metrics={met_t:6.2f}s total={tot_t:6.2f}s")
+    # Updated summary calculation: (ctrl, se_cnt, vs_cnt, inv_t, tot_t)
+    total_vs = sum(v for _, _, v, _, _ in summary)
+    total_time = sum(t for _, _, _, _, t in summary)
+    for ctrl, se_cnt, vs_cnt, inv_t, tot_t in summary:
+        # Updated summary output
+        logging.info(f"{ctrl:30s} | SEs={se_cnt:4d} VSs={vs_cnt:4d} | inventory={inv_t:6.2f}s total={tot_t:6.2f}s")
     logging.info(f"TOTAL Controllers={len(summary)} | VS={total_vs} | Time={total_time:.2f}s")
 
 
