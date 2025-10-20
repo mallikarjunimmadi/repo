@@ -1,628 +1,358 @@
-https://m00aviblb.local/api/virtualservice/virtualservice-378381d2-d815-4d40-aeab-b8704ec92ec0?include_name=true
-{
-  "_last_modified": "1753725881720812",
-  "active_standby_se_tag": "ACTIVE_STANDBY_SE_1",
-  "advertise_down_vs": false,
-  "allow_invalid_client_cert": false,
-  "analytics_policy": {
-    "all_headers": false,
-    "client_insights": "NO_INSIGHTS",
-    "full_client_logs": {
-      "duration": 0,
-      "enabled": false,
-      "throttle": 10
-    },
-    "learning_log_policy": {
-      "enabled": false
-    },
-    "metrics_realtime_update": {
-      "duration": 0,
-      "enabled": false
-    },
-    "significant_log_throttle": 10,
-    "udf_log_throttle": 10
-  },
-  "analytics_profile_ref": "https://m00aviblb.local/api/analyticsprofile/analyticsprofile-8b3297a9-9a94-4829-af79-8142187aca42#System-Analytics-Profile",
-  "application_profile_ref": "https://m00aviblb.local/api/applicationprofile/applicationprofile-f70a1d04-2e2e-4b7f-a948-0a39d1044ceb#System-Secure-HTTP",
-  "bulk_sync_kvcache": false,
-  "close_client_conn_on_config_update": false,
-  "cloud_ref": "https://m00aviblb.local/api/cloud/cloud-4be6603b-aeff-47b2-8948-29b29f0125bd#NSX-T-UAT",
-  "cloud_type": "CLOUD_NSXT",
-  "content_rewrite": {
-    "rewritable_content_ref": "https://m00aviblb.local/api/stringgroup/stringgroup-b2e290ba-f700-4bdd-8a88-c5ac52cc0fdc#System-Rewritable-Content-Types"
-  },
-  "delay_fairness": false,
-  "east_west_placement": false,
-  "enable_autogw": true,
-  "enable_session": false,
-  "enabled": true,
-  "error_page_profile_ref": "https://m00aviblb.local/api/errorpageprofile/errorpageprofile-8baf055e-25d5-40f3-9e69-720fd29a913e#Custom-Error-Page-Profile",
-  "flow_dist": "LOAD_AWARE",
-  "flow_label_type": "NO_LABEL",
-  "http_policies": [
-    {
-      "http_policy_set_ref": "https://m00aviblb.local/api/httppolicyset/httppolicyset-4023eb25-3b70-4e80-b7bf-4b05917b8300#GBSS_PHASE2_PREPROD_156.244_443-HTTPPolicySet-0",
-      "index": 11
-    }
-  ],
-  "ign_pool_net_reach": false,
-  "limit_doser": false,
-  "marked_for_delete": false,
-  "max_cps_per_client": 0,
-  "name": "GBSS_PHASE2_PREPROD_156.244_443",
-  "network_profile_ref": "https://m00aviblb.local/api/networkprofile/networkprofile-dde65285-fdb9-40c7-95bf-b6bc492532c6#System-TCP-Proxy",
-  "network_security_policy_ref": "https://m00aviblb.local/api/networksecuritypolicy/networksecuritypolicy-c4ede5b4-48d6-453d-9971-768599c91684#GBSS_PHASE2_PREPROD_156.244_443-NetworkSecurityPolicy",
-  "pool_ref": "https://m00aviblb.local/api/pool/pool-8d20b792-2889-4b57-abb6-1e6158798c2c#GBSS_PHASE2_PREPROD_156.244_443-pool",
-  "redis_db": 8,
-  "redis_port": 5022,
-  "remove_listening_port_on_vs_down": false,
-  "revoke_vip_route": false,
-  "scaleout_ecmp": false,
-  "se_group_ref": "https://m00aviblb.local/api/serviceenginegroup/serviceenginegroup-da54ef09-5f58-4bf6-9647-692623f2b64a#SE-Group-1-602",
-  "self_se_election": false,
-  "services": [
-    {
-      "enable_http2": false,
-      "enable_ssl": true,
-      "horizon_internal_ports": false,
-      "is_active_ftp_data_port": false,
-      "port": 443,
-      "port_range_end": 443
-    }
-  ],
-  "sideband_profile": {
-    "sideband_max_request_body_size": 1024
-  },
-  "ssl_key_and_certificate_refs": [
-    "https://m00aviblb.local/api/sslkeyandcertificate/sslkeyandcertificate-c8fdbc52-8d83-435b-a8b6-6377834be5b5#GBSS_PHASE2_PREPROD_156.244"
-  ],
-  "ssl_profile_ref": "https://m00aviblb.local/api/sslprofile/sslprofile-9e42b689-2d52-4dc2-a900-6689ebb9a3a7#System-Standard-PFS",
-  "ssl_sess_cache_avg_size": 1024,
-  "tenant_ref": "https://m00aviblb.local/api/tenant/admin#admin",
-  "tls_ticket_key": [
-    {
-      "aes_key": "G2kpmqBHagY49uKQsfwD5w==",
-      "hmac_key": "hEdKAAUCR4mUoedNYzMaIg==",
-      "name": "2bca889b-5789-4031-b9f6-47dc3c75896f"
-    },
-    {
-      "aes_key": "894ZdWGmYmIP+PI7hEqC8g==",
-      "hmac_key": "FmfzTwgzsxHg3E309ldaEw==",
-      "name": "2f8aa28d-d203-45b0-a327-47fdfb7238ae"
-    },
-    {
-      "aes_key": "nFCd7V6iM94FGoCGur5uDQ==",
-      "hmac_key": "AqQDsk2ITx4KzcJAtv0QMg==",
-      "name": "fc523618-b0a1-4859-9faf-cd7c9b3940ab"
-    }
-  ],
-  "traffic_enabled": true,
-  "type": "VS_TYPE_NORMAL",
-  "url": "https://m00aviblb.local/api/virtualservice/virtualservice-378381d2-d815-4d40-aeab-b8704ec92ec0#GBSS_PHASE2_PREPROD_156.244_443",
-  "use_bridge_ip_as_vip": false,
-  "use_vip_as_snat": true,
-  "uuid": "virtualservice-378381d2-d815-4d40-aeab-b8704ec92ec0",
-  "version": 2750,
-  "vh_type": "VS_TYPE_VH_SNI",
-  "vip_runtime": [
-    {
-      "first_se_assigned_time": {
-        "secs": 1757350292,
-        "usecs": 93852
-      },
-      "num_additional_se": 0,
-      "requested_resource": {
-        "num_se": 1,
-        "num_standby_se": 1
-      },
-      "se_list": [
-        {
-          "active_on_cloud": true,
-          "active_on_se": true,
-          "admin_down_requested": false,
-          "attach_ip_in_progress": false,
-          "cloud_programming_done": true,
-          "cloud_programming_status": "Virtual Service IP is reachable in the Cloud",
-          "delete_in_progress": false,
-          "detach_ip_in_progress": false,
-          "incarnation": "2025-10-02 14:20:03.646336",
-          "is_portchannel": false,
-          "is_primary": true,
-          "is_standby": false,
-          "memory": 11964,
-          "mgmt_ip": {
-            "addr": "10.191.100.12",
-            "type": "V4"
-          },
-          "route_revoked_pool_down": false,
-          "scaleout_in_progress": false,
-          "se_programming_done": true,
-          "se_ready_in_progress": false,
-          "se_ref": "https://m00aviblb.local/api/serviceengine/se-005056aeb2d7#avie_uat_Avi-se-lcjfz",
-          "sec_idx": 0,
-          "snat_ip": {
-            "addr": "10.191.156.244",
-            "type": "V4"
-          },
-          "vcpus": 6,
-          "vip6_subnet_mask": 128,
-          "vip_intf_list": [
-            {
-              "is_portchannel": false,
-              "vip_intf_ip": {
-                "addr": "10.191.157.159",
-                "type": "V4"
-              },
-              "vip_intf_mac": "00:50:56:ae:a0:11",
-              "vlan_id": 0
-            }
-          ],
-          "vip_intf_mac": "00:50:56:ae:a0:11",
-          "vip_subnet_mask": 32,
-          "vlan_id": 0,
-          "vnic": [
-            {
-              "mac": "00:50:56:ae:a0:11",
-              "type": "VNIC_TYPE_FE"
-            },
-            {
-              "mac": "00:50:56:ae:a0:11",
-              "type": "VNIC_TYPE_BE"
-            }
-          ]
-        },
-        {
-          "active_on_cloud": false,
-          "active_on_se": true,
-          "admin_down_requested": false,
-          "attach_ip_in_progress": false,
-          "cloud_programming_done": true,
-          "cloud_programming_status": "Virtual Service IP is not reachable in the Cloud",
-          "delete_in_progress": false,
-          "detach_ip_in_progress": false,
-          "incarnation": "2025-10-03 23:28:13.359681",
-          "is_portchannel": false,
-          "is_primary": false,
-          "is_standby": true,
-          "memory": 11964,
-          "mgmt_ip": {
-            "addr": "10.191.100.10",
-            "type": "V4"
-          },
-          "route_revoked_pool_down": false,
-          "scaleout_in_progress": false,
-          "se_programming_done": true,
-          "se_ready_in_progress": false,
-          "se_ref": "https://m00aviblb.local/api/serviceengine/se-005056ae2662#avie_uat_Avi-se-wjgos",
-          "sec_idx": 1,
-          "vcpus": 6,
-          "vip6_subnet_mask": 128,
-          "vip_intf_list": [
-            {
-              "is_portchannel": false,
-              "vip_intf_ip": {
-                "addr": "10.191.157.193",
-                "type": "V4"
-              },
-              "vip_intf_mac": "00:50:56:ae:df:61",
-              "vlan_id": 0
-            }
-          ],
-          "vip_intf_mac": "00:50:56:ae:df:61",
-          "vip_subnet_mask": 32,
-          "vlan_id": 0,
-          "vnic": [
-            {
-              "mac": "00:50:56:ae:df:61",
-              "type": "VNIC_TYPE_FE"
-            },
-            {
-              "mac": "00:50:56:ae:df:61",
-              "type": "VNIC_TYPE_BE"
-            }
-          ]
-        }
-      ],
-      "vip_id": "1"
-    }
-  ],
-  "vrf_context_ref": "https://m00aviblb.local/api/vrfcontext/vrfcontext-37cb1697-544f-402a-9e3c-d8d2390ab47c#global",
-  "vsvip_ref": "https://m00aviblb.local/api/vsvip/vsvip-29e22c94-4e1d-4e3c-968a-60cb8e240d2c#GBSS_PHASE2_PREPROD_156.244_443-VsVip",
-  "weight": 1
-}
+imallikarjun@ubuntu-01:~/scripts/nsxalb/dev$ python3 alb-vsInventory-v0.2_WIP.py
+/usr/lib/python3/dist-packages/requests/__init__.py:87: RequestsDependencyWarning: urllib3 (2.2.2) or chardet (4.0.0) doesn't match a supported version!
+  warnings.warn("urllib3 ({}) or chardet ({}) doesn't match a supported "
+--- Logging error ---
+Traceback (most recent call last):
+  File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 607, in parse_controllers
+    u, p = val.split(",", 1)
+ValueError: not enough values to unpack (expected 2, got 1)
 
-https://m00aviblb.local/api/virtualservice-inventory/virtualservice-378381d2-d815-4d40-aeab-b8704ec92ec0?include_name=true
+During handling of the above exception, another exception occurred:
 
-{
-  "config": {
-    "name": "GBSS_PHASE2_PREPROD_156.244_443",
-    "uuid": "virtualservice-378381d2-d815-4d40-aeab-b8704ec92ec0",
-    "url": "https://m00aviblb.local/api/virtualservice/virtualservice-378381d2-d815-4d40-aeab-b8704ec92ec0#GBSS_PHASE2_PREPROD_156.244_443",
-    "services": [
-      {
-        "port": 443,
-        "enable_ssl": true,
-        "port_range_end": 443,
-        "enable_http2": false,
-        "horizon_internal_ports": false,
-        "is_active_ftp_data_port": false
-      }
-    ],
-    "pool_ref": "https://m00aviblb.local/api/pool/pool-8d20b792-2889-4b57-abb6-1e6158798c2c#GBSS_PHASE2_PREPROD_156.244_443-pool",
-    "type": "VS_TYPE_NORMAL",
-    "tenant_ref": "https://m00aviblb.local/api/tenant/admin#admin",
-    "cloud_ref": "https://m00aviblb.local/api/cloud/cloud-4be6603b-aeff-47b2-8948-29b29f0125bd#NSX-T-UAT",
-    "se_group_ref": "https://m00aviblb.local/api/serviceenginegroup/serviceenginegroup-da54ef09-5f58-4bf6-9647-692623f2b64a#SE-Group-1-602",
-    "vrf_context_ref": "https://m00aviblb.local/api/vrfcontext/vrfcontext-37cb1697-544f-402a-9e3c-d8d2390ab47c#global",
-    "enabled": true,
-    "vsvip_ref": "https://m00aviblb.local/api/vsvip/vsvip-29e22c94-4e1d-4e3c-968a-60cb8e240d2c#GBSS_PHASE2_PREPROD_156.244_443-VsVip",
-    "vh_type": "VS_TYPE_VH_SNI",
-    "east_west_placement": false,
-    "dns_info": [],
-    "vip": [
-      {
-        "vip_id": "1",
-        "ip_address": {
-          "addr": "10.191.156.244",
-          "type": "V4"
-        },
-        "enabled": true,
-        "auto_allocate_ip": false,
-        "auto_allocate_floating_ip": false,
-        "avi_allocated_vip": false,
-        "avi_allocated_fip": false,
-        "auto_allocate_ip_type": "V4_ONLY",
-        "placement_networks": [
-          {
-            "subnet": {
-              "ip_addr": {
-                "addr": "10.191.152.0",
-                "type": "V4"
-              },
-              "mask": 21
-            },
-            "network_ref": "https://m00aviblb.local/api/network/network-b9909a62-a57e-4f71-9230-da545db91ead#m01-avi-se-b-uat-602"
-          }
-        ],
-        "prefix_length": 32
-      }
-    ]
-  },
-  "runtime": {
-    "oper_status": {
-      "state": "OPER_UP",
-      "last_changed_time": {
-        "secs": 1759414806,
-        "usecs": 585595
-      }
-    },
-    "one_plus_one_ha": true,
-    "percent_ses_up": 100,
-    "vip_summary": [
-      {
-        "vip_id": "1",
-        "oper_status": {
-          "state": "OPER_UP",
-          "last_changed_time": {
-            "secs": 1759414806,
-            "usecs": 585595
-          }
-        },
-        "service_engine": [
-          {
-            "uuid": "se-005056aeb2d7",
-            "primary": true,
-            "standby": false,
-            "connected": true,
-            "snat_ip": {
-              "addr": "10.191.156.244",
-              "type": "V4"
-            },
-            "mgmt_ip": {
-              "addr": "10.191.100.12",
-              "type": "V4"
-            },
-            "active_on_cloud": true,
-            "active_on_se": true,
-            "url": "https://m00aviblb.local/api/serviceengine/se-005056aeb2d7#avie_uat_Avi-se-lcjfz"
-          },
-          {
-            "uuid": "se-005056ae2662",
-            "primary": false,
-            "standby": true,
-            "connected": true,
-            "mgmt_ip": {
-              "addr": "10.191.100.10",
-              "type": "V4"
-            },
-            "active_on_cloud": false,
-            "active_on_se": true,
-            "url": "https://m00aviblb.local/api/serviceengine/se-005056ae2662#avie_uat_Avi-se-wjgos"
-          }
-        ],
-        "num_se_requested": 2,
-        "num_se_assigned": 2,
-        "percent_ses_up": 100,
-        "ip_address": {
-          "addr": "10.191.156.244",
-          "type": "V4"
-        },
-        "enabled": true,
-        "auto_allocate_ip": false,
-        "auto_allocate_floating_ip": false,
-        "avi_allocated_vip": false,
-        "avi_allocated_fip": false,
-        "auto_allocate_ip_type": "V4_ONLY",
-        "placement_networks": [
-          {
-            "subnet": {
-              "ip_addr": {
-                "addr": "10.191.152.0",
-                "type": "V4"
-              },
-              "mask": 21
-            },
-            "network_ref": "https://m00aviblb.local/api/network/network-b9909a62-a57e-4f71-9230-da545db91ead#m01-avi-se-b-uat-602"
-          }
-        ],
-        "prefix_length": 32
-      }
-    ]
-  },
-  "uuid": "virtualservice-378381d2-d815-4d40-aeab-b8704ec92ec0",
-  "health_score": {
-    "health_score": 94,
-    "anomaly_penalty": 0,
-    "resources_penalty": 6,
-    "performance_score": 100,
-    "security_penalty": 0
-  },
-  "alert": {
-    "low": 0,
-    "medium": 0,
-    "high": 0
-  },
-  "pools": [
-    "/api/pool/pool-8d20b792-2889-4b57-abb6-1e6158798c2c#GBSS_PHASE2_PREPROD_156.244_443-pool"
-  ],
-  "poolgroups": [],
-  "app_profile_type": "APPLICATION_PROFILE_TYPE_HTTP",
-  "has_pool_with_realtime_metrics": false,
-  "metrics": {
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/logging/__init__.py", line 1100, in emit
+    msg = self.format(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 943, in format
+    return fmt.format(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 681, in format
+    s = self.formatMessage(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 650, in formatMessage
+    return self._style.format(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 440, in format
+    return self._format(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 436, in _format
+    return self._fmt % values
+ValueError: unsupported format character 'Y' (0x59) at index 1
+Call stack:
+  File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 733, in <module>
+    main()
+  File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 653, in main
+    controllers = parse_controllers(cfg)
+  File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 610, in parse_controllers
+    logging.warning("Invalid creds format for %s; using DEFAULT creds.", host)
+Message: 'Invalid creds format for %s; using DEFAULT creds.'
+Arguments: ('avi_user',)
+--- Logging error ---
+Traceback (most recent call last):
+  File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 607, in parse_controllers
+    u, p = val.split(",", 1)
+ValueError: not enough values to unpack (expected 2, got 1)
 
-  }
-}
+During handling of the above exception, another exception occurred:
 
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/logging/__init__.py", line 1100, in emit
+    msg = self.format(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 943, in format
+    return fmt.format(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 681, in format
+    s = self.formatMessage(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 650, in formatMessage
+    return self._style.format(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 440, in format
+    return self._format(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 436, in _format
+    return self._fmt % values
+ValueError: unsupported format character 'Y' (0x59) at index 1
+Call stack:
+  File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 733, in <module>
+    main()
+  File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 653, in main
+    controllers = parse_controllers(cfg)
+  File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 610, in parse_controllers
+    logging.warning("Invalid creds format for %s; using DEFAULT creds.", host)
+Message: 'Invalid creds format for %s; using DEFAULT creds.'
+Arguments: ('avi_pass',)
+--- Logging error ---
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/logging/__init__.py", line 1100, in emit
+    msg = self.format(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 943, in format
+    return fmt.format(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 681, in format
+    s = self.formatMessage(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 650, in formatMessage
+    return self._style.format(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 440, in format
+    return self._format(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 436, in _format
+    return self._fmt % values
+ValueError: unsupported format character 'Y' (0x59) at index 1
+Call stack:
+  File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 733, in <module>
+    main()
+  File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 658, in main
+    logging.info("Controllers: %s", ", ".join([c for c, _ in controllers]))
+Message: 'Controllers: %s'
+Arguments: ('m00aviblb.corp.ad.sbi, avi_user, avi_pass',)
+--- Logging error ---
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/logging/__init__.py", line 1100, in emit
+    msg = self.format(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 943, in format
+    return fmt.format(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 681, in format
+    s = self.formatMessage(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 650, in formatMessage
+    return self._style.format(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 440, in format
+    return self._format(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 436, in _format
+    return self._fmt % values
+ValueError: unsupported format character 'Y' (0x59) at index 1
+Call stack:
+  File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 733, in <module>
+    main()
+  File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 659, in main
+    logging.info("Metrics: %s | step=%s | limit=%s", metrics_names, settings.get("api_step", 21600), settings.get("api_limit", 1))
+Message: 'Metrics: %s | step=%s | limit=%s'
+Arguments: (['l4_client.avg_bandwidth', 'l4_client.avg_new_established_conns', 'l4_client.avg_complete_conns', 'l4_client.max_open_conns', 'l7_client.avg_ssl_handshakes_new', 'l7_client.avg_ssl_connections', 'l7_client.avg_ssl_handshakes_reused'], '21600', '1')
+--- Logging error ---
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.10/dist-packages/urllib3/connection.py", line 196, in _new_conn
+    sock = connection.create_connection(
+  File "/usr/local/lib/python3.10/dist-packages/urllib3/util/connection.py", line 60, in create_connection
+    for res in socket.getaddrinfo(host, port, family, socket.SOCK_STREAM):
+  File "/usr/lib/python3.10/socket.py", line 955, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+socket.gaierror: [Errno -3] Temporary failure in name resolution
 
-https://m00aviblb.local/api/virtualservice/virtualservice-378381d2-d815-4d40-aeab-b8704ec92ec0?include_name=true&join=network_profile_ref%2Cserver_network_profile_ref%2Capplication_profile_ref%2Cpool_ref%2Cpool_group_ref%2Ccloud_ref%2Cssl_profile_ref%2Cssl_key_and_certificate_refs%2Cvsvip_ref%%2Cnetworkprofile
-{
-  "_last_modified": "1753725881720812",
-  "active_standby_se_tag": "ACTIVE_STANDBY_SE_1",
-  "advertise_down_vs": false,
-  "allow_invalid_client_cert": false,
-  "analytics_policy": {
-    "all_headers": false,
-    "client_insights": "NO_INSIGHTS",
-    "full_client_logs": {
-      "duration": 0,
-      "enabled": false,
-      "throttle": 10
-    },
-    "learning_log_policy": {
-      "enabled": false
-    },
-    "metrics_realtime_update": {
-      "duration": 0,
-      "enabled": false
-    },
-    "significant_log_throttle": 10,
-    "udf_log_throttle": 10
-  },
-  "analytics_profile_ref": "https://m00aviblb.local/api/analyticsprofile/analyticsprofile-8b3297a9-9a94-4829-af79-8142187aca42#System-Analytics-Profile",
-  "application_profile_ref": "https://m00aviblb.local/api/applicationprofile/applicationprofile-f70a1d04-2e2e-4b7f-a948-0a39d1044ceb#System-Secure-HTTP",
-  "bulk_sync_kvcache": false,
-  "close_client_conn_on_config_update": false,
-  "cloud_ref": "https://m00aviblb.local/api/cloud/cloud-4be6603b-aeff-47b2-8948-29b29f0125bd#NSX-T-UAT",
-  "cloud_type": "CLOUD_NSXT",
-  "content_rewrite": {
-    "rewritable_content_ref": "https://m00aviblb.local/api/stringgroup/stringgroup-b2e290ba-f700-4bdd-8a88-c5ac52cc0fdc#System-Rewritable-Content-Types"
-  },
-  "delay_fairness": false,
-  "east_west_placement": false,
-  "enable_autogw": true,
-  "enable_session": false,
-  "enabled": true,
-  "error_page_profile_ref": "https://m00aviblb.local/api/errorpageprofile/errorpageprofile-8baf055e-25d5-40f3-9e69-720fd29a913e#Custom-Error-Page-Profile",
-  "flow_dist": "LOAD_AWARE",
-  "flow_label_type": "NO_LABEL",
-  "http_policies": [
-    {
-      "http_policy_set_ref": "https://m00aviblb.local/api/httppolicyset/httppolicyset-4023eb25-3b70-4e80-b7bf-4b05917b8300#GBSS_PHASE2_PREPROD_156.244_443-HTTPPolicySet-0",
-      "index": 11
-    }
-  ],
-  "ign_pool_net_reach": false,
-  "limit_doser": false,
-  "marked_for_delete": false,
-  "max_cps_per_client": 0,
-  "name": "GBSS_PHASE2_PREPROD_156.244_443",
-  "network_profile_ref": "https://m00aviblb.local/api/networkprofile/networkprofile-dde65285-fdb9-40c7-95bf-b6bc492532c6#System-TCP-Proxy",
-  "network_security_policy_ref": "https://m00aviblb.local/api/networksecuritypolicy/networksecuritypolicy-c4ede5b4-48d6-453d-9971-768599c91684#GBSS_PHASE2_PREPROD_156.244_443-NetworkSecurityPolicy",
-  "pool_ref": "https://m00aviblb.local/api/pool/pool-8d20b792-2889-4b57-abb6-1e6158798c2c#GBSS_PHASE2_PREPROD_156.244_443-pool",
-  "redis_db": 8,
-  "redis_port": 5022,
-  "remove_listening_port_on_vs_down": false,
-  "revoke_vip_route": false,
-  "scaleout_ecmp": false,
-  "se_group_ref": "https://m00aviblb.local/api/serviceenginegroup/serviceenginegroup-da54ef09-5f58-4bf6-9647-692623f2b64a#SE-Group-1-602",
-  "self_se_election": false,
-  "services": [
-    {
-      "enable_http2": false,
-      "enable_ssl": true,
-      "horizon_internal_ports": false,
-      "is_active_ftp_data_port": false,
-      "port": 443,
-      "port_range_end": 443
-    }
-  ],
-  "sideband_profile": {
-    "sideband_max_request_body_size": 1024
-  },
-  "ssl_key_and_certificate_refs": [
-    "https://m00aviblb.local/api/sslkeyandcertificate/sslkeyandcertificate-c8fdbc52-8d83-435b-a8b6-6377834be5b5#GBSS_PHASE2_PREPROD_156.244"
-  ],
-  "ssl_profile_ref": "https://m00aviblb.local/api/sslprofile/sslprofile-9e42b689-2d52-4dc2-a900-6689ebb9a3a7#System-Standard-PFS",
-  "ssl_sess_cache_avg_size": 1024,
-  "tenant_ref": "https://m00aviblb.local/api/tenant/admin#admin",
-  "tls_ticket_key": [
-    {
-      "aes_key": "G2kpmqBHagY49uKQsfwD5w==",
-      "hmac_key": "hEdKAAUCR4mUoedNYzMaIg==",
-      "name": "2bca889b-5789-4031-b9f6-47dc3c75896f"
-    },
-    {
-      "aes_key": "894ZdWGmYmIP+PI7hEqC8g==",
-      "hmac_key": "FmfzTwgzsxHg3E309ldaEw==",
-      "name": "2f8aa28d-d203-45b0-a327-47fdfb7238ae"
-    },
-    {
-      "aes_key": "nFCd7V6iM94FGoCGur5uDQ==",
-      "hmac_key": "AqQDsk2ITx4KzcJAtv0QMg==",
-      "name": "fc523618-b0a1-4859-9faf-cd7c9b3940ab"
-    }
-  ],
-  "traffic_enabled": true,
-  "type": "VS_TYPE_NORMAL",
-  "url": "https://m00aviblb.local/api/virtualservice/virtualservice-378381d2-d815-4d40-aeab-b8704ec92ec0#GBSS_PHASE2_PREPROD_156.244_443",
-  "use_bridge_ip_as_vip": false,
-  "use_vip_as_snat": true,
-  "uuid": "virtualservice-378381d2-d815-4d40-aeab-b8704ec92ec0",
-  "version": 2750,
-  "vh_type": "VS_TYPE_VH_SNI",
-  "vip_runtime": [
-    {
-      "first_se_assigned_time": {
-        "secs": 1757350292,
-        "usecs": 93852
-      },
-      "num_additional_se": 0,
-      "requested_resource": {
-        "num_se": 1,
-        "num_standby_se": 1
-      },
-      "se_list": [
-        {
-          "active_on_cloud": true,
-          "active_on_se": true,
-          "admin_down_requested": false,
-          "attach_ip_in_progress": false,
-          "cloud_programming_done": true,
-          "cloud_programming_status": "Virtual Service IP is reachable in the Cloud",
-          "delete_in_progress": false,
-          "detach_ip_in_progress": false,
-          "incarnation": "2025-10-02 14:20:03.646336",
-          "is_portchannel": false,
-          "is_primary": true,
-          "is_standby": false,
-          "memory": 11964,
-          "mgmt_ip": {
-            "addr": "10.191.100.12",
-            "type": "V4"
-          },
-          "route_revoked_pool_down": false,
-          "scaleout_in_progress": false,
-          "se_programming_done": true,
-          "se_ready_in_progress": false,
-          "se_ref": "https://m00aviblb.local/api/serviceengine/se-005056aeb2d7#avie_uat_Avi-se-lcjfz",
-          "sec_idx": 0,
-          "snat_ip": {
-            "addr": "10.191.156.244",
-            "type": "V4"
-          },
-          "vcpus": 6,
-          "vip6_subnet_mask": 128,
-          "vip_intf_list": [
-            {
-              "is_portchannel": false,
-              "vip_intf_ip": {
-                "addr": "10.191.157.159",
-                "type": "V4"
-              },
-              "vip_intf_mac": "00:50:56:ae:a0:11",
-              "vlan_id": 0
-            }
-          ],
-          "vip_intf_mac": "00:50:56:ae:a0:11",
-          "vip_subnet_mask": 32,
-          "vlan_id": 0,
-          "vnic": [
-            {
-              "mac": "00:50:56:ae:a0:11",
-              "type": "VNIC_TYPE_FE"
-            },
-            {
-              "mac": "00:50:56:ae:a0:11",
-              "type": "VNIC_TYPE_BE"
-            }
-          ]
-        },
-        {
-          "active_on_cloud": false,
-          "active_on_se": true,
-          "admin_down_requested": false,
-          "attach_ip_in_progress": false,
-          "cloud_programming_done": true,
-          "cloud_programming_status": "Virtual Service IP is not reachable in the Cloud",
-          "delete_in_progress": false,
-          "detach_ip_in_progress": false,
-          "incarnation": "2025-10-03 23:28:13.359681",
-          "is_portchannel": false,
-          "is_primary": false,
-          "is_standby": true,
-          "memory": 11964,
-          "mgmt_ip": {
-            "addr": "10.191.100.10",
-            "type": "V4"
-          },
-          "route_revoked_pool_down": false,
-          "scaleout_in_progress": false,
-          "se_programming_done": true,
-          "se_ready_in_progress": false,
-          "se_ref": "https://m00aviblb.local/api/serviceengine/se-005056ae2662#avie_uat_Avi-se-wjgos",
-          "sec_idx": 1,
-          "vcpus": 6,
-          "vip6_subnet_mask": 128,
-          "vip_intf_list": [
-            {
-              "is_portchannel": false,
-              "vip_intf_ip": {
-                "addr": "10.191.157.193",
-                "type": "V4"
-              },
-              "vip_intf_mac": "00:50:56:ae:df:61",
-              "vlan_id": 0
-            }
-          ],
-          "vip_intf_mac": "00:50:56:ae:df:61",
-          "vip_subnet_mask": 32,
-          "vlan_id": 0,
-          "vnic": [
-            {
-              "mac": "00:50:56:ae:df:61",
-              "type": "VNIC_TYPE_FE"
-            },
-            {
-              "mac": "00:50:56:ae:df:61",
-              "type": "VNIC_TYPE_BE"
-            }
-          ]
-        }
-      ],
-      "vip_id": "1"
-    }
-  ],
-  "vrf_context_ref": "https://m00aviblb.local/api/vrfcontext/vrfcontext-37cb1697-544f-402a-9e3c-d8d2390ab47c#global",
-  "vsvip_ref": "https://m00aviblb.local/api/vsvip/vsvip-29e22c94-4e1d-4e3c-968a-60cb8e240d2c#GBSS_PHASE2_PREPROD_156.244_443-VsVip",
-  "weight": 1
-}
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.10/dist-packages/urllib3/connectionpool.py", line 789, in urlopen
+    response = self._make_request(
+  File "/usr/local/lib/python3.10/dist-packages/urllib3/connectionpool.py", line 490, in _make_request
+    raise new_e
+  File "/usr/local/lib/python3.10/dist-packages/urllib3/connectionpool.py", line 466, in _make_request
+    self._validate_conn(conn)
+  File "/usr/local/lib/python3.10/dist-packages/urllib3/connectionpool.py", line 1095, in _validate_conn
+    conn.connect()
+  File "/usr/local/lib/python3.10/dist-packages/urllib3/connection.py", line 615, in connect
+    self.sock = sock = self._new_conn()
+  File "/usr/local/lib/python3.10/dist-packages/urllib3/connection.py", line 203, in _new_conn
+    raise NameResolutionError(self.host, self, e) from e
+urllib3.exceptions.NameResolutionError: <urllib3.connection.HTTPSConnection object at 0x7f4949f4df30>: Failed to resolve 'avi_user' ([Errno -3] Temporary failure in name resolution)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3/dist-packages/requests/adapters.py", line 439, in send
+    resp = conn.urlopen(
+  File "/usr/local/lib/python3.10/dist-packages/urllib3/connectionpool.py", line 843, in urlopen
+    retries = retries.increment(
+  File "/usr/local/lib/python3.10/dist-packages/urllib3/util/retry.py", line 519, in increment
+    raise MaxRetryError(_pool, url, reason) from reason  # type: ignore[arg-type]
+urllib3.exceptions.MaxRetryError: HTTPSConnectionPool(host='avi_user', port=443): Max retries exceeded with url: /login (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x7f4949f4df30>: Failed to resolve 'avi_user' ([Errno -3] Temporary failure in name resolution)"))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 714, in main
+    ctrl, vs_count, inv_secs, met_secs, total_secs = fut.result()
+  File "/usr/lib/python3.10/concurrent/futures/_base.py", line 451, in result
+    return self.__get_result()
+  File "/usr/lib/python3.10/concurrent/futures/_base.py", line 403, in __get_result
+    raise self._exception
+  File "/usr/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 549, in controller_run
+    client.login(creds[0], creds[1])
+  File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 223, in login
+    r = self.sess.post(url, json={"username": user, "password": password}, timeout=30)
+  File "/usr/lib/python3/dist-packages/requests/sessions.py", line 592, in post
+    return self.request('POST', url, data=data, json=json, **kwargs)
+  File "/usr/lib/python3/dist-packages/requests/sessions.py", line 544, in request
+    resp = self.send(prep, **send_kwargs)
+  File "/usr/lib/python3/dist-packages/requests/sessions.py", line 657, in send
+    r = adapter.send(request, **kwargs)
+  File "/usr/lib/python3/dist-packages/requests/adapters.py", line 516, in send
+    raise ConnectionError(e, request=request)
+requests.exceptions.ConnectionError: HTTPSConnectionPool(host='avi_user', port=443): Max retries exceeded with url: /login (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x7f4949f4df30>: Failed to resolve 'avi_user' ([Errno -3] Temporary failure in name resolution)"))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/logging/__init__.py", line 1100, in emit
+    msg = self.format(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 943, in format
+    return fmt.format(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 681, in format
+    s = self.formatMessage(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 650, in formatMessage
+    return self._style.format(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 440, in format
+    return self._format(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 436, in _format
+    return self._fmt % values
+ValueError: unsupported format character 'Y' (0x59) at index 1
+Call stack:
+  File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 733, in <module>
+    main()
+  File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 717, in main
+    logging.error("Controller task error: %s", e)
+Message: 'Controller task error: %s'
+Arguments: (ConnectionError(MaxRetryError('HTTPSConnectionPool(host=\'avi_user\', port=443): Max retries exceeded with url: /login (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x7f4949f4df30>: Failed to resolve \'avi_user\' ([Errno -3] Temporary failure in name resolution)"))')),)
+--- Logging error ---
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.10/dist-packages/urllib3/connection.py", line 196, in _new_conn
+    sock = connection.create_connection(
+  File "/usr/local/lib/python3.10/dist-packages/urllib3/util/connection.py", line 60, in create_connection
+    for res in socket.getaddrinfo(host, port, family, socket.SOCK_STREAM):
+  File "/usr/lib/python3.10/socket.py", line 955, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+socket.gaierror: [Errno -3] Temporary failure in name resolution
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.10/dist-packages/urllib3/connectionpool.py", line 789, in urlopen
+    response = self._make_request(
+  File "/usr/local/lib/python3.10/dist-packages/urllib3/connectionpool.py", line 490, in _make_request
+    raise new_e
+  File "/usr/local/lib/python3.10/dist-packages/urllib3/connectionpool.py", line 466, in _make_request
+    self._validate_conn(conn)
+  File "/usr/local/lib/python3.10/dist-packages/urllib3/connectionpool.py", line 1095, in _validate_conn
+    conn.connect()
+  File "/usr/local/lib/python3.10/dist-packages/urllib3/connection.py", line 615, in connect
+    self.sock = sock = self._new_conn()
+  File "/usr/local/lib/python3.10/dist-packages/urllib3/connection.py", line 203, in _new_conn
+    raise NameResolutionError(self.host, self, e) from e
+urllib3.exceptions.NameResolutionError: <urllib3.connection.HTTPSConnection object at 0x7f4949f4e200>: Failed to resolve 'avi_pass' ([Errno -3] Temporary failure in name resolution)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3/dist-packages/requests/adapters.py", line 439, in send
+    resp = conn.urlopen(
+  File "/usr/local/lib/python3.10/dist-packages/urllib3/connectionpool.py", line 843, in urlopen
+    retries = retries.increment(
+  File "/usr/local/lib/python3.10/dist-packages/urllib3/util/retry.py", line 519, in increment
+    raise MaxRetryError(_pool, url, reason) from reason  # type: ignore[arg-type]
+urllib3.exceptions.MaxRetryError: HTTPSConnectionPool(host='avi_pass', port=443): Max retries exceeded with url: /login (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x7f4949f4e200>: Failed to resolve 'avi_pass' ([Errno -3] Temporary failure in name resolution)"))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 714, in main
+    ctrl, vs_count, inv_secs, met_secs, total_secs = fut.result()
+  File "/usr/lib/python3.10/concurrent/futures/_base.py", line 451, in result
+    return self.__get_result()
+  File "/usr/lib/python3.10/concurrent/futures/_base.py", line 403, in __get_result
+    raise self._exception
+  File "/usr/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 549, in controller_run
+    client.login(creds[0], creds[1])
+  File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 223, in login
+    r = self.sess.post(url, json={"username": user, "password": password}, timeout=30)
+  File "/usr/lib/python3/dist-packages/requests/sessions.py", line 592, in post
+    return self.request('POST', url, data=data, json=json, **kwargs)
+  File "/usr/lib/python3/dist-packages/requests/sessions.py", line 544, in request
+    resp = self.send(prep, **send_kwargs)
+  File "/usr/lib/python3/dist-packages/requests/sessions.py", line 657, in send
+    r = adapter.send(request, **kwargs)
+  File "/usr/lib/python3/dist-packages/requests/adapters.py", line 516, in send
+    raise ConnectionError(e, request=request)
+requests.exceptions.ConnectionError: HTTPSConnectionPool(host='avi_pass', port=443): Max retries exceeded with url: /login (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x7f4949f4e200>: Failed to resolve 'avi_pass' ([Errno -3] Temporary failure in name resolution)"))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/logging/__init__.py", line 1100, in emit
+    msg = self.format(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 943, in format
+    return fmt.format(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 681, in format
+    s = self.formatMessage(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 650, in formatMessage
+    return self._style.format(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 440, in format
+    return self._format(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 436, in _format
+    return self._fmt % values
+ValueError: unsupported format character 'Y' (0x59) at index 1
+Call stack:
+  File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 733, in <module>
+    main()
+  File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 717, in main
+    logging.error("Controller task error: %s", e)
+Message: 'Controller task error: %s'
+Arguments: (ConnectionError(MaxRetryError('HTTPSConnectionPool(host=\'avi_pass\', port=443): Max retries exceeded with url: /login (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x7f4949f4e200>: Failed to resolve \'avi_pass\' ([Errno -3] Temporary failure in name resolution)"))')),)
+--- Logging error ---
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/logging/__init__.py", line 1100, in emit
+    msg = self.format(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 943, in format
+    return fmt.format(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 681, in format
+    s = self.formatMessage(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 650, in formatMessage
+    return self._style.format(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 440, in format
+    return self._format(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 436, in _format
+    return self._fmt % values
+ValueError: unsupported format character 'Y' (0x59) at index 1
+Call stack:
+  File "/usr/lib/python3.10/threading.py", line 973, in _bootstrap
+    self._bootstrap_inner()
+  File "/usr/lib/python3.10/threading.py", line 1016, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.10/threading.py", line 953, in run
+    self._target(*self._args, **self._kwargs)
+  File "/usr/lib/python3.10/concurrent/futures/thread.py", line 83, in _worker
+    work_item.run()
+  File "/usr/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 549, in controller_run
+    client.login(creds[0], creds[1])
+  File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 225, in login
+    logging.info("[%s] Logged in", self.base_hostname)
+Message: '[%s] Logged in'
+Arguments: ('m00aviblb.corp.ad.sbi',)
+--- Logging error ---
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/logging/__init__.py", line 1100, in emit
+    msg = self.format(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 943, in format
+    return fmt.format(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 681, in format
+    s = self.formatMessage(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 650, in formatMessage
+    return self._style.format(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 440, in format
+    return self._format(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 436, in _format
+    return self._fmt % values
+ValueError: unsupported format character 'Y' (0x59) at index 1
+Call stack:
+  File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 733, in <module>
+    main()
+  File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 727, in main
+    logging.info("[%s] VS fetched: %s | inventory: %.2fs | metrics: %.2fs | total: %.2fs",
+Message: '[%s] VS fetched: %s | inventory: %.2fs | metrics: %.2fs | total: %.2fs'
+Arguments: ('m00aviblb.corp.ad.sbi', 25, 0.42955517768859863, 13.38269853591919, 14.119152784347534)
+--- Logging error ---
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/logging/__init__.py", line 1100, in emit
+    msg = self.format(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 943, in format
+    return fmt.format(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 681, in format
+    s = self.formatMessage(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 650, in formatMessage
+    return self._style.format(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 440, in format
+    return self._format(record)
+  File "/usr/lib/python3.10/logging/__init__.py", line 436, in _format
+    return self._fmt % values
+ValueError: unsupported format character 'Y' (0x59) at index 1
+Call stack:
+  File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 733, in <module>
+    main()
+  File "/home/imallikarjun/scripts/nsxalb/dev/alb-vsInventory-v0.2_WIP.py", line 729, in main
+    logging.info("CSV written: %s (rows=%d)", out_csv, len(all_rows))
+Message: 'CSV written: %s (rows=%d)'
+Arguments: ('./alb_vsInventory_20251020T155551.csv', 25)
+imallikarjun@ubuntu-01:~/scripts/nsxalb/dev$
