@@ -1,3 +1,5 @@
+?include_name=true&join=vsvip%2Cnetwork_profile_ref%2Cserver_network_profile_ref%2Capplication_profile_ref%2Cpool_ref%2Cpool_group_ref%2Ccloud_ref%2Cssl_profile_ref%2Cssl_key_and_certificate_refs%2Cvsvip_ref%2Cnetworkprofile&page_size=200
+
 {
   "_last_modified": "1756065612740222",
   "active_standby_se_tag": "ACTIVE_STANDBY_SE_1",
