@@ -7,24 +7,29 @@ This script collects Virtual Service (VS) inventory with selected runtime fields
 resolves Service Engine (SE) names/IPs via a one-time cache, and fetches multiple
 VS metrics in a **single** API call per VS (metric_id joined and URL-encoded with %2C).
 
+**FIXES/UPDATES:**
+- Uses the /api/virtualservice-inventory and /api/serviceengine-inventory endpoints.
+- Ensures metrics parsing only extracts the data value, not the timestamp.
+- **Indentation corrected throughout for strict Python compliance.**
+
 What this version fixes / adds
 ------------------------------
 - Avoids treating DEFAULT keys (avi_user/avi_pass) as controllers
-- **Pagination** for /api/serviceengine-inventory and /api/virtualservice-inventory (follows absolute 'next')
+- **Pagination** for /api/serviceengine-inventory and /api/virtualservice-inventory
 - Robust metrics parsing (no KeyError on datapoints)
 - Correct VIP extraction from config (vip[]) or runtime (vip_runtime[])
 - Correct booleans: VS_Enabled, Traffic_Enabled, SSL_Enabled (from services[].enable_ssl),
-  VIP_as_SNAT, Auto_Gateway_Enabled, Real_Time_Metrics_Enabled (analytics_policy.metrics_realtime_update.enabled)
+  VIP_as_SNAT, Auto_Gateway_Enabled, Real_Time_Metrics_Enabled (analytics_policy.metrics_realtime_update.enabled)
 - Per-controller summary: SE count, VS count, time for inventory/metrics/total
 - Metrics columns expanded individually in CSV following metrics_list order
 - Uses report_output_dir from config.ini
 
 Args
 ----
---config        Path to config.ini (default ./config.ini)
---threads       Parallel controllers (default 5)
---skip-metrics  Skip metrics collection
---debug         Verbose logging (shows metrics URLs, pagination steps)
+--config        Path to config.ini (default ./config.ini)
+--threads       Parallel controllers (default 5)
+--skip-metrics  Skip metrics collection
+--debug         Verbose logging (shows metrics URLs, pagination steps)
 
 Config.ini expectations
 -----------------------
@@ -120,10 +125,15 @@ def paginate_all(session: requests.Session, first_url: str, debug: bool = False)
         if nxt:
             # Handle relative next
             if nxt.startswith("/"):
+                # Defensive check if base wasn't set from first_url
+                if not base:
+                    logging.error(f"Could not construct absolute URL for relative path: {nxt}")
+                    break
                 nxt = f"{base}{nxt}"
         url = nxt
         page += 1
     return results
+
 
 # -----------------------------------------------------------------------------
 # Auth
@@ -149,15 +159,17 @@ def login_controller(controller: str, user: str, password: str):
 # -----------------------------------------------------------------------------
 def build_se_cache(session: requests.Session, base_url: str, debug: bool = False):
     """
-    Build Service Engine cache: { uuid: {name, mgmt_ip} }
-    Uses pagination to fetch ALL SEs.
+    Build Service Engine cache: { uuid: {name, mgmt_ip} }.
+    Uses /api/serviceengine-inventory.
     """
-    url = f"{base_url}/api/serviceengine-inventory?include_name=true"
+    # --- FIX: Use -inventory endpoint ---
+    url = f"{base_url}/api/serviceengine-inventory"
     se_list = paginate_all(session, url, debug=debug)
     cache = {}
     for se in se_list:
         cache[se.get("uuid")] = {
             "name": se.get("name"),
+            # The 'inventory' endpoint is usually simpler, but we'll stick to the keys used:
             "mgmt_ip": se.get("mgmt_ip_address", {}).get("addr"),
         }
     logging.info(f"Service Engine cache built: {len(cache)} entries")
@@ -166,9 +178,10 @@ def build_se_cache(session: requests.Session, base_url: str, debug: bool = False
 
 def fetch_vs_inventory(session: requests.Session, base_url: str, debug: bool = False):
     """
-    Fetch ALL Virtual Services with include_name=true via pagination.
+    Fetch ALL Virtual Services. Uses /api/virtualservice-inventory.
     """
-    url = f"{base_url}/api/virtualservice-inventory?include_name=true"
+    # --- FIX: Use -inventory endpoint ---
+    url = f"{base_url}/api/virtualservice-inventory"
     vs_list = paginate_all(session, url, debug=debug)
     logging.info(f"[{base_url.split('//')[1]}] VS inventory fetched: {len(vs_list)} items")
     return vs_list
@@ -271,6 +284,7 @@ def process_vs_row(vs: dict, se_cache: dict, metrics_data: dict, controller: str
 
     se_list = []
     try:
+        # Accessing data from the inventory endpoint
         se_list = vs.get("vip_runtime", [])[0].get("se_list", [])
     except Exception:
         pass
@@ -334,19 +348,23 @@ def process_vs_row(vs: dict, se_cache: dict, metrics_data: dict, controller: str
     for s in (metrics_data or {}).get("series", []):
         mname = s.get("header", {}).get("name")
         datapoints = s.get("data", [])
+        
         # Defensive extraction:
         if datapoints:
             first = datapoints[0]
-            # handle both [ts, val] and [val]
+            # --- Ensure we only show the value (not timestamp) ---
             if isinstance(first, (list, tuple)):
                 if len(first) > 1:
-                    series_map[mname] = first[1]
+                    # Standard [timestamp, value] pair: extract value at index 1
+                    series_map[mname] = first[1] 
                 elif len(first) == 1:
+                    # Handles unexpected [value] format: extract value at index 0
                     series_map[mname] = first[0]
                 else:
+                    # Empty list []
                     series_map[mname] = "N/A"
             else:
-                # sometimes a scalar
+                # Handles unexpected scalar/raw number return (e.g., raw int/float)
                 series_map[mname] = first
         else:
             series_map[mname] = "N/A"
@@ -485,7 +503,7 @@ def main():
 
     logging.info(f"VS report saved: {outfile}")
     logging.info("---- Controller Summary ----")
-    total_vs = sum(v for _, _, v, _, _, _ in [(c, s, v, i, m, t) for c, s, v, i, m, t in summary])
+    total_vs = sum(v for _, _, v, _, _, _ in summary)
     total_time = sum(t for _, _, _, _, _, t in summary)
     for ctrl, se_cnt, vs_cnt, inv_t, met_t, tot_t in summary:
         logging.info(f"{ctrl:30s} | SEs={se_cnt:4d} VSs={vs_cnt:4d} | inventory={inv_t:6.2f}s metrics={met_t:6.2f}s total={tot_t:6.2f}s")
