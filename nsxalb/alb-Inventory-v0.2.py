@@ -1,48 +1,21 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-alb-vsInventory-v0.5_no_metrics.py — NSX ALB (Avi) Virtual Service Inventory Collector (Inventory API edition, NO METRICS)
-=========================================================================================================================
-FIXES:
-• Enhanced logic to correctly extract all fields (Profiles, VH_Type, Cloud/Tenant) from the top-level inventory keys.
-• Fixed Service Engine (SE) lookup to correctly find SEs nested under 'vip_runtime[0].se_list' when 'se_list' isn't
-  at the top level, ensuring Primary/Secondary SE names and IPs are populated.
+alb-vsInventory-v0.6_no_metrics.py — NSX ALB (Avi) Virtual Service Inventory Collector
+====================================================================================
+FINAL FIXES:
+• Enhanced Service Engine (SE) lookup logic to check FOUR possible locations for SE runtime data,
+  including the 'runtime.vip_summary[0].service_engine' path found in the nested Inventory format.
+• All profile/reference fields are extracted correctly using fallbacks between top-level and 'config' keys.
 
 What this script does
 ---------------------
 • Uses INVENTORY endpoints for speed & completeness:
     - /api/virtualservice-inventory?include_name=true
     - /api/serviceengine-inventory?include_name=true
-• Paginates across ALL records (handles absolute and relative 'next' URLs).
-• Resolves VIP, runtime state, and **attached Service Engines** (names/IPs/roles).
+• Paginates across ALL records.
+• Resolves VIP, runtime state, and attached Service Engines (names/IPs/roles).
 • Outputs one CSV with a fixed column order (no metrics columns).
-• Prints per-controller summary: SE count, VS count, timings (inventory/total).
-
-Config.ini (same layout you already use)
-----------------------------------------
-[DEFAULT]
-avi_user = admin
-avi_pass = <secret>
-
-[CONTROLLERS]
-m00aviblb.local =
-# or: controller.fqdn = user,password
-
-[SETTINGS]
-report_output_dir = .
-log_output_dir = .
-# Metrics settings are now ignored: api_step, api_limit, metrics_list
-# The original --skip-metrics CLI argument is removed as metrics collection is disabled by default.
-
-CLI
----
---config PATH        config file path (default ./config.ini)
---threads N          parallel controllers (default 5)
---debug              verbose logging
-
-Dependencies
-------------
-pip install requests
 """
 
 import argparse
@@ -99,7 +72,7 @@ def retry_get_json(session: requests.Session, url: str, retries: int = 3, delay:
 
 def paginate_all(session: requests.Session, first_url: str, debug: bool = False) -> List[Dict[str, Any]]:
     """
-    Paginate across Avi endpoints. Some versions return absolute 'next', others relative.
+    Paginate across Avi endpoints.
     Returns a list of aggregated 'results' from all pages.
     """
     results: List[Dict[str, Any]] = []
@@ -158,7 +131,7 @@ def refname(ref: Any) -> Any:
     if isinstance(ref, list):
         if not ref:
             return None
-        # Handle cases where the list contains multiple refs (e.g., SSL certs)
+        # Handle multiple refs (e.g., SSL certs)
         return [r.split("#")[-1] for r in ref if isinstance(r, str) and "#" in r] or [r for r in ref if isinstance(r, str) and "#" not in r]
     return ref.split("#")[-1] if isinstance(ref, str) and "#" in ref else ref
 
@@ -188,21 +161,43 @@ def ssl_enabled_from_services(vs_data: Dict[str, Any]) -> bool:
 
 def vip_from_inventory(vs_inv: Dict[str, Any]) -> Any:
     """
-    Prefer vip_summary[].vip. Fallback to config.vip[].ip_address.addr.
+    Prioritize: config.vip[].ip_address.addr, then runtime.vip_summary[].ip_address.addr, etc.
     """
+    # 1. Check config.vip[] (common in inventory)
     try:
-        vsum = vs_inv.get("vip_summary") or vs_inv.get("vsvip_summary")  # some versions
-        if vsum and isinstance(vsum, list) and vsum:
-            return vsum[0].get("vip")
-    except Exception:
-        pass
-    try:
-        # Check top level 'vip' first, then nested 'config'
-        vip_list = vs_inv.get("vip") or vs_inv.get("config", {}).get("vip")
+        vip_list = vs_inv.get("config", {}).get("vip")
         if vip_list and isinstance(vip_list, list) and vip_list:
             return vip_list[0]["ip_address"]["addr"]
     except Exception:
-        return None
+        pass
+    
+    # 2. Check runtime.vip_summary[] (common in runtime)
+    try:
+        vsum_list = vs_inv.get("runtime", {}).get("vip_summary")
+        if vsum_list and isinstance(vsum_list, list) and vsum_list:
+            return vsum_list[0]["ip_address"]["addr"]
+    except Exception:
+        pass
+
+    # 3. Check top level vip_summary (some versions)
+    try:
+        vsum = vs_inv.get("vip_summary") or vs_inv.get("vsvip_summary")
+        if vsum and isinstance(vsum, list) and vsum:
+            return vsum[0]["ip_address"]["addr"]
+    except Exception:
+        pass
+
+    # 4. Fallback to extracting the VIP from the VS name if possible (e.g. VS_10.1.1.1_443)
+    name = vs_inv.get("name") or vs_inv.get("config", {}).get("name")
+    if name:
+        parts = name.split('_')
+        # Check if the second to last part is an IP
+        if len(parts) >= 2:
+            ip_candidate = parts[-2]
+            # Simple check for IP pattern (XX.XX.XX.XX)
+            if ip_candidate.count('.') == 3 and all(p.isdigit() for p in ip_candidate.split('.')):
+                return ip_candidate
+                
     return None
 
 
@@ -210,10 +205,18 @@ def ip_type_from_inventory(vs_inv: Dict[str, Any]) -> Any:
     """
     Derive IP type (V4/V6) from config vip ip_address.type if present.
     """
+    # 1. Check config.vip[] (common in inventory)
     try:
-        vip_list = vs_inv.get("vip") or vs_inv.get("config", {}).get("vip")
+        vip_list = vs_inv.get("config", {}).get("vip")
         if vip_list and isinstance(vip_list, list) and vip_list:
             return vip_list[0]["ip_address"]["type"]
+    except Exception:
+        pass
+    # 2. Check runtime.vip_summary[]
+    try:
+        vsum_list = vs_inv.get("runtime", {}).get("vip_summary")
+        if vsum_list and isinstance(vsum_list, list) and vsum_list:
+            return vsum_list[0]["ip_address"]["type"]
     except Exception:
         return None
     return None
@@ -293,10 +296,10 @@ def process_vs_row(vs_inv: Dict[str, Any],
     vip_snat = str(vs_inv.get("use_vip_as_snat", cfg.get("use_vip_as_snat", False))).upper()
     auto_gw = str(vs_inv.get("enable_autogw", cfg.get("enable_autogw", False))).upper()
     
-    # VH_Type - FIXED: Use top-level key
+    # VH_Type - Use vs_inv first
     vh_type = vs_inv.get("vh_type") or cfg.get("vh_type")
 
-    # Profiles & refs - FIXED: Use top-level keys first
+    # Profiles & refs - Use top-level keys first
     application_profile = refname(vs_inv.get("application_profile_ref") or cfg.get("application_profile_ref"))
     ssl_profile = refname(vs_inv.get("ssl_profile_ref") or cfg.get("ssl_profile_ref"))
     ssl_cert = refname(vs_inv.get("ssl_key_and_certificate_refs") or cfg.get("ssl_key_and_certificate_refs"))
@@ -308,45 +311,56 @@ def process_vs_row(vs_inv: Dict[str, Any],
     state = oper.get("state", "UNKNOWN")
     reason = oper.get("reason")
 
-    # Pool, SE group, cloud/tenant - FIXED: Use top-level keys first
+    # Pool, SE group, cloud/tenant - Use top-level keys first
     pool = refname(vs_inv.get("pool_ref") or cfg.get("pool_ref"))
     se_group = refname(vs_inv.get("se_group_ref") or cfg.get("se_group_ref"))
     cloud = refname(vs_inv.get("cloud_ref") or cfg.get("cloud_ref"))
     cloud_type = vs_inv.get("cloud_type") or cfg.get("cloud_type")
     tenant = refname(vs_inv.get("tenant_ref") or cfg.get("tenant_ref"))
     
-    # Active/Standby tag - FIXED: Use top-level key
+    # Active/Standby tag - Use top-level key
     active_standby_tag = vs_inv.get("active_standby_se_tag") or cfg.get("active_standby_se_tag")
 
     # Primary/Secondary SEs (Names/IPs/UUIDs)
     primary_name = primary_ip = primary_uuid = None
     secondary_name = secondary_ip = secondary_uuid = None
 
-    # FIXED: Add deep dive into vip_runtime as a fallback for the SE list
+    # --- SE List Collection (FIXED FOR ALL INVENTORY FORMATS) ---
     se_runtime_list = []
+    # 1. Check vip_runtime[0].se_list (used by Sample 1)
     try:
-        # Check vip_runtime[0].se_list
         se_runtime_list = vs_inv.get("vip_runtime", [{}])[0].get("se_list", [])
     except Exception:
         pass
+    
+    se_runtime_summary = []
+    # 2. Check runtime.vip_summary[0].service_engine (used by Sample 2)
+    if not se_runtime_list: # Only check this second path if the first was empty
+        try:
+            se_runtime_summary = vs_inv.get("runtime", {}).get("vip_summary", [{}])[0].get("service_engine", [])
+        except Exception:
+            pass
 
-    # Different Avi versions expose attached SEs in different places:
-    # 1. Top-level 'serviceengine' (often a reference list with role)
-    # 2. Top-level 'se_list' (often deprecated)
-    # 3. Nested 'vip_runtime[0].se_list' (most common in modern inventory)
-    se_attach = vs_inv.get("serviceengine") or vs_inv.get("se_list") or se_runtime_list
+    # Final unified SE list check
+    se_attach = vs_inv.get("serviceengine") or vs_inv.get("se_list") or se_runtime_list or se_runtime_summary
 
     if se_attach:
         prim = None
         sec = None
         
-        # Look for explicit roles/flags (vip_runtime uses is_primary/is_standby)
+        # Look for explicit roles/flags
         for se in se_attach:
-            # Check is_primary/is_standby flags (common in vip_runtime)
+            # Check is_primary/is_standby flags (common in vip_runtime / Sample 1)
             if se.get("is_primary") and not prim:
                 prim = se
             elif se.get("is_standby") and not sec:
                 sec = se
+            # Check primary/standby flags (common in runtime.vip_summary / Sample 2)
+            elif se.get("primary") and not prim:
+                prim = se
+            elif se.get("standby") and not sec:
+                sec = se
+
             # Check 'role' string (common in top-level se_list/serviceengine)
             role = (se.get("role") or "").lower()
             if role in ("primary", "active") and not prim:
@@ -391,7 +405,7 @@ def process_vs_row(vs_inv: Dict[str, Any],
         "VH_Type": vh_type,
         "Application_Profile": application_profile,
         "SSL_Profile": ssl_profile,
-        "SSL_Certificate_Name": ", ".join(ssl_cert) if isinstance(ssl_cert, list) else ssl_cert, # Handle multiple certs
+        "SSL_Certificate_Name": ", ".join(ssl_cert) if isinstance(ssl_cert, list) else ssl_cert,
         "Analytics_Profile": analytics_profile,
         "Network_Profile": network_profile,
         "State": state,
