@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-alb-vsInventory-v1.3_robust_vsvip_ref_extraction.py — NSX ALB (Avi) Virtual Service Inventory Collector
+alb-vsInventory-v1.4_dual_ip_extraction_fix.py — NSX ALB (Avi) Virtual Service Inventory Collector
 =====================================================================================================
-v1.3 FIXES (Targeting VIP/Network Extraction):
-• Implemented robust extraction for VIPs defined using either 'ip_address' (V4/V6) 
-  or 'ip6_address' keys within the VSVIP object.
-• Added a new column 'Placement_Network' derived from vsvip_ref_data->vip->placement_networks->network_ref.
+v1.4 FIXES (Targeting Dual-Stack Extraction):
+• Implemented a fix in get_all_vip_addresses to ensure BOTH 'ip_address' (IPv4) 
+  and 'ip6_address' (IPv6) are extracted from a single VSVIP entry if both are configured.
+• The 'Placement_Network' column extraction is now fully integrated.
 """
 
 import argparse
@@ -129,6 +129,8 @@ def refname(ref: Any) -> Any:
         return None
     
     def extract_single_ref(r: str) -> str:
+        if not isinstance(r, str):
+            return ""
         if "#" in r:
             return r.split("#")[-1]
         elif "/" in r:
@@ -168,7 +170,7 @@ def ssl_enabled_from_services(vs_data: Dict[str, Any]) -> bool:
             return True
     return False
 
-# --- NEW UTILITY FOR VSVIP REFERENCE LOOKUP ---
+# --- UTILITY FOR VSVIP REFERENCE LOOKUP ---
 def fetch_vsvip_data(session: requests.Session, base_url: str, vs_inv: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
     Fetches the actual VSVIP object data if a vsvip_ref is present in the VS.
@@ -212,7 +214,7 @@ def get_placement_network(vip_entry: Dict[str, Any]) -> str | None:
 # -------------------------------------------------
 
 
-# --- VIP EXTRACTION LOGIC (v1.3) ---
+# --- VIP EXTRACTION LOGIC (v1.4) ---
 def get_all_vip_addresses(session: requests.Session, base_url: str, vs_inv: Dict[str, Any]) -> Tuple[str | None, str | None, str | None]:
     """
     Collects all unique IPv4/IPv6 addresses and their placement networks.
@@ -246,42 +248,48 @@ def get_all_vip_addresses(session: requests.Session, base_url: str, vs_inv: Dict
             continue
             
         for vip_entry in vip_list:
-            addr = None
-            addr_type = None
             
-            # --- Primary check for the presence of V4/V6 IP keys in the entry ---
+            # Temporary list to hold addresses/types found in this single vip_entry
+            found_addrs: List[Tuple[str, str]] = []
             
-            # a. Check for the specific 'ip_address' structure (V4 or V6 VIP)
+            # Get Placement Network for this VIP entry (applies to both V4/V6 derived from it)
+            placement_network = get_placement_network(vip_entry) or "N/A"
+            
+            # --- CRITICAL CHANGE: CHECK FOR V4 AND V6 INDEPENDENTLY WITHIN THE ENTRY ---
+            
+            # a. Check for IPv4 address ('ip_address' structure)
             ip_address_data = vip_entry.get("ip_address")
             if isinstance(ip_address_data, dict) and ip_address_data.get("addr"):
                 addr = ip_address_data.get("addr")
-                addr_type = ip_address_data.get("type", "V4")
-            
-            # b. Check for the specific 'ip6_address' structure (V6 only VIP)
-            elif 'ip6_address' in vip_entry:
-                ip6_address_data = vip_entry.get("ip6_address")
-                if isinstance(ip6_address_data, dict) and ip6_address_data.get("addr"):
-                    addr = ip6_address_data.get("addr") 
-                    addr_type = ip6_address_data.get("type", "V6") 
+                if addr not in unique_ips:
+                    found_addrs.append((addr, "V4"))
+
+            # b. Check for IPv6 address ('ip6_address' structure)
+            ip6_address_data = vip_entry.get("ip6_address")
+            if isinstance(ip6_address_data, dict) and ip6_address_data.get("addr"):
+                addr = ip6_address_data.get("addr")
+                if addr not in unique_ips:
+                    found_addrs.append((addr, "V6"))
             
             # c. Fallback for simpler runtime/status summaries (addr/type at top level)
-            elif 'addr' in vip_entry and 'type' in vip_entry:
-                addr = vip_entry.get('addr')
-                addr_type = vip_entry.get('type')
+            if not found_addrs:
+                if 'addr' in vip_entry and 'type' in vip_entry:
+                    addr = vip_entry.get('addr')
+                    addr_type = vip_entry.get('type')
+                    if addr and addr_type:
+                        # Standardize type output
+                        type_str = "V4" if 'V4' in addr_type.upper() else "V6" if 'V6' in addr_type.upper() else "Unknown"
+                        if addr not in unique_ips:
+                            found_addrs.append((addr, type_str))
 
 
-            # 3. Process the discovered address
-            if addr and addr_type:
-                if addr not in unique_ips:
+            # 3. Process the discovered addresses for this entry
+            for addr, addr_type in found_addrs:
+                if addr and addr not in unique_ips:
                     unique_ips.add(addr)
                     ip_list.append(addr)
-                    
-                    # Standardize type output
-                    type_str = "V4" if 'V4' in addr_type.upper() else "V6" if 'V6' in addr_type.upper() else "Unknown"
-                    type_list.append(type_str)
-                    
-                    # Extract Placement Network for this VIP entry
-                    network_list.append(get_placement_network(vip_entry) or "N/A")
+                    type_list.append(addr_type)
+                    network_list.append(placement_network) # Associate the network with each IP
     
     ip_str = "; ".join(ip_list) if ip_list else None
     type_str = "; ".join(type_list) if type_list else None
@@ -335,7 +343,7 @@ def fetch_vs_inventory(session: requests.Session, base_url: str, debug: bool = F
 # -----------------------------------------------------------------------------
 # Row assembly (CSV)
 # -----------------------------------------------------------------------------
-# --- CSV COLUMN DEFINITION (NEW COLUMN ADDED) ---
+# --- CSV COLUMN DEFINITION ---
 FIXED_COLS = [
     "Controller", "Virtual_Service_Name", "VS_VIP_Addresses", "VS_VIP_Types", "Placement_Network",
     "Port", "VS_Enabled", "Traffic_Enabled", "SSL_Enabled", "VIP_as_SNAT", "Auto_Gateway_Enabled",
@@ -464,7 +472,7 @@ def process_vs_row(vs_inv: Dict[str, Any],
         "Virtual_Service_Name": name,
         "VS_VIP_Addresses": vip_addresses_str,
         "VS_VIP_Types": vip_types_str,
-        "Placement_Network": placement_network_str, # <--- NEW VALUE
+        "Placement_Network": placement_network_str, 
         "Port": port,
         "VS_Enabled": vs_enabled,
         "Traffic_Enabled": traffic_enabled,
