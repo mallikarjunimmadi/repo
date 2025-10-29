@@ -1,14 +1,21 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-oswbb_ping_report.py — Parse OSWbb ping output and produce latency reports.
+oswbb_ping_report.py — Parse OSWbb ping outputs and generate 3 reports (by default).
 
-Usage:
-  python3 oswbb_ping_report.py --root /data/oswbb [--infilename]
+Outputs (always generated):
+  1) Full report:     per (subdir[, file], src, dst) with buckets + min/max
+  2) Anomalies:       only rows where any >=1ms bucket is non-zero
+  3) Simple summary:  overall totals across all files: <1ms, >1ms & <=10ms, >10ms
 
-Outputs:
-  • <root>_ping_report_full_<timestamp>.csv
-  • <root>_ping_report_anomalies_<timestamp>.csv
+Assumptions:
+  • Folder layout: <root>/<subdir>/oswprvtnet/<files>
+  • Scans only *.dat unless --extensions provided
+  • Output filenames start with <root_basename> and include timestamp
+  • Min/Max are per (src_ip, dst_ip) pair (optionally split by file if --infilename)
+
+Run with zero args to scan current directory:
+  python3 oswbb_ping_report.py
 """
 
 import argparse
@@ -19,7 +26,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Tuple, Iterable, Optional
 
-# --- Regex Patterns ---
+# --- Regexes ---
 PING_HEADER_RE = re.compile(
     r"^\s*PING\s+(?P<dest_host>[^\s]+)\s*\((?P<dest_ip>\d{1,3}(?:\.\d{1,3}){3})\)"
     r"(?:\s+from\s+(?P<src_ip>\d{1,3}(?:\.\d{1,3}){3}))?",
@@ -30,7 +37,6 @@ PING_REPLY_RE = re.compile(
     re.IGNORECASE
 )
 
-# ---------------------------------------------------------------------
 def bucket_for_latency(ms: float) -> str:
     if ms < 1.0:
         return "lt_1ms"
@@ -40,9 +46,8 @@ def bucket_for_latency(ms: float) -> str:
         return "ge_2_lt_5_ms"
     return "ge_5_ms"
 
-
 def get_named_subdirectory(path: Path, marker_dir: str) -> Optional[str]:
-    """Return the directory immediately above the marker_dir."""
+    """Return the directory name immediately above marker_dir (e.g., 'db-rac1')."""
     parts = path.parts
     try:
         idx = len(parts) - 1 - list(reversed(parts)).index(marker_dir)
@@ -52,7 +57,6 @@ def get_named_subdirectory(path: Path, marker_dir: str) -> Optional[str]:
         return None
     return None
 
-
 def should_include(path: Path, marker_dir: str, extensions: Optional[Iterable[str]]) -> bool:
     if not path.is_file():
         return False
@@ -61,19 +65,21 @@ def should_include(path: Path, marker_dir: str, extensions: Optional[Iterable[st
     exts = {e.lower() for e in extensions} if extensions else {".dat"}
     return path.suffix.lower() in exts
 
-
 def find_files(root: Path, marker_dir: str, extensions: Optional[Iterable[str]]) -> Iterable[Path]:
     for p in root.rglob("*"):
         if should_include(p, marker_dir, extensions):
             yield p
 
-
-# ---------------------------------------------------------------------
 def parse_file(path: Path,
                counters: Dict[Tuple[str, str, str, str], Dict[str, float]],
                marker_dir: str,
-               include_file: bool) -> None:
-    """Parse a file, update latency bucket counters and min/max."""
+               include_file: bool,
+               simple_totals: Dict[str, int]) -> None:
+    """
+    Parse one file and update:
+      - detailed counters per (subdir, [file], src, dst)
+      - global simple_totals for the simple summary
+    """
     subdir_name = get_named_subdirectory(path, marker_dir)
     if not subdir_name:
         return
@@ -100,6 +106,7 @@ def parse_file(path: Path,
                     ms = float(m_rep.group("ms"))
                     dst_ip = current_dst or m_rep.group("from_ip")
                     src_ip = current_src or "UNKNOWN"
+
                     key = (subdir_name, file_name, src_ip, dst_ip)
                     if key not in counters:
                         counters[key] = {
@@ -111,22 +118,27 @@ def parse_file(path: Path,
                             "max": ms,
                         }
                     else:
-                        # Update min/max
                         counters[key]["min"] = min(counters[key]["min"], ms)
                         counters[key]["max"] = max(counters[key]["max"], ms)
-                    # Increment appropriate bucket
+
+                    # Detailed bucket
                     counters[key][bucket_for_latency(ms)] += 1
+
+                    # Simple totals
+                    if ms < 1.0:
+                        simple_totals["lt_1ms"] += 1
+                    elif ms <= 10.0:
+                        simple_totals["gt_1_le_10_ms"] += 1
+                    else:
+                        simple_totals["gt_10_ms"] += 1
 
     except Exception as e:
         logging.exception("Failed to parse %s: %s", path, e)
 
-
-# ---------------------------------------------------------------------
-def write_csv(out_path: Path,
-              counters: Dict[Tuple[str, str, str, str], Dict[str, float]],
-              include_file: bool,
-              anomalies_only: bool = False) -> int:
-    """Write CSV file."""
+def write_full_or_anomalies_csv(out_path: Path,
+                                counters: Dict[Tuple[str, str, str, str], Dict[str, float]],
+                                include_file: bool,
+                                anomalies_only: bool = False) -> int:
     rows_written = 0
     header = ["subdirectory"]
     if include_file:
@@ -157,27 +169,41 @@ def write_csv(out_path: Path,
             rows_written += 1
     return rows_written
 
+def write_simple_csv(out_path: Path, simple_totals: Dict[str, int]) -> int:
+    """Write the overall-only simple summary CSV."""
+    with out_path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["category", "count"])
+        writer.writerow(["<1ms", simple_totals["lt_1ms"]])
+        writer.writerow([">1ms & <=10ms", simple_totals["gt_1_le_10_ms"]])
+        writer.writerow([">10ms", simple_totals["gt_10_ms"]])
+    return 3
 
-# ---------------------------------------------------------------------
-def build_output_paths(root: Path, base_output: Path, timestamp: str, kind: str) -> Path:
-    """Build output path prefixed with root basename and timestamped."""
+def build_output_path(root: Path, base_output: Path, timestamp: str, kind: str) -> Path:
+    """
+    Build output path prefixed with root basename and timestamped.
+    kind ∈ {"full","anomalies","simple"}.
+    Result: <dir>/<root>_ping_report_<kind>_<timestamp>.csv
+    """
     root_prefix = root.name
     return base_output.with_name(
         f"{root_prefix}_ping_report_{kind}_{timestamp}{base_output.suffix}"
     ).resolve()
 
-
 def main():
-    ap = argparse.ArgumentParser(description="Generate latency-bucket report from OSWbb ping outputs.")
-    ap.add_argument("--root", required=True, help="Root directory to scan recursively.")
-    ap.add_argument("--output", default="ping_report.csv", help="Base filename for reports.")
-    ap.add_argument("--marker-dir", default="oswprvtnet", help="Marker directory (default: oswprvtnet).")
-    ap.add_argument("--extensions", nargs="*", help="File extensions (default: .dat only).")
-    ap.add_argument("--infilename", action="store_true", help="Include file name column in reports.")
-    ap.add_argument("--verbose", action="store_true", help="Enable INFO logging.")
-    ap.add_argument("--debug", action="store_true", help="Enable DEBUG logging.")
+    ap = argparse.ArgumentParser(
+        description="Generate latency reports (full, anomalies, and simple summary) from OSWbb ping outputs."
+    )
+    ap.add_argument("--root", default=".", help="Root directory to scan recursively. Default: current directory.")
+    ap.add_argument("--output", default="ping_report.csv", help="Base filename for reports (prefix/timestamp auto).")
+    ap.add_argument("--marker-dir", default="oswprvtnet", help="Marker directory name. Default: oswprvtnet")
+    ap.add_argument("--extensions", nargs="*", help="File extensions to include. Default: .dat only.")
+    ap.add_argument("--infilename", action="store_true", help="Include file name column in detailed reports.")
+    ap.add_argument("--verbose", action="store_true", help="Enable INFO logs.")
+    ap.add_argument("--debug", action="store_true", help="Enable DEBUG logs.")
     args = ap.parse_args()
 
+    # Logging
     level = logging.WARNING
     if args.verbose:
         level = logging.INFO
@@ -189,21 +215,37 @@ def main():
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     counters: Dict[Tuple[str, str, str, str], Dict[str, float]] = {}
+    simple_totals = {"lt_1ms": 0, "gt_1_le_10_ms": 0, "gt_10_ms": 0}
+
     files = list(find_files(root, args.marker_dir, args.extensions))
     logging.info("Found %d matching files", len(files))
 
     for file_path in files:
-        parse_file(file_path, counters, args.marker_dir, include_file=args.infilename)
+        parse_file(
+            file_path,
+            counters=counters,
+            marker_dir=args.marker_dir,
+            include_file=args.infilename,
+            simple_totals=simple_totals,
+        )
 
     base_out = Path(args.output).resolve()
-    full_path = build_output_paths(root, base_out, timestamp, "full")
-    anomalies_path = build_output_paths(root, base_out, timestamp, "anomalies")
+    full_path = build_output_path(root, base_out, timestamp, "full")
+    anomalies_path = build_output_path(root, base_out, timestamp, "anomalies")
+    simple_path = build_output_path(root, base_out, timestamp, "simple")
 
-    total = write_csv(full_path, counters, include_file=args.infilename, anomalies_only=False)
-    anomalies = write_csv(anomalies_path, counters, include_file=args.infilename, anomalies_only=True)
+    total_rows = write_full_or_anomalies_csv(full_path, counters, include_file=args.infilename, anomalies_only=False)
+    anom_rows = write_full_or_anomalies_csv(anomalies_path, counters, include_file=args.infilename, anomalies_only=True)
+    write_simple_csv(simple_path, simple_totals)
 
-    print(f"Done.\n- Full report: {full_path} ({total} rows)\n- Anomalies:  {anomalies_path} ({anomalies} rows)")
+    total_samples = simple_totals["lt_1ms"] + simple_totals["gt_1_le_10_ms"] + simple_totals["gt_10_ms"]
 
+    print("Done.")
+    print(f"- Full report:    {full_path} ({total_rows} rows)")
+    print(f"- Anomalies:      {anomalies_path} ({anom_rows} rows)")
+    print(f"- Simple summary: {simple_path} (3 rows)")
+    print(f"Totals: samples={total_samples}, <1ms={simple_totals['lt_1ms']}, "
+          f">1ms & <=10ms={simple_totals['gt_1_le_10_ms']}, >10ms={simple_totals['gt_10_ms']}")
 
 if __name__ == "__main__":
     main()
