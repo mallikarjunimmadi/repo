@@ -1,26 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-oswbb_ping_report.py — Parse OSWbb ping outputs and generate 3 reports (by default).
+oswbb_ping_report_v3.py — Parse OSWbb ping outputs and generate 3 reports (full, anomalies, simple).
 
-What's new in this version
---------------------------
-• Default extensions now: .dat AND .dat.gz
-• Also scans inside .zip archives found under --root (recursively)
-• Only inspect files that live under an 'oswprvtnet' folder (on disk or inside zips)
+✅ NEW IN THIS VERSION
+----------------------
+• Default extensions: `.dat` and `.dat.gz`
+• Processes files inside `.zip` archives (any depth)
+• Works even if `oswprvtnet` appears in mixed case (case-insensitive match)
+• Handles `.dat.gz` inside `.zip`
+• Keeps `--infilename` logic, subdir detection, global min/max tracking
 
-Outputs (always generated)
---------------------------
-1) Full report:     per (subdir[, file], src, dst) with buckets + min/max
-2) Anomalies:       only rows where any >=1ms bucket is non-zero
-3) Simple summary:  overall totals across all files: <1ms, >1ms & <=10ms, >10ms
-
-Other behavior
---------------
-• Folder layout assumed: <root>/<subdir>/oswprvtnet/<files>
-• Output filenames start with <root_basename> and include timestamp
-• Min/Max are per (src_ip, dst_ip) pair (optionally split by file if --infilename)
-• Console summary prints totals AND global min/max observed
+USAGE
+-----
+python3 oswbb_ping_report_v3.py --root /path/to/osw --infilename
 """
 
 import argparse
@@ -32,9 +25,11 @@ import re
 import zipfile
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Tuple, Iterable, Optional, Iterator, Union
+from typing import Dict, Tuple, Iterable, Optional, Union, Iterator
 
-# ---------- Regexes ----------
+# --------------------------------------------------------------------
+# Regex for parsing ping output
+# --------------------------------------------------------------------
 PING_HEADER_RE = re.compile(
     r"^\s*PING\s+(?P<dest_host>[^\s]+)\s*\((?P<dest_ip>\d{1,3}(?:\.\d{1,3}){3})\)"
     r"(?:\s+from\s+(?P<src_ip>\d{1,3}(?:\.\d{1,3}){3}))?",
@@ -45,7 +40,9 @@ PING_REPLY_RE = re.compile(
     re.IGNORECASE
 )
 
-# ---------- Helpers ----------
+# --------------------------------------------------------------------
+# Helper functions
+# --------------------------------------------------------------------
 def bucket_for_latency(ms: float) -> str:
     if ms < 1.0:
         return "lt_1ms"
@@ -55,128 +52,99 @@ def bucket_for_latency(ms: float) -> str:
         return "ge_2_lt_5_ms"
     return "ge_5_ms"
 
-def get_named_subdirectory_from_parts(parts: Iterable[str], marker_dir: str) -> Optional[str]:
-    """Return the directory name immediately above marker_dir from a path parts list."""
+def get_named_subdirectory(parts: Iterable[str], marker_dir: str) -> Optional[str]:
+    """Return the directory name immediately above marker_dir (case-insensitive)."""
     parts = list(parts)
-    try:
-        # last index of marker_dir
-        idx = len(parts) - 1 - list(reversed(parts)).index(marker_dir)
-        if idx - 1 >= 0:
+    lower_parts = [p.lower() for p in parts]
+    marker = marker_dir.lower()
+    if marker in lower_parts:
+        idx = lower_parts.index(marker)
+        if idx > 0:
             return parts[idx - 1]
-    except ValueError:
-        return None
     return None
+
+def should_include_suffix(suffixes: list[str], extensions: Optional[Iterable[str]]) -> bool:
+    """Match extension set like .dat or .dat.gz"""
+    ext = None
+    if suffixes and suffixes[-1].lower() == ".gz" and len(suffixes) >= 2:
+        ext = "".join(suffixes[-2:]).lower()
+    elif suffixes:
+        ext = suffixes[-1].lower()
+    else:
+        ext = ""
+    exts = {e.lower() for e in extensions} if extensions else {".dat", ".dat.gz"}
+    return ext in exts
 
 def build_output_path(root: Path, base_output: Path, timestamp: str, kind: str) -> Path:
     root_prefix = root.name
-    return base_output.with_name(
-        f"{root_prefix}_ping_report_{kind}_{timestamp}{base_output.suffix}"
-    ).resolve()
+    return base_output.with_name(f"{root_prefix}_ping_report_{kind}_{timestamp}{base_output.suffix}").resolve()
 
-# ---------- File discovery (disk + zip) ----------
-# A "source item" can be:
-#  - ("disk", Path) for a regular file on disk
-#  - ("zip", Path_to_zip, inner_path_str) for an entry inside a .zip
+# --------------------------------------------------------------------
+# Source discovery (on disk and inside ZIPs)
+# --------------------------------------------------------------------
 SourceItem = Union[Tuple[str, Path], Tuple[str, Path, str]]
 
-def should_include_suffix(suffix: str, extensions: Optional[Iterable[str]]) -> bool:
-    if extensions:
-        exts = {e.lower() for e in extensions}
-    else:
-        exts = {".dat", ".dat.gz"}  # default
-    return suffix.lower() in exts
-
 def iter_disk_files(root: Path, marker_dir: str, extensions: Optional[Iterable[str]]) -> Iterator[SourceItem]:
-    """Yield ("disk", file_path) for qualifying files under marker_dir."""
     for p in root.rglob("*"):
-        if not p.is_file():
+        if not p.is_file() or p.suffix.lower() == ".zip":
             continue
-        # Skip zipfiles here; handled separately
-        if p.suffix.lower() == ".zip":
+        if marker_dir.lower() not in (s.lower() for s in p.parts):
             continue
-        # Require marker_dir in path parts
-        if marker_dir not in p.parts:
-            continue
-        # Match extension (including .gz)
-        # For .dat.gz, Path.suffix is ".gz" and suffixes is [".dat", ".gz"]
-        if p.suffix.lower() == ".gz":
-            suff = "".join(p.suffixes[-2:]) if len(p.suffixes) >= 2 else p.suffix
-        else:
-            suff = p.suffix
-        if should_include_suffix(suff, extensions):
+        if should_include_suffix(p.suffixes, extensions):
             yield ("disk", p)
 
 def iter_zip_files(root: Path, marker_dir: str, extensions: Optional[Iterable[str]]) -> Iterator[SourceItem]:
-    """Yield ("zip", zip_path, inner_name) for qualifying entries under marker_dir inside zips."""
+    """Scan zip archives under root for oswprvtnet files"""
     for zp in root.rglob("*.zip"):
         try:
             with zipfile.ZipFile(zp, "r") as zf:
                 for name in zf.namelist():
-                    # Ignore directories
                     if name.endswith("/"):
                         continue
-                    inner_parts = Path(name).parts
-                    if marker_dir not in inner_parts:
+                    # case-insensitive folder match
+                    if f"/{marker_dir.lower()}/" not in name.lower():
                         continue
-                    # compute effective suffix for .dat or .dat.gz
-                    inner_suffixes = Path(name).suffixes
-                    if inner_suffixes and inner_suffixes[-1].lower() == ".gz":
-                        eff = "".join(inner_suffixes[-2:]).lower() if len(inner_suffixes) >= 2 else ".gz"
-                    else:
-                        eff = (inner_suffixes[-1].lower() if inner_suffixes else "")
-                    if should_include_suffix(eff, extensions):
+                    if should_include_suffix(Path(name).suffixes, extensions):
                         yield ("zip", zp, name)
         except Exception as e:
-            logging.exception("Failed to read zip %s: %s", zp, e)
+            logging.error("Error reading zip %s: %s", zp, e)
 
 def find_sources(root: Path, marker_dir: str, extensions: Optional[Iterable[str]]) -> Iterator[SourceItem]:
-    """Combine disk files and zip entries."""
+    """Combine local and zip-based sources."""
     yield from iter_disk_files(root, marker_dir, extensions)
     yield from iter_zip_files(root, marker_dir, extensions)
 
-# ---------- Unified open + meta for SourceItem ----------
-def open_source_text(si: SourceItem) -> Tuple[io.TextIOBase, str, Optional[str]]:
-    """
-    Open a SourceItem and return a text stream, along with:
-      - file_label (used when --infilename is on)
-      - subdirectory name (dir immediately above marker_dir), if derivable here (zip needs separate logic)
-    Note: We return subdir None here; caller computes from path parts (works for both disk & zip).
-    """
+# --------------------------------------------------------------------
+# File opening logic (disk / zip)
+# --------------------------------------------------------------------
+def open_source(si: SourceItem) -> io.TextIOBase:
+    """Open any source as text stream."""
     kind = si[0]
     if kind == "disk":
-        _, p = si
-        # handle .dat.gz as text
-        if p.suffix.lower() == ".gz":
-            # may be .dat.gz — open with gzip
-            fh = gzip.open(p, mode="rt", encoding="utf-8", errors="ignore")
-        else:
-            fh = p.open("r", encoding="utf-8", errors="ignore")
-        return fh, p.name, None
+        _, path = si
+        if path.suffix.lower() == ".gz":
+            return io.TextIOWrapper(gzip.open(path, "rb"), encoding="utf-8", errors="ignore")
+        return path.open("r", encoding="utf-8", errors="ignore")
     else:
-        _, zp, inner = si  # type: ignore
+        _, zp, inner = si
         zf = zipfile.ZipFile(zp, "r")
-        raw = zf.open(inner, "r")
-        # If inner is gz, wrap with gzip; else decode
+        raw = zf.open(inner)
         if inner.lower().endswith(".gz"):
-            gz = gzip.GzipFile(fileobj=raw, mode="rb")
-            fh = io.TextIOWrapper(gz, encoding="utf-8", errors="ignore")
-        else:
-            fh = io.TextIOWrapper(raw, encoding="utf-8", errors="ignore")
-        label = f"{zp.name}::{inner}"
-        # We intentionally do not close zf/raw here; rely on TextIOWrapper to close underlying file.
-        return fh, label, None
+            return io.TextIOWrapper(gzip.GzipFile(fileobj=raw), encoding="utf-8", errors="ignore")
+        return io.TextIOWrapper(raw, encoding="utf-8", errors="ignore")
 
-def parts_for_source(si: SourceItem) -> Tuple[Iterable[str], str]:
-    """Return (path_parts_like, file_basename_label) for subdir extraction and logging."""
-    kind = si[0]
-    if kind == "disk":
-        _, p = si
-        return p.parts, p.name
+def describe_source(si: SourceItem) -> Tuple[str, list[str]]:
+    """Return (label, path_parts) for naming/subdir derivation."""
+    if si[0] == "disk":
+        _, path = si
+        return path.name, list(path.parts)
     else:
-        _, zp, inner = si  # type: ignore
-        return Path(inner).parts, f"{zp.name}::{inner}"
+        _, zp, inner = si
+        return f"{zp.name}::{inner}", Path(inner).parts
 
-# ---------- Parsing ----------
+# --------------------------------------------------------------------
+# Parsing logic
+# --------------------------------------------------------------------
 def parse_source(
     si: SourceItem,
     counters: Dict[Tuple[str, str, str, str], Dict[str, float]],
@@ -184,76 +152,70 @@ def parse_source(
     include_file: bool,
     simple_totals: Dict[str, float],
 ) -> None:
-    """Parse one SourceItem (disk file or zip entry)."""
-    parts, file_label = parts_for_source(si)
-    subdir_name = get_named_subdirectory_from_parts(parts, marker_dir)
-    if not subdir_name:
+    label, parts = describe_source(si)
+    subdir = get_named_subdirectory(parts, marker_dir)
+    if not subdir:
         return
 
-    file_name = file_label if include_file else ""
-    current_src: Optional[str] = None
-    current_dst: Optional[str] = None
+    file_name = label if include_file else ""
+    src_ip, dst_ip = None, None
 
     try:
-        fh, _, _ = open_source_text(si)
-        with fh:
-            for raw_line in fh:
-                line = raw_line.strip()
+        with open_source(si) as fh:
+            for line in fh:
+                line = line.strip()
                 if not line:
                     continue
 
                 m_hdr = PING_HEADER_RE.match(line)
                 if m_hdr:
-                    current_dst = m_hdr.group("dest_ip")
-                    current_src = m_hdr.group("src_ip")
+                    dst_ip = m_hdr.group("dest_ip")
+                    src_ip = m_hdr.group("src_ip")
                     continue
 
                 m_rep = PING_REPLY_RE.search(line)
-                if m_rep:
-                    ms = float(m_rep.group("ms"))
-                    dst_ip = current_dst or m_rep.group("from_ip")
-                    src_ip = current_src or "UNKNOWN"
+                if not m_rep:
+                    continue
 
-                    key = (subdir_name, file_name, src_ip, dst_ip)
-                    if key not in counters:
-                        counters[key] = {
-                            "lt_1ms": 0,
-                            "ge_1_lt_2_ms": 0,
-                            "ge_2_lt_5_ms": 0,
-                            "ge_5_ms": 0,
-                            "min": ms,
-                            "max": ms,
-                        }
-                    else:
-                        counters[key]["min"] = min(counters[key]["min"], ms)
-                        counters[key]["max"] = max(counters[key]["max"], ms)
+                ms = float(m_rep.group("ms"))
+                dst = dst_ip or m_rep.group("from_ip")
+                src = src_ip or "UNKNOWN"
 
-                    # Detailed bucket
-                    counters[key][bucket_for_latency(ms)] += 1
+                key = (subdir, file_name, src, dst)
+                if key not in counters:
+                    counters[key] = {
+                        "lt_1ms": 0,
+                        "ge_1_lt_2_ms": 0,
+                        "ge_2_lt_5_ms": 0,
+                        "ge_5_ms": 0,
+                        "min": ms,
+                        "max": ms,
+                    }
+                else:
+                    counters[key]["min"] = min(counters[key]["min"], ms)
+                    counters[key]["max"] = max(counters[key]["max"], ms)
+                counters[key][bucket_for_latency(ms)] += 1
 
-                    # Simple totals
-                    if ms < 1.0:
-                        simple_totals["lt_1ms"] += 1
-                    elif ms <= 10.0:
-                        simple_totals["gt_1_le_10_ms"] += 1
-                    else:
-                        simple_totals["gt_10_ms"] += 1
+                # global tallies
+                if ms < 1:
+                    simple_totals["lt_1ms"] += 1
+                elif ms <= 10:
+                    simple_totals["gt_1_le_10_ms"] += 1
+                else:
+                    simple_totals["gt_10_ms"] += 1
 
-                    # Global min/max
-                    if simple_totals["global_min"] is None or ms < simple_totals["global_min"]:
-                        simple_totals["global_min"] = ms
-                    if simple_totals["global_max"] is None or ms > simple_totals["global_max"]:
-                        simple_totals["global_max"] = ms
+                if simple_totals["global_min"] is None or ms < simple_totals["global_min"]:
+                    simple_totals["global_min"] = ms
+                if simple_totals["global_max"] is None or ms > simple_totals["global_max"]:
+                    simple_totals["global_max"] = ms
 
     except Exception as e:
-        logging.exception("Failed to parse %s: %s", file_label, e)
+        logging.error("Error parsing %s: %s", label, e)
 
-# ---------- Writers ----------
-def write_full_or_anomalies_csv(out_path: Path,
-                                counters: Dict[Tuple[str, str, str, str], Dict[str, float]],
-                                include_file: bool,
-                                anomalies_only: bool = False) -> int:
-    rows_written = 0
+# --------------------------------------------------------------------
+# Report writers
+# --------------------------------------------------------------------
+def write_full_csv(path: Path, counters: Dict, include_file: bool, anomalies_only=False) -> int:
     header = ["subdirectory"]
     if include_file:
         header.append("file_name")
@@ -262,107 +224,82 @@ def write_full_or_anomalies_csv(out_path: Path,
         "<1ms", ">=1ms & <2ms", ">=2ms & <5ms", ">=5ms",
         "min_latency_ms", "max_latency_ms",
     ]
-
-    with out_path.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(header)
-
-        for (subdir, fname, src, dst), b in sorted(counters.items()):
-            hi1, hi2, hi3 = b["ge_1_lt_2_ms"], b["ge_2_lt_5_ms"], b["ge_5_ms"]
-            if anomalies_only and (hi1 == 0 and hi2 == 0 and hi3 == 0):
+    rows = 0
+    with path.open("w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(header)
+        for (sub, fn, s, d), b in sorted(counters.items()):
+            if anomalies_only and (b["ge_1_lt_2_ms"] == 0 and b["ge_2_lt_5_ms"] == 0 and b["ge_5_ms"] == 0):
                 continue
-            row = [subdir]
+            row = [sub]
             if include_file:
-                row.append(fname)
-            row += [
-                src, dst,
-                b["lt_1ms"], hi1, hi2, hi3,
-                f"{b['min']:.3f}", f"{b['max']:.3f}",
-            ]
-            writer.writerow(row)
-            rows_written += 1
-    return rows_written
+                row.append(fn)
+            row += [s, d, b["lt_1ms"], b["ge_1_lt_2_ms"], b["ge_2_lt_5_ms"], b["ge_5_ms"],
+                    f"{b['min']:.3f}", f"{b['max']:.3f}"]
+            w.writerow(row)
+            rows += 1
+    return rows
 
-def write_simple_csv(out_path: Path, simple_totals: Dict[str, float]) -> int:
-    with out_path.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(["category", "count"])
-        writer.writerow(["<1ms", int(simple_totals["lt_1ms"])])
-        writer.writerow([">1ms & <=10ms", int(simple_totals["gt_1_le_10_ms"])])
-        writer.writerow([">10ms", int(simple_totals["gt_10_ms"])])
-    return 3
+def write_simple_csv(path: Path, totals: Dict[str, float]) -> None:
+    with path.open("w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["category", "count"])
+        w.writerow(["<1ms", int(totals["lt_1ms"])])
+        w.writerow([">1ms & <=10ms", int(totals["gt_1_le_10_ms"])])
+        w.writerow([">10ms", int(totals["gt_10_ms"])])
 
-# ---------- Main ----------
+# --------------------------------------------------------------------
+# Main
+# --------------------------------------------------------------------
 def main():
-    ap = argparse.ArgumentParser(
-        description="Generate latency reports (full, anomalies, and simple summary) from OSWbb ping outputs."
-    )
-    ap.add_argument("--root", default=".", help="Root directory to scan recursively. Default: current directory.")
-    ap.add_argument("--output", default="ping_report.csv", help="Base filename for reports (prefix/timestamp auto).")
-    ap.add_argument("--marker-dir", default="oswprvtnet", help="Marker directory name. Default: oswprvtnet")
-    ap.add_argument("--extensions", nargs="*", help="Extensions to include. Default: .dat and .dat.gz")
-    ap.add_argument("--infilename", action="store_true", help="Include file name column in detailed reports.")
-    ap.add_argument("--verbose", action="store_true", help="Enable INFO logs.")
-    ap.add_argument("--debug", action="store_true", help="Enable DEBUG logs.")
+    ap = argparse.ArgumentParser(description="Generate latency reports (full/anomaly/simple) from OSWbb ping outputs.")
+    ap.add_argument("--root", default=".", help="Root directory to scan recursively.")
+    ap.add_argument("--marker-dir", default="oswprvtnet", help="Folder name under which ping files reside.")
+    ap.add_argument("--output", default="ping_report.csv", help="Base filename for reports (prefix + timestamp auto).")
+    ap.add_argument("--extensions", nargs="*", help="Extensions to include. Default: .dat .dat.gz")
+    ap.add_argument("--infilename", action="store_true", help="Include file name in detailed reports.")
+    ap.add_argument("--verbose", action="store_true")
+    ap.add_argument("--debug", action="store_true")
     args = ap.parse_args()
 
     # Logging
-    level = logging.WARNING
-    if args.verbose: level = logging.INFO
-    if args.debug:   level = logging.DEBUG
-    logging.basicConfig(format="%(levelname)s: %(message)s", level=level)
+    lvl = logging.WARNING
+    if args.verbose: lvl = logging.INFO
+    if args.debug: lvl = logging.DEBUG
+    logging.basicConfig(format="%(levelname)s: %(message)s", level=lvl)
 
     root = Path(args.root).resolve()
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    counters: Dict[Tuple[str, str, str, str], Dict[str, float]] = {}
-    simple_totals: Dict[str, float] = {
-        "lt_1ms": 0,
-        "gt_1_le_10_ms": 0,
-        "gt_10_ms": 0,
-        "global_min": None,  # type: ignore
-        "global_max": None,  # type: ignore
-    }
+    counters = {}
+    totals = {"lt_1ms": 0, "gt_1_le_10_ms": 0, "gt_10_ms": 0, "global_min": None, "global_max": None}
 
-    # Discover and parse
     sources = list(find_sources(root, args.marker_dir, args.extensions))
-    logging.info("Found %d candidate sources (disk + zip)", len(sources))
-    for si in sources:
-        parse_source(
-            si,
-            counters=counters,
-            marker_dir=args.marker_dir,
-            include_file=args.infilename,
-            simple_totals=simple_totals,
-        )
+    logging.info("Found %d candidate sources", len(sources))
 
-    # Write outputs
-    base_out = Path(args.output).resolve()
-    full_path = build_output_path(root, base_out, timestamp, "full")
-    anomalies_path = build_output_path(root, base_out, timestamp, "anomalies")
-    simple_path = build_output_path(root, base_out, timestamp, "simple")
+    for s in sources:
+        parse_source(s, counters, args.marker_dir, args.infilename, totals)
 
-    total_rows = write_full_or_anomalies_csv(full_path, counters, include_file=args.infilename, anomalies_only=False)
-    anom_rows = write_full_or_anomalies_csv(anomalies_path, counters, include_file=args.infilename, anomalies_only=True)
-    write_simple_csv(simple_path, simple_totals)
+    base = Path(args.output).resolve()
+    f_full = build_output_path(root, base, timestamp, "full")
+    f_anom = build_output_path(root, base, timestamp, "anomalies")
+    f_simp = build_output_path(root, base, timestamp, "simple")
 
-    total_samples = int(simple_totals["lt_1ms"] + simple_totals["gt_1_le_10_ms"] + simple_totals["gt_10_ms"])
-    gmin = simple_totals["global_min"]
-    gmax = simple_totals["global_max"]
-    gmin_s = f"{gmin:.3f} ms" if gmin is not None else "n/a"
-    gmax_s = f"{gmax:.3f} ms" if gmax is not None else "n/a"
+    n_full = write_full_csv(f_full, counters, args.infilename, anomalies_only=False)
+    n_anom = write_full_csv(f_anom, counters, args.infilename, anomalies_only=True)
+    write_simple_csv(f_simp, totals)
 
-    print("\nDone.")
-    print(f"- Full report:    {full_path} ({total_rows} rows)")
-    print(f"- Anomalies:      {anomalies_path} ({anom_rows} rows)")
-    print(f"- Simple summary: {simple_path} (3 rows)")
-    print(
-        f"Totals: samples={total_samples}, "
-        f"<1ms={int(simple_totals['lt_1ms'])}, "
-        f">1ms & <=10ms={int(simple_totals['gt_1_le_10_ms'])}, "
-        f">10ms={int(simple_totals['gt_10_ms'])}, "
-        f"global_min={gmin_s}, global_max={gmax_s}"
-    )
+    total = int(totals["lt_1ms"] + totals["gt_1_le_10_ms"] + totals["gt_10_ms"])
+    gmin = f"{totals['global_min']:.3f}" if totals["global_min"] else "n/a"
+    gmax = f"{totals['global_max']:.3f}" if totals["global_max"] else "n/a"
+
+    print("\n✅ Reports generated:")
+    print(f"  Full report:    {f_full} ({n_full} rows)")
+    print(f"  Anomalies only: {f_anom} ({n_anom} rows)")
+    print(f"  Simple summary: {f_simp}")
+    print(f"Totals: {total} samples  <1ms={int(totals['lt_1ms'])}  "
+          f">1ms&<=10ms={int(totals['gt_1_le_10_ms'])}  >10ms={int(totals['gt_10_ms'])}  "
+          f"min={gmin}ms  max={gmax}ms")
 
 if __name__ == "__main__":
     main()
