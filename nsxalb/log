@@ -1,6 +1,6 @@
 {
-  "_last_modified": "1754331382390894",
-  "active_standby_se_tag": "ACTIVE_STANDBY_SE_1",
+  "_last_modified": "1766249797848361",
+  "active_standby_se_tag": "ACTIVE_STANDBY_SE_2",
   "advertise_down_vs": false,
   "allow_invalid_client_cert": false,
   "analytics_policy": {
@@ -15,14 +15,14 @@
       "enabled": false
     },
     "metrics_realtime_update": {
-      "duration": 0,
+      "duration": 30,
       "enabled": false
     },
     "significant_log_throttle": 10,
     "udf_log_throttle": 10
   },
-  "analytics_profile_ref": "https://m00avientlb.local/api/analyticsprofile/analyticsprofile-29a7e0d1-88d4-4a49-84b9-6a97075374df#System-Analytics-Profile",
-  "application_profile_ref": "https://m00avientlb.local/api/applicationprofile/applicationprofile-881063ce-8ea7-4318-b637-892c794b142b#VS_ATM_PCMS_44.18_9443-Application-profile",
+  "analytics_profile_ref": "https://m00avientlb.corp.ad.sbi/api/analyticsprofile/analyticsprofile-29a7e0d1-88d4-4a49-84b9-6a97075374df#System-Analytics-Profile",
+  "application_profile_ref": "https://m00avientlb.corp.ad.sbi/api/applicationprofile/applicationprofile-12620faa-55dc-4042-9c57-1134c5bbee8e#IT-SP_RAW_AMLOCK_TFSS_88.25_443_APP_Profile",
   "application_profile_ref_data": {
     "http_profile": {
       "allow_dots_in_header_name": false,
@@ -33,7 +33,7 @@
       "client_max_request_size": 48,
       "close_server_side_connection_on_error": false,
       "collect_client_tls_fingerprint": false,
-      "connection_multiplexing_enabled": false,
+      "connection_multiplexing_enabled": true,
       "detect_ntlm_app": true,
       "disable_keepalive_posts_msie6": true,
       "disable_sni_hostname_check": false,
@@ -42,7 +42,7 @@
       "enable_request_body_buffering": false,
       "enable_request_body_metrics": false,
       "fwd_close_hdr_for_bound_connections": true,
-      "hsts_enabled": true,
+      "hsts_enabled": false,
       "hsts_max_age": 365,
       "hsts_subdomains_enabled": true,
       "http2_profile": {
@@ -78,30 +78,39 @@
       "respond_with_100_continue": true,
       "secure_cookie_enabled": false,
       "server_side_redirect_to_https": false,
+      "session_config": {
+        "session_cookie_httponly": true,
+        "session_cookie_name": "albsessid",
+        "session_cookie_samesite": "SAMESITE_LAX",
+        "session_cookie_secure": true,
+        "session_establishment_timeout": 300,
+        "session_idle_timeout": 1800,
+        "session_maximum_timeout": 28800
+      },
       "ssl_client_certificate_mode": "SSL_CLIENT_CERTIFICATE_NONE",
       "use_app_keepalive_timeout": false,
       "use_true_client_ip": false,
       "websockets_enabled": true,
-      "x_forwarded_proto_enabled": true,
+      "x_forwarded_proto_enabled": false,
       "xff_alternate_name": "X-Forwarded-For",
       "xff_enabled": true,
-      "xff_update": "APPEND_TO_THE_XFF_HEADER"
+      "xff_update": "REPLACE_XFF_HEADERS"
     },
     "l4_ssl_profile": {
       "ssl_stream_idle_timeout": 3600
     },
-    "name": "VS_ATM_PCMS_44.18_9443-Application-profile",
+    "name": "IT-SP_RAW_AMLOCK_TFSS_88.25_443_APP_Profile",
     "preserve_client_ip": false,
     "preserve_client_port": false,
     "preserve_dest_ip_port": false,
-    "tenant_ref": "https://m00avientlb.local/api/tenant/admin#admin",
+    "tenant_ref": "https://m00avientlb.corp.ad.sbi/api/tenant/admin#admin",
     "type": "APPLICATION_PROFILE_TYPE_HTTP",
-    "url": "https://m00avientlb.local/api/applicationprofile/applicationprofile-881063ce-8ea7-4318-b637-892c794b142b#VS_ATM_PCMS_44.18_9443-Application-profile",
-    "uuid": "applicationprofile-881063ce-8ea7-4318-b637-892c794b142b"
+    "url": "https://m00avientlb.corp.ad.sbi/api/applicationprofile/applicationprofile-12620faa-55dc-4042-9c57-1134c5bbee8e#IT-SP_RAW_AMLOCK_TFSS_88.25_443_APP_Profile",
+    "uuid": "applicationprofile-12620faa-55dc-4042-9c57-1134c5bbee8e"
   },
   "bulk_sync_kvcache": false,
   "close_client_conn_on_config_update": false,
-  "cloud_ref": "https://m00avientlb.local/api/cloud/cloud-eac4bc2f-5aa1-44e4-9bc3-6831c23260f1#NSX-T-DMZ",
+  "cloud_ref": "https://m00avientlb.corp.ad.sbi/api/cloud/cloud-c906f65b-76b3-4df9-8fac-8f25373acfaf#NSX-T-PROD",
   "cloud_ref_data": {
     "autoscale_polling_interval": 60,
     "dhcp_enabled": false,
@@ -109,7 +118,7 @@
     "enable_vip_on_all_interfaces": false,
     "enable_vip_static_routes": false,
     "ip6_autocfg_enabled": false,
-    "ipam_provider_ref": "https://m00avientlb.local/api/ipamdnsproviderprofile/ipamdnsproviderprofile-55c17482-1d69-40ea-a9cd-e004f59a5552#NSX-T-DMZ",
+    "ipam_provider_ref": "https://m00avientlb.corp.ad.sbi/api/ipamdnsproviderprofile/ipamdnsproviderprofile-d0b15408-e378-491e-9ba8-55adf0467d3a#NSX-T-PROD",
     "license_tier": "ENTERPRISE",
     "license_type": "LIC_CORES",
     "maintenance_mode": false,
@@ -117,7 +126,7 @@
     "mgmt_ip_v4_enabled": true,
     "mgmt_ip_v6_enabled": false,
     "mtu": 1500,
-    "name": "NSX-T-DMZ",
+    "name": "NSX-T-PROD",
     "nsxt_configuration": {
       "automate_dfw_objects": true,
       "automate_dfw_rules": false,
@@ -125,12 +134,24 @@
         "transport_zone": "/infra/sites/default/enforcement-points/default/transport-zones/a95c914d-748d-497c-94ab-10d4647daeba",
         "tz_type": "VLAN",
         "vlan_segments": [
-          "/infra/segments/m01-avi-se-e-prod-1456",
-          "/infra/segments/m02-dmz-vlan1372",
-          "/infra/segments/m02-dmz-vlan202",
-          "/infra/segments/m02-dmz-vlan203",
-          "/infra/segments/m02-dmz-vlan524",
-          "/infra/segments/m02-dmz-vlan728"
+          "/infra/segments/Meghdoot_Production_Mgmt2_1456",
+          "/infra/segments/Segment_Icon_m01-prod-vlan1372",
+          "/infra/segments/m01-prod-vlan658",
+          "/infra/segments/m01-prod-vlan531",
+          "/infra/segments/m01-prod-vlan471",
+          "/infra/segments/mum01-1-prod-vlan1414",
+          "/infra/segments/m01-avi-se-b-prod-1455",
+          "/infra/segments/mum01-1-prod-vlan1415",
+          "/infra/segments/mum01-1-prod-vlan1416",
+          "/infra/segments/mum01-1-prod-vlan1417",
+          "/infra/segments/mum01-1-prod-vlan1418",
+          "/infra/segments/M01-PROD-WEB-VLAN1506",
+          "/infra/segments/mum01-1-prod-735",
+          "/infra/segments/M01_PROD_CBS_DB_1450",
+          "/infra/segments/M01_PROD_WEB_VLAN_1582",
+          "/infra/segments/M01_PROD_APP_VLAN576",
+          "/infra/segments/M01_PROD_APP_VLAN200",
+          "/infra/segments/M01_PROD_APP_VLAN1582"
         ]
       },
       "domain_id": "default",
@@ -138,50 +159,45 @@
       "management_network_config": {
         "transport_zone": "/infra/sites/default/enforcement-points/default/transport-zones/a95c914d-748d-497c-94ab-10d4647daeba",
         "tz_type": "VLAN",
-        "vlan_segment": "/infra/segments/m02-avi-se-b-prod-1455"
+        "vlan_segment": "/infra/segments/m01-avi-se-b-prod-1455"
       },
-      "nsxt_credentials_ref": "https://m00avientlb.local/api/cloudconnectoruser/cloudconnectoruser-8de36fb9-8674-416a-afdb-f421bab8a739#NSX-T-DMZ",
-      "nsxt_url": "m02nsxmgr.local",
+      "nsxt_credentials_ref": "https://m00avientlb.corp.ad.sbi/api/cloudconnectoruser/cloudconnectoruser-41c03056-3da6-431a-81c7-c133887712fb#NSX-T-ServiceAccount",
+      "nsxt_url": "m01nsxmgr.corp.ad.sbi",
       "site_id": "default",
       "vmc_mode": false
     },
-    "obj_name_prefix": "avie-dmz",
+    "obj_name_prefix": "avie-prod",
     "prefer_static_routes": false,
     "resolve_fqdn_to_ipv6": false,
-    "se_group_template_ref": "https://m00avientlb.local/api/serviceenginegroup/serviceenginegroup-23d98d8c-bfa9-4f90-b74e-d2171aaf947f#Default-Group",
+    "se_group_template_ref": "https://m00avientlb.corp.ad.sbi/api/serviceenginegroup/serviceenginegroup-8323569c-bb98-4bda-8ff7-de756d24cb3a#Default-Group",
     "state_based_dns_registration": true,
-    "tenant_ref": "https://m00avientlb.local/api/tenant/admin#admin",
-    "url": "https://m00avientlb.local/api/cloud/cloud-eac4bc2f-5aa1-44e4-9bc3-6831c23260f1#NSX-T-DMZ",
-    "uuid": "cloud-eac4bc2f-5aa1-44e4-9bc3-6831c23260f1",
+    "tenant_ref": "https://m00avientlb.corp.ad.sbi/api/tenant/admin#admin",
+    "url": "https://m00avientlb.corp.ad.sbi/api/cloud/cloud-c906f65b-76b3-4df9-8fac-8f25373acfaf#NSX-T-PROD",
+    "uuid": "cloud-c906f65b-76b3-4df9-8fac-8f25373acfaf",
     "vmc_deployment": false,
     "vtype": "CLOUD_NSXT"
   },
   "cloud_type": "CLOUD_NSXT",
   "content_rewrite": {
-    "rewritable_content_ref": "https://m00avientlb.local/api/stringgroup/stringgroup-686c2246-fd75-49fb-90d0-e25778b8c720#System-Rewritable-Content-Types",
-    "rsp_rewrite_rules": [
-      {
-        "enable": false
-      }
-    ]
+    "rewritable_content_ref": "https://m00avientlb.corp.ad.sbi/api/stringgroup/stringgroup-686c2246-fd75-49fb-90d0-e25778b8c720#System-Rewritable-Content-Types"
   },
   "delay_fairness": false,
   "east_west_placement": false,
   "enable_autogw": true,
   "enable_session": false,
   "enabled": true,
-  "error_page_profile_ref": "https://m00avientlb.local/api/errorpageprofile/errorpageprofile-fb166008-0bd3-45b2-94b7-cf227a8edccc#Custom-Error-Page-Profile",
+  "error_page_profile_ref": "https://m00avientlb.corp.ad.sbi/api/errorpageprofile/errorpageprofile-fb166008-0bd3-45b2-94b7-cf227a8edccc#Custom-Error-Page-Profile",
   "flow_dist": "LOAD_AWARE",
   "flow_label_type": "NO_LABEL",
   "http_policies": [
     {
-      "http_policy_set_ref": "https://m00avientlb.local/api/httppolicyset/httppolicyset-df0b45eb-5849-4a06-98c9-541c885c0d0f#VS_ATM_PCMS_44.18_9443-NSX-T-DMZ-HTTP-Policy-Set-0",
+      "http_policy_set_ref": "https://m00avientlb.corp.ad.sbi/api/httppolicyset/httppolicyset-76b67a99-9e7b-4332-87d4-575d371a7ca0#IT-SP_RAW_AMLOCK_TFSS_88.22_443-HTTPPolicySet-0",
       "http_policy_set_ref_data": {
         "is_internal_policy": false,
-        "name": "VS_ATM_PCMS_44.18_9443-NSX-T-DMZ-HTTP-Policy-Set-0",
-        "tenant_ref": "https://m00avientlb.local/api/tenant/admin#admin",
-        "url": "https://m00avientlb.local/api/httppolicyset/httppolicyset-df0b45eb-5849-4a06-98c9-541c885c0d0f#VS_ATM_PCMS_44.18_9443-NSX-T-DMZ-HTTP-Policy-Set-0",
-        "uuid": "httppolicyset-df0b45eb-5849-4a06-98c9-541c885c0d0f"
+        "name": "IT-SP_RAW_AMLOCK_TFSS_88.22_443-HTTPPolicySet-0",
+        "tenant_ref": "https://m00avientlb.corp.ad.sbi/api/tenant/admin#admin",
+        "url": "https://m00avientlb.corp.ad.sbi/api/httppolicyset/httppolicyset-76b67a99-9e7b-4332-87d4-575d371a7ca0#IT-SP_RAW_AMLOCK_TFSS_88.22_443-HTTPPolicySet-0",
+        "uuid": "httppolicyset-76b67a99-9e7b-4332-87d4-575d371a7ca0"
       },
       "index": 11
     }
@@ -190,8 +206,8 @@
   "limit_doser": false,
   "marked_for_delete": false,
   "max_cps_per_client": 0,
-  "name": "VS_ATM_PCMS_44.18_9443",
-  "network_profile_ref": "https://m00avientlb.local/api/networkprofile/networkprofile-1815ba16-867f-4fa2-b469-c6225518bbcc#System-TCP-Proxy",
+  "name": "IT-SP_RAW_AMLOCK_TFSS_88.22_443",
+  "network_profile_ref": "https://m00avientlb.corp.ad.sbi/api/networkprofile/networkprofile-1815ba16-867f-4fa2-b469-c6225518bbcc#System-TCP-Proxy",
   "network_profile_ref_data": {
     "connection_mirror": false,
     "name": "System-TCP-Proxy",
@@ -218,28 +234,27 @@
       },
       "type": "PROTOCOL_TYPE_TCP_PROXY"
     },
-    "tenant_ref": "https://m00avientlb.local/api/tenant/admin#admin",
-    "url": "https://m00avientlb.local/api/networkprofile/networkprofile-1815ba16-867f-4fa2-b469-c6225518bbcc#System-TCP-Proxy",
+    "tenant_ref": "https://m00avientlb.corp.ad.sbi/api/tenant/admin#admin",
+    "url": "https://m00avientlb.corp.ad.sbi/api/networkprofile/networkprofile-1815ba16-867f-4fa2-b469-c6225518bbcc#System-TCP-Proxy",
     "uuid": "networkprofile-1815ba16-867f-4fa2-b469-c6225518bbcc"
   },
-  "network_security_policy_ref": "https://m00avientlb.local/api/networksecuritypolicy/networksecuritypolicy-253ad14d-b8d0-4250-8637-c6d5e035b92f#vs-VS_ATM_PCMS_44.18_9443-NSX-T-DMZ-ns",
+  "network_security_policy_ref": "https://m00avientlb.corp.ad.sbi/api/networksecuritypolicy/networksecuritypolicy-c9bb566d-d48f-418d-a255-94c85cbf2c1a#IT-SP_RAW_AMLOCK_TFSS_88.22_443-NetworkSecurityPolicy",
   "network_security_policy_ref_data": {
-    "name": "vs-VS_ATM_PCMS_44.18_9443-NSX-T-DMZ-ns",
-    "tenant_ref": "https://m00avientlb.local/api/tenant/admin#admin",
-    "url": "https://m00avientlb.local/api/networksecuritypolicy/networksecuritypolicy-253ad14d-b8d0-4250-8637-c6d5e035b92f#vs-VS_ATM_PCMS_44.18_9443-NSX-T-DMZ-ns",
-    "uuid": "networksecuritypolicy-253ad14d-b8d0-4250-8637-c6d5e035b92f"
+    "name": "IT-SP_RAW_AMLOCK_TFSS_88.22_443-NetworkSecurityPolicy",
+    "tenant_ref": "https://m00avientlb.corp.ad.sbi/api/tenant/admin#admin",
+    "url": "https://m00avientlb.corp.ad.sbi/api/networksecuritypolicy/networksecuritypolicy-c9bb566d-d48f-418d-a255-94c85cbf2c1a#IT-SP_RAW_AMLOCK_TFSS_88.22_443-NetworkSecurityPolicy",
+    "uuid": "networksecuritypolicy-c9bb566d-d48f-418d-a255-94c85cbf2c1a"
   },
-  "pool_ref": "https://m00avientlb.local/api/pool/pool-68927616-8d8c-4457-a4f4-0331a665f35a#VS_ATM_PCMS_44.18_9443-pool",
+  "pool_ref": "https://m00avientlb.corp.ad.sbi/api/pool/pool-16a49261-2551-4f2f-90c8-b5db634e7477#IT-SP_RAW_AMLOCK_TFSS_88.22_443-Pool",
   "pool_ref_data": {
     "analytics_policy": {
       "enable_realtime_metrics": false
     },
-    "analytics_profile_ref": "https://m00avientlb.local/api/analyticsprofile/analyticsprofile-29a7e0d1-88d4-4a49-84b9-6a97075374df#System-Analytics-Profile",
+    "analytics_profile_ref": "https://m00avientlb.corp.ad.sbi/api/analyticsprofile/analyticsprofile-29a7e0d1-88d4-4a49-84b9-6a97075374df#System-Analytics-Profile",
     "append_port": "NON_DEFAULT_80_443",
-    "application_persistence_profile_ref": "https://m00avientlb.local/api/applicationpersistenceprofile/applicationpersistenceprofile-c864c67e-b14f-4be9-85a7-c98215d0ef0c#System-Persistence-Client-IP",
     "capacity_estimation": false,
     "capacity_estimation_ttfb_thresh": 0,
-    "cloud_ref": "https://m00avientlb.local/api/cloud/cloud-eac4bc2f-5aa1-44e4-9bc3-6831c23260f1#NSX-T-DMZ",
+    "cloud_ref": "https://m00avientlb.corp.ad.sbi/api/cloud/cloud-c906f65b-76b3-4df9-8fac-8f25373acfaf#NSX-T-PROD",
     "conn_pool_properties": {
       "upstream_connpool_conn_idle_tmo": 60000,
       "upstream_connpool_conn_life_tmo": 600000,
@@ -247,7 +262,7 @@
       "upstream_connpool_server_max_cache": 0
     },
     "connection_ramp_duration": 10,
-    "default_server_port": 8501,
+    "default_server_port": 8443,
     "delete_server_on_dns_refresh": true,
     "enable_http2": false,
     "enabled": true,
@@ -258,8 +273,12 @@
     "graceful_disable_timeout": 1,
     "graceful_hm_down_disable_timeout": -1,
     "health_monitor_refs": [
-      "https://m00avientlb.local/api/healthmonitor/healthmonitor-ee5022ff-e5df-4132-8f29-692d856b31e8#System-HTTPS"
+      "https://m00avientlb.corp.ad.sbi/api/healthmonitor/healthmonitor-9f2120a1-1e7a-450e-8e6e-a78fc2cc59a0#System-TCP"
     ],
+    "horizon_profile": {
+      "blast_port": 8443,
+      "pcoip_port": 4172
+    },
     "host_check_enabled": false,
     "http2_properties": {
       "max_http2_control_frames_per_connection": 0,
@@ -273,16 +292,16 @@
     "lb_algorithm_hash": "LB_ALGORITHM_CONSISTENT_HASH_SOURCE_IP_ADDRESS",
     "lookup_server_by_name": false,
     "max_concurrent_connections_per_server": 0,
-    "name": "VS_ATM_PCMS_44.18_9443-pool",
+    "name": "IT-SP_RAW_AMLOCK_TFSS_88.22_443-Pool",
     "placement_networks": [
       {
-        "network_ref": "https://m00avientlb.local/api/network/network-d542fc49-43fe-4ebd-8c60-66fc93c64247#m02-dmz-vlan202",
+        "network_ref": "https://m00avientlb.corp.ad.sbi/api/network/network-9076fdc1-2eb1-47c3-83dc-9df0c91224f2#M01_PROD_WEB_VLAN_1582",
         "subnet": {
           "ip_addr": {
-            "addr": "10.189.44.0",
+            "addr": "10.191.88.0",
             "type": "V4"
           },
-          "mask": 22
+          "mask": 23
         }
       }
     ],
@@ -303,13 +322,11 @@
     "servers": [
       {
         "enabled": true,
-        "hostname": "S1",
+        "hostname": "10.191.88.23",
         "ip": {
-          "addr": "10.189.45.170",
+          "addr": "10.191.88.23",
           "type": "V4"
         },
-        "port": 8501,
-        "prst_hdr_val": "",
         "ratio": 1,
         "resolve_server_by_dns": false,
         "rewrite_host_header": false,
@@ -318,13 +335,11 @@
       },
       {
         "enabled": true,
-        "hostname": "S2",
+        "hostname": "10.191.88.24",
         "ip": {
-          "addr": "10.189.45.171",
+          "addr": "10.191.88.24",
           "type": "V4"
         },
-        "port": 8501,
-        "prst_hdr_val": "",
         "ratio": 1,
         "resolve_server_by_dns": false,
         "rewrite_host_header": false,
@@ -333,21 +348,21 @@
       }
     ],
     "sni_enabled": true,
-    "ssl_key_and_certificate_ref": "https://m00avientlb.local/api/sslkeyandcertificate/sslkeyandcertificate-12ae0c8e-68ca-4e03-b08f-323642db29fb#VS_ATM_PCMS_44.18_9443_V2",
-    "ssl_profile_ref": "https://m00avientlb.local/api/sslprofile/sslprofile-3acb25ed-48b0-4b0d-99bf-4f9bdaae634d#System-Standard-PFS",
-    "tenant_ref": "https://m00avientlb.local/api/tenant/admin#admin",
-    "url": "https://m00avientlb.local/api/pool/pool-68927616-8d8c-4457-a4f4-0331a665f35a#VS_ATM_PCMS_44.18_9443-pool",
+    "ssl_key_and_certificate_ref": "https://m00avientlb.corp.ad.sbi/api/sslkeyandcertificate/sslkeyandcertificate-873f0595-34af-424a-b554-c7daf37f1a94#IT-SP_RAW_AMLOCK_TFSS",
+    "ssl_profile_ref": "https://m00avientlb.corp.ad.sbi/api/sslprofile/sslprofile-1ee9e632-9bd3-47b4-bf37-a1a597b0ba0d#IT-SP_RAW_AMLOCK_TFSS_SSL-Profile",
+    "tenant_ref": "https://m00avientlb.corp.ad.sbi/api/tenant/admin#admin",
+    "url": "https://m00avientlb.corp.ad.sbi/api/pool/pool-16a49261-2551-4f2f-90c8-b5db634e7477#IT-SP_RAW_AMLOCK_TFSS_88.22_443-Pool",
     "use_service_port": false,
     "use_service_ssl_mode": false,
-    "uuid": "pool-68927616-8d8c-4457-a4f4-0331a665f35a",
-    "vrf_ref": "https://m00avientlb.local/api/vrfcontext/vrfcontext-41217508-7d69-4b84-874e-1ed08beca820#global"
+    "uuid": "pool-16a49261-2551-4f2f-90c8-b5db634e7477",
+    "vrf_ref": "https://m00avientlb.corp.ad.sbi/api/vrfcontext/vrfcontext-862b3be3-2fc0-435d-9852-b17a0377cc8a#global"
   },
-  "redis_db": 11,
-  "redis_port": 5027,
+  "redis_db": 8,
+  "redis_port": 5026,
   "remove_listening_port_on_vs_down": false,
   "revoke_vip_route": false,
   "scaleout_ecmp": false,
-  "se_group_ref": "https://m00avientlb.local/api/serviceenginegroup/serviceenginegroup-1f160b4e-3542-42d1-9c41-a0097c876732#ENT-DMZ-SE-GROUP-202-01",
+  "se_group_ref": "https://m00avientlb.corp.ad.sbi/api/serviceenginegroup/serviceenginegroup-8c4614d3-416b-44d5-9039-869c8d37fbcf#ENT-Prod-SE-Group-1582",
   "self_se_election": false,
   "services": [
     {
@@ -355,59 +370,54 @@
       "enable_ssl": true,
       "horizon_internal_ports": false,
       "is_active_ftp_data_port": false,
-      "port": 9443,
-      "port_range_end": 9443
+      "port": 443,
+      "port_range_end": 443
     }
   ],
   "sideband_profile": {
     "sideband_max_request_body_size": 1024
   },
   "ssl_key_and_certificate_refs": [
-    "https://m00avientlb.local/api/sslkeyandcertificate/sslkeyandcertificate-12ae0c8e-68ca-4e03-b08f-323642db29fb#VS_ATM_PCMS_44.18_9443_V2"
+    "https://m00avientlb.corp.ad.sbi/api/sslkeyandcertificate/sslkeyandcertificate-873f0595-34af-424a-b554-c7daf37f1a94#IT-SP_RAW_AMLOCK_TFSS"
   ],
   "ssl_key_and_certificate_refs_data": [
     {
       "ca_certs": [
         {
-          "ca_ref": "https://m00avientlb.local/api/sslkeyandcertificate/sslkeyandcertificate-ff876876-2ae3-45b6-95d4-5d4b2c56377b#DigiCert EV RSA CA G2 B5:EB:25:91:58",
-          "name": "DigiCert EV RSA CA G2"
-        },
-        {
-          "ca_ref": "https://m00avientlb.local/api/sslkeyandcertificate/sslkeyandcertificate-6d10598a-1f91-43e5-9a7c-5d7f0a3ad06d#DigiCert Global Root G2",
-          "name": "DigiCert Global Root G2"
+          "ca_ref": "https://m00avientlb.corp.ad.sbi/api/sslkeyandcertificate/sslkeyandcertificate-3fe24b5e-c34b-4998-a63b-e61f30737194#SBI-PROD-RCA",
+          "name": "SBI-PROD-RCA"
         }
       ],
       "certificate": {
-        "certificate": "-----BEGIN CERTIFICATE-----\nMIIG6jCCBdKgAwIBAgIQBig6kHrMGn0ruJfDBmJYeTANBgkqhkiG9w0BAQsFADBE\nMQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMR4wHAYDVQQDExVE\naWdpQ2VydCBFViBSU0EgQ0EgRzIwHhcNMjQwNzIwMDAwMDAwWhcNMjUwODIwMjM1\nOTU5WjCBtTETMBEGCysGAQQBgjc8AgEDEwJJTjEaMBgGA1UEDwwRR292ZXJubWVu\ndCBFbnRpdHkxGjAYBgNVBAUTEUdvdmVybm1lbnQgRW50aXR5MQswCQYDVQQGEwJJ\nTjEUMBIGA1UECBMLTWFoYXJhc2h0cmExDzANBgNVBAcTBk11bWJhaTEcMBoGA1UE\nChMTU1RBVEUgQkFOSyBPRiBJTkRJQTEUMBIGA1UEAxMLcHJlcGFpZC5zYmkwggEi\nMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDij4RwZCMZeUZVE15fRMGEQ2zo\nM/TugFVW9LjkrHb5UKQw+gBotk4ggqq7WbHYjFF0wLl91rXzEmyFVRDGWQKeK5AK\nry83YfsspIRK5Cv1pN8kkNMnBPybXJTOKtlTxMB4nK+6N5xckrQLcMSKQn1CfhGl\nvYk0efXQWequL9basRMLF7zH7SazsTNzOMEVapVyiZ5BMcqZwIAzj9Opr3CeoESU\n2jAz1yC9V6tczibUKWuoU4DjjiLENR9SFTNGy0JljOz1cImxhgLyY/5mdRPY+5Dg\ncuG0Vx7xpBWKqb5FIPhFypz7d3t5PF53SNfT1BZfVC06pT9FXnf6vhZGD1rfAgMB\nAAGjggNkMIIDYDAfBgNVHSMEGDAWgBRqTlC/mGidW3sgddRZAXlIZpIyBjAdBgNV\nHQ4EFgQUrw3V72aBtuxNibhOIM6UTS/af7EwJwYDVR0RBCAwHoILcHJlcGFpZC5z\nYmmCD3d3dy5wcmVwYWlkLnNiaTBKBgNVHSAEQzBBMAsGCWCGSAGG/WwCATAyBgVn\ngQwBATApMCcGCCsGAQUFBwIBFhtodHRwOi8vd3d3LmRpZ2ljZXJ0LmNvbS9DUFMw\nDgYDVR0PAQH/BAQDAgWgMB0GA1UdJQQWMBQGCCsGAQUFBwMBBggrBgEFBQcDAjB1\nBgNVHR8EbjBsMDSgMqAwhi5odHRwOi8vY3JsMy5kaWdpY2VydC5jb20vRGlnaUNl\ncnRFVlJTQUNBRzIuY3JsMDSgMqAwhi5odHRwOi8vY3JsNC5kaWdpY2VydC5jb20v\nRGlnaUNlcnRFVlJTQUNBRzIuY3JsMHMGCCsGAQUFBwEBBGcwZTAkBggrBgEFBQcw\nAYYYaHR0cDovL29jc3AuZGlnaWNlcnQuY29tMD0GCCsGAQUFBzAChjFodHRwOi8v\nY2FjZXJ0cy5kaWdpY2VydC5jb20vRGlnaUNlcnRFVlJTQUNBRzIuY3J0MAwGA1Ud\nEwEB/wQCMAAwggF+BgorBgEEAdZ5AgQCBIIBbgSCAWoBaAB3AN3cyjSV1+EWBeeV\nMvrHn/g9HFDf2wA6FBJ2Ciysu8gqAAABkM9RxY4AAAQDAEgwRgIhAPEvYK4AAQwl\nrTmrtgEuegUWWEPgjJcCzUvmNl1jNzHBAiEA8WNsGNuBqHgzP59Hdh1zQ9JAvrWk\nqDnRcXDIBB4yaysAdgDm0jFjQHeMwRBBBtdxuc7B0kD2loSG+7qHMh39HjeOUAAA\nAZDPUcWpAAAEAwBHMEUCIQDrvH/LxovhZsg6k6bfYDrJlA9XQfxsOFPCpivp3Zvw\nFQIgOWU8AvM/B6zVhWTZt7q10j9hLJwOKRBBGzzk6WN7MsMAdQDM+w9qhXEJZf6V\nm1PO6bJ8IumFXA2XjbapflTA/kwNsAAAAZDPUcWbAAAEAwBGMEQCIBM2l5AFM/r5\nYAJJ/B8M1mmHVuUqqHXJLoHhxClh0v5mAiAjUnUGFm9S5z4dpESM6jCN7x8nuyKN\nfO7KjQfRKhyLtDANBgkqhkiG9w0BAQsFAAOCAQEAM5Rd8K8JdK9wrA9ZMTzzVO/E\nRbWOgSJkOKRFAgd6TVmW6MeIMJ/PzAmTaWteGHVfDXHOBo7FwNAn6la8FHxv6t/n\nrsBgvB8Ms6n/qfHo2w89ZDGe9QOqWQutEA8VWr3lznzV49Q0cM30a87QpQdz9GDY\nHsvMY5TsCo1SIWqL6PLiZPtB5oo26q/P7R93VNeOvOGtdlry9wOQX6LTIwfJGR9b\nr48iDEVgEMGJZLP+FQBLI+WGpmN4CDdNXIrD3I+qnT8iM5p6knv9l6dNW5rry1rP\nqZaJIR/IN2jtsCdLNQ5AkHKS7d31kefw5YjPzZWzEJZwwgkQcrKgY3AgKf2E7w==\n-----END CERTIFICATE-----",
+        "certificate": "-----BEGIN CERTIFICATE-----\nMIIF4zCCBMugAwIBAgITGgAZC/jXuLLhwDhFTgAAABkL+DANBgkqhkiG9w0BAQsF\nADBAMRMwEQYKCZImiZPyLGQBGRYDU0JJMRIwEAYKCZImiZPyLGQBGRYCQUQxFTAT\nBgNVBAMTDFNCSS1QUk9ELVJDQTAeFw0yNTAyMTgxMjM5NThaFw0yNzAyMTgxMjM5\nNThaMIGAMQswCQYDVQQGEwJJTjEUMBIGA1UECBMLTUFIQVJBU0hUUkExDzANBgNV\nBAcTBk1VTUJBSTEcMBoGA1UEChMTU1RBVEUgQkFOSyBPRiBJTkRJQTEPMA0GA1UE\nCxMGSVQgU1AyMRswGQYDVQQDDBIqc3RhdGViYW5rdGltZXMuaW4wggEiMA0GCSqG\nSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCQR87Yu2MjJfzmvazdjdTJKbhdcVqImq+e\nY/QAPqp8Ojr1BqQN7bwX7/aA38voMlgMgh7URhXyEWcDzsRhoiZ50i0uzz1DKkJj\nKFsb5+x+wtMTto8bgS3zM2lpRiJUM2yHYFWCLMor5zMRjMJcy/UYVieVoccTjXRL\nxOVFY2zQkUua7TWp8BgoSSF9QvimMlaxh6WnNzJLkqdTXyzAGzkPQqFAVSPOYsG2\nmAODkBC2uN5331wgH+CaanZ1s/h3VYQ8VxsMpSNw+qJDPGMGGj7HS1+q5jqkKIWU\n6F7aFdLt8K6ArZ7i4LtsOfbf8xyL1yLwvQUI7ChtvhETl8s9qHv3AgMBAAGjggKT\nMIICjzAdBgNVHQ4EFgQUHqjLM1U4qbsPFOtLSrU6XflK6uswLQYDVR0RBCYwJIIT\nKi5zdGF0ZWJhbmt0aW1lcy5pboINKi5DT1JQLkFELlNCSTAfBgNVHSMEGDAWgBQ3\nmiB0MF4k/R/lv67/APRrFXWfsDCBywYDVR0fBIHDMIHAMIG9oIG6oIG3hoG0bGRh\ncDovLy9DTj1TQkktUFJPRC1SQ0EsQ049U0JJUk9PVENBUFJPRCxDTj1DRFAsQ049\nUHVibGljJTIwS2V5JTIwU2VydmljZXMsQ049U2VydmljZXMsQ049Q29uZmlndXJh\ndGlvbixEQz1BRCxEQz1TQkk/Y2VydGlmaWNhdGVSZXZvY2F0aW9uTGlzdD9iYXNl\nP29iamVjdENsYXNzPWNSTERpc3RyaWJ1dGlvblBvaW50MIG5BggrBgEFBQcBAQSB\nrDCBqTCBpgYIKwYBBQUHMAKGgZlsZGFwOi8vL0NOPVNCSS1QUk9ELVJDQSxDTj1B\nSUEsQ049UHVibGljJTIwS2V5JTIwU2VydmljZXMsQ049U2VydmljZXMsQ049Q29u\nZmlndXJhdGlvbixEQz1BRCxEQz1TQkk/Y0FDZXJ0aWZpY2F0ZT9iYXNlP29iamVj\ndENsYXNzPWNlcnRpZmljYXRpb25BdXRob3JpdHkwDgYDVR0PAQH/BAQDAgWgMDwG\nCSsGAQQBgjcVBwQvMC0GJSsGAQQBgjcVCIaBnFyDx4Bbg/WRN4TggWaz6mRqhujQ\nDYOB7QkCAWQCARUwHQYDVR0lBBYwFAYIKwYBBQUHAwEGCCsGAQUFBwMCMCcGCSsG\nAQQBgjcVCgQaMBgwCgYIKwYBBQUHAwEwCgYIKwYBBQUHAwIwDQYJKoZIhvcNAQEL\nBQADggEBALT/erRWph8ZQrBblYDhd501VXAONzR1G6C01r8b/uGXdKf3CCzg5/nr\ndMFtwmejqCU//PUhBJBYKWfc6NmRdufY2vyczIWpfs21npAZmNIhlxzaZBOXQVn0\n6EpDz0Bdsx3aKbJS8VCjotxeF3dTj2giQqo2A5swvhQsa6ZhlB8JrRVd3LJ9OTOO\nHbfT+m7ODmLB7XaObfYEaF+geVDlgIAxIoeZi7NEMhJp6PqlCwdxebm6PhVr+zmH\ntIccu1NudsQhgU+K3Fc3oeYzjTdU8V98/ITtZBAB+pjObU8TIdTs9DjUnLjVhXBE\n5GNF+B0dEFJRsbIm9Pfl8tawr3BCrgw=\n-----END CERTIFICATE-----",
         "days_until_expire": 365,
-        "expiry_status": "SSL_CERTIFICATE_EXPIRED",
-        "fingerprint": "SHA1 Fingerprint=A8:67:A2:E0:38:BA:9B:EB:22:B9:1A:03:09:DF:9C:20:1A:B9:34:2B\n",
+        "expiry_status": "SSL_CERTIFICATE_GOOD",
+        "fingerprint": "SHA1 Fingerprint=AF:A4:C0:03:B0:98:84:A4:B4:5D:B8:C2:5E:80:CD:AE:3B:99:71:5E",
         "issuer": {
-          "common_name": "DigiCert EV RSA CA G2",
-          "country": "US",
-          "distinguished_name": "C=US, O=DigiCert Inc, CN=DigiCert EV RSA CA G2",
-          "organization": "DigiCert Inc"
+          "common_name": "SBI-PROD-RCA",
+          "distinguished_name": "CN=SBI-PROD-RCA"
         },
-        "not_after": "2025-08-20 23:59:59",
-        "not_before": "2024-07-20 00:00:00",
-        "public_key": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4o+EcGQjGXlGVRNeX0TB\nhENs6DP07oBVVvS45Kx2+VCkMPoAaLZOIIKqu1mx2IxRdMC5fda18xJshVUQxlkC\nniuQCq8vN2H7LKSESuQr9aTfJJDTJwT8m1yUzirZU8TAeJyvujecXJK0C3DEikJ9\nQn4Rpb2JNHn10Fnqri/W2rETCxe8x+0ms7EzczjBFWqVcomeQTHKmcCAM4/Tqa9w\nnqBElNowM9cgvVerXM4m1ClrqFOA444ixDUfUhUzRstCZYzs9XCJsYYC8mP+ZnUT\n2PuQ4HLhtFce8aQViqm+RSD4Rcqc+3d7eTxed0jX09QWX1QtOqU/RV53+r4WRg9a\n3wIDAQAB\n-----END PUBLIC KEY-----\n",
+        "not_after": "2027-02-18 12:39:58",
+        "not_before": "2025-02-18 12:39:58",
+        "public_key": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAkEfO2LtjIyX85r2s3Y3U\nySm4XXFaiJqvnmP0AD6qfDo69QakDe28F+/2gN/L6DJYDIIe1EYV8hFnA87EYaIm\nedItLs89QypCYyhbG+fsfsLTE7aPG4Et8zNpaUYiVDNsh2BVgizKK+czEYzCXMv1\nGFYnlaHHE410S8TlRWNs0JFLmu01qfAYKEkhfUL4pjJWsYelpzcyS5KnU18swBs5\nD0KhQFUjzmLBtpgDg5AQtrjed99cIB/gmmp2dbP4d1WEPFcbDKUjcPqiQzxjBho+\nx0tfquY6pCiFlOhe2hXS7fCugK2e4uC7bDn23/Mci9ci8L0FCOwobb4RE5fLPah7\n9wIDAQAB\n-----END PUBLIC KEY-----\n",
         "self_signed": false,
-        "serial_number": "8184247675667219349440745989514352761",
+        "serial_number": "579827898134542151100162637039771750942444536",
         "signature_algorithm": "sha256WithRSAEncryption",
         "subject": {
-          "common_name": "prepaid.sbi",
+          "common_name": "*statebanktimes.in",
           "country": "IN",
-          "distinguished_name": "C=IN, ST=Maharashtra, L=Mumbai, O=STATE BANK OF INDIA, CN=prepaid.sbi",
-          "locality": "Mumbai",
+          "distinguished_name": "C=IN, ST=MAHARASHTRA, L=MUMBAI, O=STATE BANK OF INDIA, OU=IT SP2, CN=*statebanktimes.in",
+          "locality": "MUMBAI",
           "organization": "STATE BANK OF INDIA",
-          "state": "Maharashtra"
+          "organization_unit": "IT SP2",
+          "state": "MAHARASHTRA"
         },
         "subject_alt_names": [
-          "prepaid.sbi",
-          "www.prepaid.sbi"
+          "*.statebanktimes.in",
+          "*.CORP.AD.SBI"
         ],
-        "text": "Certificate:\n    Data:\n        Version: 3 (0x2)\n        Serial Number:\n            06:28:3a:90:7a:cc:1a:7d:2b:b8:97:c3:06:62:58:79\n        Signature Algorithm: sha256WithRSAEncryption\n        Issuer: C=US, O=DigiCert Inc, CN=DigiCert EV RSA CA G2\n        Validity\n            Not Before: Jul 20 00:00:00 2024 GMT\n            Not After : Aug 20 23:59:59 2025 GMT\n        Subject: jurisdictionC=IN/businessCategory=Government Entity/serialNumber=Government Entity, C=IN, ST=Maharashtra, L=Mumbai, O=STATE BANK OF INDIA, CN=prepaid.sbi\n        Subject Public Key Info:\n            Public Key Algorithm: rsaEncryption\n                RSA Public-Key: (2048 bit)\n                Modulus:\n                    00:e2:8f:84:70:64:23:19:79:46:55:13:5e:5f:44:\n                    c1:84:43:6c:e8:33:f4:ee:80:55:56:f4:b8:e4:ac:\n                    76:f9:50:a4:30:fa:00:68:b6:4e:20:82:aa:bb:59:\n                    b1:d8:8c:51:74:c0:b9:7d:d6:b5:f3:12:6c:85:55:\n                    10:c6:59:02:9e:2b:90:0a:af:2f:37:61:fb:2c:a4:\n                    84:4a:e4:2b:f5:a4:df:24:90:d3:27:04:fc:9b:5c:\n                    94:ce:2a:d9:53:c4:c0:78:9c:af:ba:37:9c:5c:92:\n                    b4:0b:70:c4:8a:42:7d:42:7e:11:a5:bd:89:34:79:\n                    f5:d0:59:ea:ae:2f:d6:da:b1:13:0b:17:bc:c7:ed:\n                    26:b3:b1:33:73:38:c1:15:6a:95:72:89:9e:41:31:\n                    ca:99:c0:80:33:8f:d3:a9:af:70:9e:a0:44:94:da:\n                    30:33:d7:20:bd:57:ab:5c:ce:26:d4:29:6b:a8:53:\n                    80:e3:8e:22:c4:35:1f:52:15:33:46:cb:42:65:8c:\n                    ec:f5:70:89:b1:86:02:f2:63:fe:66:75:13:d8:fb:\n                    90:e0:72:e1:b4:57:1e:f1:a4:15:8a:a9:be:45:20:\n                    f8:45:ca:9c:fb:77:7b:79:3c:5e:77:48:d7:d3:d4:\n                    16:5f:54:2d:3a:a5:3f:45:5e:77:fa:be:16:46:0f:\n                    5a:df\n                Exponent: 65537 (0x10001)\n        X509v3 extensions:\n            X509v3 Authority Key Identifier: \n                keyid:6A:4E:50:BF:98:68:9D:5B:7B:20:75:D4:59:01:79:48:66:92:32:06\n\n            X509v3 Subject Key Identifier: \n                AF:0D:D5:EF:66:81:B6:EC:4D:89:B8:4E:20:CE:94:4D:2F:DA:7F:B1\n            X509v3 Subject Alternative Name: \n                DNS:prepaid.sbi, DNS:www.prepaid.sbi\n            X509v3 Certificate Policies: \n                Policy: 2.16.840.1.114412.2.1\n                Policy: 2.23.140.1.1\n                  CPS: http://www.digicert.com/CPS\n\n            X509v3 Key Usage: critical\n                Digital Signature, Key Encipherment\n            X509v3 Extended Key Usage: \n                TLS Web Server Authentication, TLS Web Client Authentication\n            X509v3 CRL Distribution Points: \n\n                Full Name:\n                  URI:http://crl3.digicert.com/DigiCertEVRSACAG2.crl\n\n                Full Name:\n                  URI:http://crl4.digicert.com/DigiCertEVRSACAG2.crl\n\n            Authority Information Access: \n                OCSP - URI:http://ocsp.digicert.com\n                CA Issuers - URI:http://cacerts.digicert.com/DigiCertEVRSACAG2.crt\n\n            X509v3 Basic Constraints: critical\n                CA:FALSE\n            CT Precertificate SCTs: \n                Signed Certificate Timestamp:\n                    Version   : v1 (0x0)\n                    Log ID    : DD:DC:CA:34:95:D7:E1:16:05:E7:95:32:FA:C7:9F:F8:\n                                3D:1C:50:DF:DB:00:3A:14:12:76:0A:2C:AC:BB:C8:2A\n                    Timestamp : Jul 20 08:46:01.102 2024 GMT\n                    Extensions: none\n                    Signature : ecdsa-with-SHA256\n                                30:46:02:21:00:F1:2F:60:AE:00:01:0C:25:AD:39:AB:\n                                B6:01:2E:7A:05:16:58:43:E0:8C:97:02:CD:4B:E6:36:\n                                5D:63:37:31:C1:02:21:00:F1:63:6C:18:DB:81:A8:78:\n                                33:3F:9F:47:76:1D:73:43:D2:40:BE:B5:A4:A8:39:D1:\n                                71:70:C8:04:1E:32:6B:2B\n                Signed Certificate Timestamp:\n                    Version   : v1 (0x0)\n                    Log ID    : E6:D2:31:63:40:77:8C:C1:10:41:06:D7:71:B9:CE:C1:\n                                D2:40:F6:96:84:86:FB:BA:87:32:1D:FD:1E:37:8E:50\n                    Timestamp : Jul 20 08:46:01.129 2024 GMT\n                    Extensions: none\n                    Signature : ecdsa-with-SHA256\n                                30:45:02:21:00:EB:BC:7F:CB:C6:8B:E1:66:C8:3A:93:\n                                A6:DF:60:3A:C9:94:0F:57:41:FC:6C:38:53:C2:A6:2B:\n                                E9:DD:9B:F0:15:02:20:39:65:3C:02:F3:3F:07:AC:D5:\n                                85:64:D9:B7:BA:B5:D2:3F:61:2C:9C:0E:29:10:41:1B:\n                                3C:E4:E9:63:7B:32:C3\n                Signed Certificate Timestamp:\n                    Version   : v1 (0x0)\n                    Log ID    : CC:FB:0F:6A:85:71:09:65:FE:95:9B:53:CE:E9:B2:7C:\n                                22:E9:85:5C:0D:97:8D:B6:A9:7E:54:C0:FE:4C:0D:B0\n                    Timestamp : Jul 20 08:46:01.115 2024 GMT\n                    Extensions: none\n                    Signature : ecdsa-with-SHA256\n                                30:44:02:20:13:36:97:90:05:33:FA:F9:60:02:49:FC:\n                                1F:0C:D6:69:87:56:E5:2A:A8:75:C9:2E:81:E1:C4:29:\n                                61:D2:FE:66:02:20:23:52:75:06:16:6F:52:E7:3E:1D:\n                                A4:44:8C:EA:30:8D:EF:1F:27:BB:22:8D:7C:EE:CA:8D:\n                                07:D1:2A:1C:8B:B4\n    Signature Algorithm: sha256WithRSAEncryption\n         33:94:5d:f0:af:09:74:af:70:ac:0f:59:31:3c:f3:54:ef:c4:\n         45:b5:8e:81:22:64:38:a4:45:02:07:7a:4d:59:96:e8:c7:88:\n         30:9f:cf:cc:09:93:69:6b:5e:18:75:5f:0d:71:ce:06:8e:c5:\n         c0:d0:27:ea:56:bc:14:7c:6f:ea:df:e7:ae:c0:60:bc:1f:0c:\n         b3:a9:ff:a9:f1:e8:db:0f:3d:64:31:9e:f5:03:aa:59:0b:ad:\n         10:0f:15:5a:bd:e5:ce:7c:d5:e3:d4:34:70:cd:f4:6b:ce:d0:\n         a5:07:73:f4:60:d8:1e:cb:cc:63:94:ec:0a:8d:52:21:6a:8b:\n         e8:f2:e2:64:fb:41:e6:8a:36:ea:af:cf:ed:1f:77:54:d7:8e:\n         bc:e1:ad:76:5a:f2:f7:03:90:5f:a2:d3:23:07:c9:19:1f:5b:\n         af:8f:22:0c:45:60:10:c1:89:64:b3:fe:15:00:4b:23:e5:86:\n         a6:63:78:08:37:4d:5c:8a:c3:dc:8f:aa:9d:3f:22:33:9a:7a:\n         92:7b:fd:97:a7:4d:5b:9a:eb:cb:5a:cf:a9:96:89:21:1f:c8:\n         37:68:ed:b0:27:4b:35:0e:40:90:72:92:ed:dd:f5:91:e7:f0:\n         e5:88:cf:cd:95:b3:10:96:70:c2:09:10:72:b2:a0:63:70:20:\n         29:fd:84:ef\n",
-        "version": "2"
+        "text": "Certificate:\n    Data:\n        Version: 3 (0x2)\n        Serial Number:\n            1a:00:19:0b:f8:d7:b8:b2:e1:c0:38:45:4e:00:00:00:19:0b:f8\n        Signature Algorithm: sha256WithRSAEncryption\n        Issuer: DC = SBI, DC = AD, CN = SBI-PROD-RCA\n        Validity\n            Not Before: Feb 18 12:39:58 2025 GMT\n            Not After : Feb 18 12:39:58 2027 GMT\n        Subject: C = IN, ST = MAHARASHTRA, L = MUMBAI, O = STATE BANK OF INDIA, OU = IT SP2, CN = *statebanktimes.in\n        Subject Public Key Info:\n            Public Key Algorithm: rsaEncryption\n                RSA Public-Key: (2048 bit)\n                Modulus:\n                    00:90:47:ce:d8:bb:63:23:25:fc:e6:bd:ac:dd:8d:\n                    d4:c9:29:b8:5d:71:5a:88:9a:af:9e:63:f4:00:3e:\n                    aa:7c:3a:3a:f5:06:a4:0d:ed:bc:17:ef:f6:80:df:\n                    cb:e8:32:58:0c:82:1e:d4:46:15:f2:11:67:03:ce:\n                    c4:61:a2:26:79:d2:2d:2e:cf:3d:43:2a:42:63:28:\n                    5b:1b:e7:ec:7e:c2:d3:13:b6:8f:1b:81:2d:f3:33:\n                    69:69:46:22:54:33:6c:87:60:55:82:2c:ca:2b:e7:\n                    33:11:8c:c2:5c:cb:f5:18:56:27:95:a1:c7:13:8d:\n                    74:4b:c4:e5:45:63:6c:d0:91:4b:9a:ed:35:a9:f0:\n                    18:28:49:21:7d:42:f8:a6:32:56:b1:87:a5:a7:37:\n                    32:4b:92:a7:53:5f:2c:c0:1b:39:0f:42:a1:40:55:\n                    23:ce:62:c1:b6:98:03:83:90:10:b6:b8:de:77:df:\n                    5c:20:1f:e0:9a:6a:76:75:b3:f8:77:55:84:3c:57:\n                    1b:0c:a5:23:70:fa:a2:43:3c:63:06:1a:3e:c7:4b:\n                    5f:aa:e6:3a:a4:28:85:94:e8:5e:da:15:d2:ed:f0:\n                    ae:80:ad:9e:e2:e0:bb:6c:39:f6:df:f3:1c:8b:d7:\n                    22:f0:bd:05:08:ec:28:6d:be:11:13:97:cb:3d:a8:\n                    7b:f7\n                Exponent: 65537 (0x10001)\n        X509v3 extensions:\n            X509v3 Subject Key Identifier: \n                1E:A8:CB:33:55:38:A9:BB:0F:14:EB:4B:4A:B5:3A:5D:F9:4A:EA:EB\n            X509v3 Subject Alternative Name: \n                DNS:*.statebanktimes.in, DNS:*.CORP.AD.SBI\n            X509v3 Authority Key Identifier: \n                keyid:37:9A:20:74:30:5E:24:FD:1F:E5:BF:AE:FF:00:F4:6B:15:75:9F:B0\n\n            X509v3 CRL Distribution Points: \n\n                Full Name:\n                  URI:ldap:///CN=SBI-PROD-RCA,CN=SBIROOTCAPROD,CN=CDP,CN=Public%20Key%20Services,CN=Services,CN=Configuration,DC=AD,DC=SBI?certificateRevocationList?base?objectClass=cRLDistributionPoint\n\n            Authority Information Access: \n                CA Issuers - URI:ldap:///CN=SBI-PROD-RCA,CN=AIA,CN=Public%20Key%20Services,CN=Services,CN=Configuration,DC=AD,DC=SBI?cACertificate?base?objectClass=certificationAuthority\n\n            X509v3 Key Usage: critical\n                Digital Signature, Key Encipherment\n            1.3.6.1.4.1.311.21.7: \n                0-.%+.....7.....\\...[...7...f..dj...\r......d...\n            X509v3 Extended Key Usage: \n                TLS Web Server Authentication, TLS Web Client Authentication\n            1.3.6.1.4.1.311.21.10: \n                0.0\n..+.......0\n..+.......\n    Signature Algorithm: sha256WithRSAEncryption\n         b4:ff:7a:b4:56:a6:1f:19:42:b0:5b:95:80:e1:77:9d:35:55:\n         70:0e:37:34:75:1b:a0:b4:d6:bf:1b:fe:e1:97:74:a7:f7:08:\n         2c:e0:e7:f9:eb:74:c1:6d:c2:67:a3:a8:25:3f:fc:f5:21:04:\n         90:58:29:67:dc:e8:d9:91:76:e7:d8:da:fc:9c:cc:85:a9:7e:\n         cd:b5:9e:90:19:98:d2:21:97:1c:da:64:13:97:41:59:f4:e8:\n         4a:43:cf:40:5d:b3:1d:da:29:b2:52:f1:50:a3:a2:dc:5e:17:\n         77:53:8f:68:22:42:aa:36:03:9b:30:be:14:2c:6b:a6:61:94:\n         1f:09:ad:15:5d:dc:b2:7d:39:33:8e:1d:b7:d3:fa:6e:ce:0e:\n         62:c1:ed:76:8e:6d:f6:04:68:5f:a0:79:50:e5:80:80:31:22:\n         87:99:8b:b3:44:32:12:69:e8:fa:a5:0b:07:71:79:b9:ba:3e:\n         15:6b:fb:39:87:b4:87:1c:bb:53:6e:76:c4:21:81:4f:8a:dc:\n         57:37:a1:e6:33:8d:37:54:f1:5f:7c:fc:84:ed:64:10:01:fa:\n         98:ce:6d:4f:13:21:d4:ec:f4:38:d4:9c:b8:d5:85:70:44:e4:\n         63:45:f8:1d:1d:10:52:51:b1:b2:26:f4:f7:e5:f2:d6:b0:af:\n         70:42:ae:0c\n",
+        "version": "3"
       },
       "certificate_base64": false,
       "enable_ocsp_stapling": false,
@@ -423,7 +433,8 @@
           "key_size": "SSL_KEY_2048_BITS"
         }
       },
-      "name": "VS_ATM_PCMS_44.18_9443_V2",
+      "key_passphrase": "\u003csensitive\u003e",
+      "name": "IT-SP_RAW_AMLOCK_TFSS",
       "ocsp_config": {
         "failed_ocsp_jobs_retry_interval": 3600,
         "max_tries": 10,
@@ -432,18 +443,27 @@
       },
       "ocsp_error_status": "OCSP_ERR_CERTSTATUS_DISABLED",
       "status": "SSL_CERTIFICATE_FINISHED",
-      "tenant_ref": "https://m00avientlb.local/api/tenant/admin#admin",
+      "tenant_ref": "https://m00avientlb.corp.ad.sbi/api/tenant/admin#admin",
       "type": "SSL_CERTIFICATE_TYPE_VIRTUALSERVICE",
-      "url": "https://m00avientlb.local/api/sslkeyandcertificate/sslkeyandcertificate-12ae0c8e-68ca-4e03-b08f-323642db29fb#VS_ATM_PCMS_44.18_9443_V2",
-      "uuid": "sslkeyandcertificate-12ae0c8e-68ca-4e03-b08f-323642db29fb"
+      "url": "https://m00avientlb.corp.ad.sbi/api/sslkeyandcertificate/sslkeyandcertificate-873f0595-34af-424a-b554-c7daf37f1a94#IT-SP_RAW_AMLOCK_TFSS",
+      "uuid": "sslkeyandcertificate-873f0595-34af-424a-b554-c7daf37f1a94"
     }
   ],
-  "ssl_profile_ref": "https://m00avientlb.local/api/sslprofile/sslprofile-3acb25ed-48b0-4b0d-99bf-4f9bdaae634d#System-Standard-PFS",
+  "ssl_profile_ref": "https://m00avientlb.corp.ad.sbi/api/sslprofile/sslprofile-1ee9e632-9bd3-47b4-bf37-a1a597b0ba0d#IT-SP_RAW_AMLOCK_TFSS_SSL-Profile",
   "ssl_profile_ref_data": {
-    "accepted_ciphers": "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:AES128-GCM-SHA256:AES256-GCM-SHA384",
+    "accepted_ciphers": "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:AES128-GCM-SHA256:AES128-SHA:AES256-GCM-SHA384:AES256-SHA:ECDHE-ECDSA-AES128-SHA:ECDHE-ECDSA-AES128-SHA256:ECDHE-ECDSA-AES256-SHA:ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES128-SHA:ECDHE-RSA-AES256-SHA384",
     "accepted_versions": [
       {
         "type": "SSL_VERSION_TLS1_2"
+      },
+      {
+        "type": "SSL_VERSION_SSLV3"
+      },
+      {
+        "type": "SSL_VERSION_TLS1"
+      },
+      {
+        "type": "SSL_VERSION_TLS1_1"
       },
       {
         "type": "SSL_VERSION_TLS1_3"
@@ -456,62 +476,71 @@
       "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
       "TLS_AES_128_GCM_SHA256",
       "TLS_AES_256_GCM_SHA384",
+      "TLS_CHACHA20_POLY1305_SHA256",
       "TLS_RSA_WITH_AES_128_GCM_SHA256",
-      "TLS_RSA_WITH_AES_256_GCM_SHA384"
+      "TLS_RSA_WITH_AES_128_CBC_SHA",
+      "TLS_RSA_WITH_AES_256_GCM_SHA384",
+      "TLS_RSA_WITH_AES_256_CBC_SHA",
+      "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA",
+      "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256",
+      "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA",
+      "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384",
+      "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
+      "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384"
     ],
-    "ciphersuites": "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384",
+    "ciphersuites": "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256",
     "dhparam": "-----BEGIN DH PARAMETERS-----\nMIIBCAKCAQEAohUmEGbnPo1dxqvGg7zslnKTZAPPNnE7l1SdTbuPbsYF83J+VDkE\npUorADcUydwdPM9nTLEk4qKGnNsbt0S+WXf6EcP0oa+rjRFXsvb4B+tD4VHGmtDA\n/iivo51hKu93xaoS0xe9TjI9ZZBcirzyz3V55u/OICgNwRM6nL/Fxx3RXG3LGHP4\nJF73p/kR5cNB9ebYuKYaEzkTOg6pmCyguBEBdg40br+I59rQLgzn2WMRb1bZRUzy\nqSIIAMyok9/bsaxyCCsgVzkTPTtlYM9ooJzSGarlNaBhP3AerMdCV6rAQFYfP9vw\nKvbiJcx+IEdHViJLl2LAFl/gYxOnIBHAswIBAg==\n-----END DH PARAMETERS-----\n",
     "ec_named_curve": "auto",
     "enable_early_data": false,
     "enable_ssl_session_reuse": true,
     "is_federated": false,
-    "name": "System-Standard-PFS",
+    "name": "IT-SP_RAW_AMLOCK_TFSS_SSL-Profile",
     "prefer_client_cipher_ordering": false,
     "send_close_notify": true,
     "signature_algorithm": "auto",
     "ssl_rating": {
-      "compatibility_rating": "SSL_SCORE_GOOD",
+      "compatibility_rating": "SSL_SCORE_EXCELLENT",
       "performance_rating": "SSL_SCORE_EXCELLENT",
-      "security_score": "100"
+      "security_score": "70"
     },
     "ssl_session_timeout": 86400,
-    "tenant_ref": "https://m00avientlb.local/api/tenant/admin#admin",
+    "tenant_ref": "https://m00avientlb.corp.ad.sbi/api/tenant/admin#admin",
     "type": "SSL_PROFILE_TYPE_APPLICATION",
-    "url": "https://m00avientlb.local/api/sslprofile/sslprofile-3acb25ed-48b0-4b0d-99bf-4f9bdaae634d#System-Standard-PFS",
-    "uuid": "sslprofile-3acb25ed-48b0-4b0d-99bf-4f9bdaae634d"
+    "url": "https://m00avientlb.corp.ad.sbi/api/sslprofile/sslprofile-1ee9e632-9bd3-47b4-bf37-a1a597b0ba0d#IT-SP_RAW_AMLOCK_TFSS_SSL-Profile",
+    "uuid": "sslprofile-1ee9e632-9bd3-47b4-bf37-a1a597b0ba0d"
   },
   "ssl_sess_cache_avg_size": 1024,
-  "tenant_ref": "https://m00avientlb.local/api/tenant/admin#admin",
+  "tenant_ref": "https://m00avientlb.corp.ad.sbi/api/tenant/admin#admin",
   "tls_ticket_key": [
     {
-      "aes_key": "q9mwQecl+cqpbtmQRTQuUA==",
-      "hmac_key": "ILYMbRt26K81p5hlzV6oIA==",
-      "name": "9335e515-f1b6-457a-967e-5cf414fcaa5f"
+      "aes_key": "3rKUFc/P7Dv4BdOiZYXwVQ==",
+      "hmac_key": "/+tcfl1EJnxBpHShvixlBA==",
+      "name": "c0926ea9-1391-4fd4-a1b2-ff73181a3a26"
     },
     {
-      "aes_key": "rgf9o/9kFzUBtLCHDhOGEg==",
-      "hmac_key": "0tmvhE/CPxMwBvtD8wnCqQ==",
-      "name": "30dfe1c1-9493-475c-8f9f-ff5e200e9ca0"
+      "aes_key": "eexHW/wIvJ5328HHChNGJg==",
+      "hmac_key": "0c8SU4T16Wl6MlifQ0bUSQ==",
+      "name": "2d52bad4-71f6-4b13-bec2-8e39d860ab3f"
     },
     {
-      "aes_key": "zqlsbJ5FchjQx3QvGQkQ0w==",
-      "hmac_key": "zjYLzv8dBU9Z+f3at7HRcA==",
-      "name": "82557749-08fe-45f6-bd2f-86f91fb5b752"
+      "aes_key": "3dKB97S7gevx0caGKPzVjw==",
+      "hmac_key": "foBXBSWGDwitw/OjO7jkXw==",
+      "name": "927b123a-ed06-4970-9988-240aa70bad7a"
     }
   ],
   "traffic_enabled": true,
   "type": "VS_TYPE_NORMAL",
-  "url": "https://m00avientlb.local/api/virtualservice/virtualservice-6d75325a-f0e0-4e36-9f53-50ae432612ae#VS_ATM_PCMS_44.18_9443",
+  "url": "https://m00avientlb.corp.ad.sbi/api/virtualservice/virtualservice-d02e2518-928b-41d9-919f-454fb3cfb8de#IT-SP_RAW_AMLOCK_TFSS_88.22_443",
   "use_bridge_ip_as_vip": false,
   "use_vip_as_snat": true,
-  "uuid": "virtualservice-6d75325a-f0e0-4e36-9f53-50ae432612ae",
-  "version": 5022,
+  "uuid": "virtualservice-d02e2518-928b-41d9-919f-454fb3cfb8de",
+  "version": 1284,
   "vh_type": "VS_TYPE_VH_SNI",
   "vip_runtime": [
     {
       "first_se_assigned_time": {
-        "secs": 1754342628,
-        "usecs": 363195
+        "secs": 1741150689,
+        "usecs": 821165
       },
       "num_additional_se": 0,
       "requested_resource": {
@@ -519,69 +548,6 @@
         "num_standby_se": 1
       },
       "se_list": [
-        {
-          "active_on_cloud": true,
-          "active_on_se": true,
-          "admin_down_requested": false,
-          "attach_ip_in_progress": false,
-          "cloud_programming_done": true,
-          "cloud_programming_status": "Virtual Service IP is reachable in the Cloud",
-          "delete_in_progress": false,
-          "detach_ip_in_progress": false,
-          "incarnation": "2025-09-18 17:46:28.534751",
-          "is_portchannel": false,
-          "is_primary": true,
-          "is_standby": false,
-          "memory": 15996,
-          "mgmt_ip": {
-            "addr": "10.191.99.38",
-            "type": "V4"
-          },
-          "route_revoked_pool_down": false,
-          "scaleout_in_progress": false,
-          "se_programming_done": true,
-          "se_ready_in_progress": false,
-          "se_ref": "https://m00avientlb.local/api/serviceengine/se-005056ad6223#avie_dmz_Avi-se-pjfzu",
-          "sec_idx": 0,
-          "snat_ip": {
-            "addr": "10.189.44.18",
-            "type": "V4"
-          },
-          "snat_ip6_address": {
-            "addr": "2405:a700:14:100::28",
-            "type": "V6"
-          },
-          "vcpus": 8,
-          "vip6_subnet_mask": 128,
-          "vip_intf_list": [
-            {
-              "is_portchannel": false,
-              "vip_intf_ip": {
-                "addr": "10.189.45.123",
-                "type": "V4"
-              },
-              "vip_intf_ip6": {
-                "addr": "2405:a700:14:100::192",
-                "type": "V6"
-              },
-              "vip_intf_mac": "00:50:56:ad:01:c4",
-              "vlan_id": 0
-            }
-          ],
-          "vip_intf_mac": "00:50:56:ad:01:c4",
-          "vip_subnet_mask": 32,
-          "vlan_id": 0,
-          "vnic": [
-            {
-              "mac": "00:50:56:ad:01:c4",
-              "type": "VNIC_TYPE_FE"
-            },
-            {
-              "mac": "00:50:56:ad:01:c4",
-              "type": "VNIC_TYPE_BE"
-            }
-          ]
-        },
         {
           "active_on_cloud": false,
           "active_on_se": true,
@@ -591,20 +557,20 @@
           "cloud_programming_status": "Virtual Service IP is not reachable in the Cloud",
           "delete_in_progress": false,
           "detach_ip_in_progress": false,
-          "incarnation": "2025-09-18 17:48:53.876869",
+          "incarnation": "2025-11-19 19:40:08.070053",
           "is_portchannel": false,
           "is_primary": false,
           "is_standby": true,
           "memory": 15996,
           "mgmt_ip": {
-            "addr": "10.191.99.14",
+            "addr": "10.191.99.140",
             "type": "V4"
           },
           "route_revoked_pool_down": false,
           "scaleout_in_progress": false,
           "se_programming_done": true,
           "se_ready_in_progress": false,
-          "se_ref": "https://m00avientlb.local/api/serviceengine/se-005056ad865a#avie_dmz_Avi-se-galsn",
+          "se_ref": "https://m00avientlb.corp.ad.sbi/api/serviceengine/se-0050568f9c58#avie_prod_Avi-se-qzvvd",
           "sec_idx": 1,
           "vcpus": 8,
           "vip6_subnet_mask": 128,
@@ -612,27 +578,78 @@
             {
               "is_portchannel": false,
               "vip_intf_ip": {
-                "addr": "10.189.44.58",
+                "addr": "10.191.88.19",
                 "type": "V4"
               },
-              "vip_intf_ip6": {
-                "addr": "2405:a700:14:100::143",
-                "type": "V6"
-              },
-              "vip_intf_mac": "00:50:56:ad:5d:1c",
+              "vip_intf_mac": "00:50:56:8f:19:c9",
               "vlan_id": 0
             }
           ],
-          "vip_intf_mac": "00:50:56:ad:5d:1c",
+          "vip_intf_mac": "00:50:56:8f:19:c9",
           "vip_subnet_mask": 32,
           "vlan_id": 0,
           "vnic": [
             {
-              "mac": "00:50:56:ad:5d:1c",
+              "mac": "00:50:56:8f:19:c9",
               "type": "VNIC_TYPE_FE"
             },
             {
-              "mac": "00:50:56:ad:5d:1c",
+              "mac": "00:50:56:8f:19:c9",
+              "type": "VNIC_TYPE_BE"
+            }
+          ]
+        },
+        {
+          "active_on_cloud": true,
+          "active_on_se": true,
+          "admin_down_requested": false,
+          "attach_ip_in_progress": false,
+          "cloud_programming_done": true,
+          "cloud_programming_status": "Virtual Service IP is reachable in the Cloud",
+          "delete_in_progress": false,
+          "detach_ip_in_progress": false,
+          "incarnation": "2025-11-19 19:49:07.676531",
+          "is_portchannel": false,
+          "is_primary": true,
+          "is_standby": false,
+          "memory": 15996,
+          "mgmt_ip": {
+            "addr": "10.191.99.139",
+            "type": "V4"
+          },
+          "route_revoked_pool_down": false,
+          "scaleout_in_progress": false,
+          "se_programming_done": true,
+          "se_ready_in_progress": false,
+          "se_ref": "https://m00avientlb.corp.ad.sbi/api/serviceengine/se-0050568f882e#avie_prod_Avi-se-bpcmt",
+          "sec_idx": 0,
+          "snat_ip": {
+            "addr": "10.191.88.22",
+            "type": "V4"
+          },
+          "vcpus": 8,
+          "vip6_subnet_mask": 128,
+          "vip_intf_list": [
+            {
+              "is_portchannel": false,
+              "vip_intf_ip": {
+                "addr": "10.191.88.18",
+                "type": "V4"
+              },
+              "vip_intf_mac": "00:50:56:8f:33:77",
+              "vlan_id": 0
+            }
+          ],
+          "vip_intf_mac": "00:50:56:8f:33:77",
+          "vip_subnet_mask": 32,
+          "vlan_id": 0,
+          "vnic": [
+            {
+              "mac": "00:50:56:8f:33:77",
+              "type": "VNIC_TYPE_FE"
+            },
+            {
+              "mac": "00:50:56:8f:33:77",
               "type": "VNIC_TYPE_BE"
             }
           ]
@@ -641,15 +658,15 @@
       "vip_id": "1"
     }
   ],
-  "vrf_context_ref": "https://m00avientlb.local/api/vrfcontext/vrfcontext-41217508-7d69-4b84-874e-1ed08beca820#global",
-  "vsvip_ref": "https://m00avientlb.local/api/vsvip/vsvip-7e408b8b-91e8-4889-94c8-4f7098beee48#vsvip-VS_ATM_PCMS_44.18_443-NSX-T-DMZ",
+  "vrf_context_ref": "https://m00avientlb.corp.ad.sbi/api/vrfcontext/vrfcontext-862b3be3-2fc0-435d-9852-b17a0377cc8a#global",
+  "vsvip_ref": "https://m00avientlb.corp.ad.sbi/api/vsvip/vsvip-a86ab438-df77-40cd-9f50-b5f2918c41fb#IT-SP_RAW_AMLOCK_TFSS_88.22_443-VsVip",
   "vsvip_ref_data": {
-    "cloud_ref": "https://m00avientlb.local/api/cloud/cloud-eac4bc2f-5aa1-44e4-9bc3-6831c23260f1#NSX-T-DMZ",
+    "cloud_ref": "https://m00avientlb.corp.ad.sbi/api/cloud/cloud-c906f65b-76b3-4df9-8fac-8f25373acfaf#NSX-T-PROD",
     "east_west_placement": false,
-    "name": "vsvip-VS_ATM_PCMS_44.18_443-NSX-T-DMZ",
-    "tenant_ref": "https://m00avientlb.local/api/tenant/admin#admin",
-    "url": "https://m00avientlb.local/api/vsvip/vsvip-7e408b8b-91e8-4889-94c8-4f7098beee48#vsvip-VS_ATM_PCMS_44.18_443-NSX-T-DMZ",
-    "uuid": "vsvip-7e408b8b-91e8-4889-94c8-4f7098beee48",
+    "name": "IT-SP_RAW_AMLOCK_TFSS_88.22_443-VsVip",
+    "tenant_ref": "https://m00avientlb.corp.ad.sbi/api/tenant/admin#admin",
+    "url": "https://m00avientlb.corp.ad.sbi/api/vsvip/vsvip-a86ab438-df77-40cd-9f50-b5f2918c41fb#IT-SP_RAW_AMLOCK_TFSS_88.22_443-VsVip",
+    "uuid": "vsvip-a86ab438-df77-40cd-9f50-b5f2918c41fb",
     "vip": [
       {
         "auto_allocate_floating_ip": false,
@@ -658,30 +675,19 @@
         "avi_allocated_fip": false,
         "avi_allocated_vip": false,
         "enabled": true,
-        "ip6_address": {
-          "addr": "2405:a700:14:100::28",
-          "type": "V6"
-        },
         "ip_address": {
-          "addr": "10.189.44.18",
+          "addr": "10.191.88.22",
           "type": "V4"
         },
         "placement_networks": [
           {
-            "network_ref": "https://m00avientlb.local/api/network/network-d542fc49-43fe-4ebd-8c60-66fc93c64247#m02-dmz-vlan202",
+            "network_ref": "https://m00avientlb.corp.ad.sbi/api/network/network-9076fdc1-2eb1-47c3-83dc-9df0c91224f2#M01_PROD_WEB_VLAN_1582",
             "subnet": {
               "ip_addr": {
-                "addr": "10.189.44.0",
+                "addr": "10.191.88.0",
                 "type": "V4"
               },
-              "mask": 22
-            },
-            "subnet6": {
-              "ip_addr": {
-                "addr": "2405:a700:14:100::",
-                "type": "V6"
-              },
-              "mask": 64
+              "mask": 23
             }
           }
         ],
@@ -689,7 +695,7 @@
         "vip_id": "1"
       }
     ],
-    "vrf_context_ref": "https://m00avientlb.local/api/vrfcontext/vrfcontext-41217508-7d69-4b84-874e-1ed08beca820#global"
+    "vrf_context_ref": "https://m00avientlb.corp.ad.sbi/api/vrfcontext/vrfcontext-862b3be3-2fc0-435d-9852-b17a0377cc8a#global"
   },
   "weight": 1
 }
