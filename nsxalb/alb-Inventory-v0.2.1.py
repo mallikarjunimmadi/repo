@@ -170,6 +170,10 @@ def get_vs_config_map(controller, sid, csrft):
                 }
                 count += 1
             url = data.get("next")
+            # Avi "next" is commonly a relative path (e.g. "/api/virtualservice/?page=2...").
+            # requests requires an absolute URL, so normalize here.
+            if url and url.startswith("/"):
+                url = f"https://{controller}{url}"
         log(f"Successfully built VS config map for {count} Virtual Services from {controller}.", "info")
     except Exception as e:
         log(f"VS config map fetch error on {controller}: {e}", "error")
