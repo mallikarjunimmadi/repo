@@ -126,7 +126,56 @@ def get_all_service_engines(controller, sid, csrft):
         log(f"SE name lookup fetch error on {controller}: {e}", "error")
     return se_name_lookup
 
-def get_vs_inventory(controller, sid, csrft, se_name_lookup):
+def get_vs_config_map(controller, sid, csrft):
+    """Fetches VS config objects for accurate config fields.
+
+    Notes:
+      - /api/virtualservice-inventory/ is primarily an *inventory/runtime* view.
+      - Some VS config keys (notably `traffic_enabled`) may be absent there, which
+        previously caused the script to default to False for all VSes.
+      - This function paginates through /api/virtualservice/ and builds a uuid->config map
+        so the inventory/runtime view can be enriched cheaply (no per-VS GETs).
+    """
+    headers = {
+        "X-Avi-Tenant": "admin", "X-Avi-Version": AVI_VERSION,
+        "X-Csrftoken": csrft,
+        "Cookie": f"avi-sessionid={sid}; csrftoken={csrft}"
+    }
+    # Ask only for fields we need to minimize payload size.
+    params = {
+        "fields": "uuid,name,enabled,traffic_enabled,vip,services",
+        "page_size": 200
+    }
+    url = f"https://{controller}/api/virtualservice/?" + urlencode(params)
+    vs_cfg_map = {}
+    log(f"Starting fetch of VS config map (uuid/name/enabled/traffic_enabled/vip/services) from {controller}.", "info")
+    try:
+        count = 0
+        while url:
+            r = requests.get(url, headers=headers, verify=False, timeout=30)
+            if r.status_code != 200:
+                log(f"Failed to fetch VS config map from {controller}. Status: {r.status_code} - {r.text}", "error")
+                break
+            data = r.json()
+            for vs in data.get("results", []):
+                uuid = vs.get("uuid")
+                if not uuid:
+                    continue
+                vs_cfg_map[uuid] = {
+                    "name": vs.get("name"),
+                    "enabled": vs.get("enabled"),
+                    "traffic_enabled": vs.get("traffic_enabled"),
+                    "vip": vs.get("vip"),
+                    "services": vs.get("services")
+                }
+                count += 1
+            url = data.get("next")
+        log(f"Successfully built VS config map for {count} Virtual Services from {controller}.", "info")
+    except Exception as e:
+        log(f"VS config map fetch error on {controller}: {e}", "error")
+    return vs_cfg_map
+
+def get_vs_inventory(controller, sid, csrft, se_name_lookup, vs_cfg_map=None):
     """Fetches Virtual Service inventory and correlates with SEs, including both IPv4 and IPv6 VIPs."""
     headers = {
         "X-Avi-Tenant": "admin", "X-Avi-Version": AVI_VERSION,
@@ -148,18 +197,28 @@ def get_vs_inventory(controller, sid, csrft, se_name_lookup):
             for item in response_data.get("results", []):
                 vs_count += 1
                 cfg, rt = item.get("config", {}), item.get("runtime", {})
-                vs_uuid, vs_name = cfg.get("uuid", "null"), cfg.get("name", "null")
+                vs_uuid = cfg.get("uuid", "null")
+
+                # Enrich inventory config with authoritative config view.
+                # `traffic_enabled` is reliably present in /api/virtualservice/ objects.
+                authoritative_cfg = (vs_cfg_map or {}).get(vs_uuid, {}) if vs_uuid != "null" else {}
+                vs_name = authoritative_cfg.get("name") or cfg.get("name", "null")
                 log(f"Processing VS: {vs_name} (UUID: {vs_uuid})", "debug")
 
                 # Extract VS Information
                 vs_ip, vs_ip_type = [], []  # Now lists to store both IPv4 and IPv6 addresses
-                vs_enabled = cfg.get("enabled", False)
+                vs_enabled = authoritative_cfg.get("enabled")
+                if vs_enabled is None:
+                    vs_enabled = cfg.get("enabled", False)
                 ssl_enabled = "null"
-                traffic_enabled = cfg.get("traffic_enabled", False)
+                traffic_enabled = authoritative_cfg.get("traffic_enabled")
+                if traffic_enabled is None:
+                    traffic_enabled = cfg.get("traffic_enabled", False)
 
                 # Extract VIP and SE information
-                if cfg.get("vip"):
-                    for vip_info in cfg["vip"]:
+                vip_list = authoritative_cfg.get("vip") if authoritative_cfg.get("vip") is not None else cfg.get("vip")
+                if vip_list:
+                    for vip_info in vip_list:
                         # Handle IPv4 address
                         if 'ip_address' in vip_info:
                             ip = vip_info['ip_address'].get('addr', 'null')
@@ -183,8 +242,9 @@ def get_vs_inventory(controller, sid, csrft, se_name_lookup):
                 state = rt.get("oper_status", {}).get("state", "null")
                 reason = rt.get("oper_status", {}).get("reason", "null")
                 port = "null"
-                if cfg.get("services"):
-                    first_service = cfg["services"][0]
+                services_list = authoritative_cfg.get("services") if authoritative_cfg.get("services") is not None else cfg.get("services")
+                if services_list:
+                    first_service = services_list[0]
                     port = first_service.get("port", "null")
 
                 # Extract SE information from the vip_summary
@@ -288,8 +348,11 @@ def process_controller(controller_name, csv_file, default_user, default_pass, co
     if not se_name_lookup:
         log(f"Warning: No Service Engine names found or fetched for {controller_name}. SE names in CSV might be 'null'.", "warning")
     
-    # Step 2: Get VS inventory and correlate with SE names and get SE mgmt_ip from VS runtime
-    vs_list = get_vs_inventory(controller_name, sid, csrft, se_name_lookup)
+    # Step 2: Build VS config map (authoritative for fields like traffic_enabled)
+    vs_cfg_map = get_vs_config_map(controller_name, sid, csrft)
+
+    # Step 3: Get VS inventory/runtime view and enrich with config map
+    vs_list = get_vs_inventory(controller_name, sid, csrft, se_name_lookup, vs_cfg_map)
     if vs_list:
         process_virtual_service(controller_name, sid, csrft, csv_file, vs_list)
     else:
