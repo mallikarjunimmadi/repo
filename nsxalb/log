@@ -1,4 +1,1 @@
-2026-01-09 16:35:04,929: INFO: Starting fetch of Service Engines for name lookup from m00avientlb.corp.
-2026-01-09 16:35:09,576: INFO: Successfully fetched names for 89 Service Engines from m00avientlb.corp.
-2026-01-09 16:35:09,577: INFO: Starting fetch of VS config map (uuid/name/enabled/traffic_enabled/vip/services) from m00avientlb.corp.
-2026-01-09 16:35:10,006: ERROR: VS config map fetch error on m00avientlb.corp: Invalid URL '/api/virtualservice/?fields=uuid%2Cname%2Cenabled%2Ctraffic_enabled%2Cvip%2Cservices&page=2&page_size=200': No schema supplied. Perhaps you meant http:///api/virtualservice/?fields=uuid%2Cname%2Cenabled%2Ctraffic_enabled%2Cvip%2Cservices&page=2&page_size=200?
+
