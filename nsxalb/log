@@ -1,1 +1,6 @@
 
+2026-01-21 14:50:32.839813 h00avientlb: func avi_subnet_usage encountered an error
+2026-01-21 14:50:32.840428 h00avientlb: Traceback (most recent call last):
+  File "/tools_bin/nsxalb/aviMetricCollection/metricscollection.py", line 1814, in avi_subnet_usage
+    pool_size = float(s['runtime']['subnet_runtime'][0]['total_ip_count'])
+KeyError: 'total_ip_count'
