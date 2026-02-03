@@ -2,3 +2,29 @@ grep -R "PING " -n **/oswprvtnet/* | head
 grep -R "bytes from" -n **/oswprvtnet/* | head
 grep -R "time<" -n **/oswprvtnet/* | head
 grep -R "usec" -n **/oswprvtnet/* | head
+
+
+/01-02/01-02$ grep -R "PING " -n oswprvtnet/* | head
+grep -R "bytes from" -n oswprvtnet/* | head
+grep -R "time<" -n oswprvtnet/* | head
+grep -R "usec" -n oswprvtnet/* | head
+21:PING 10.191.6.166 (10.191.6.166) from 10.191.6.166 : 8972(9000) bytes of data.
+36:PING 10.191.6.167 (10.191.6.167) from 10.191.6.166 : 8972(9000) bytes of data.
+51:PING 10.191.6.168 (10.191.6.168) from 10.191.6.166 : 8972(9000) bytes of data.
+66:PING 10.191.6.169 (10.191.6.169) from 10.191.6.166 : 8972(9000) bytes of data.
+81:PING 10.191.6.170 (10.191.6.170) from 10.191.6.166 : 8972(9000) bytes of data.
+96:PING 10.191.6.171 (10.191.6.171) from 10.191.6.166 : 8972(9000) bytes of data.
+111:PING 10.191.6.172 (10.191.6.172) from 10.191.6.166 : 8972(9000) bytes of data.
+126:PING 10.191.6.173 (10.191.6.173) from 10.191.6.166 : 8972(9000) bytes of data.
+159:PING 10.191.6.226 (10.191.6.226) from 10.191.6.226 : 8972(9000) bytes of data.
+174:PING 10.191.6.227 (10.191.6.227) from 10.191.6.226 : 8972(9000) bytes of data.
+22:8980 bytes from 10.191.6.166: icmp_seq=1 ttl=64 time=0.024 ms
+23:8980 bytes from 10.191.6.166: icmp_seq=2 ttl=64 time=0.029 ms
+24:8980 bytes from 10.191.6.166: icmp_seq=3 ttl=64 time=0.028 ms
+25:8980 bytes from 10.191.6.166: icmp_seq=4 ttl=64 time=0.022 ms
+26:8980 bytes from 10.191.6.166: icmp_seq=5 ttl=64 time=0.030 ms
+27:8980 bytes from 10.191.6.166: icmp_seq=6 ttl=64 time=0.029 ms
+28:8980 bytes from 10.191.6.166: icmp_seq=7 ttl=64 time=0.021 ms
+29:8980 bytes from 10.191.6.166: icmp_seq=8 ttl=64 time=0.022 ms
+30:8980 bytes from 10.191.6.166: icmp_seq=9 ttl=64 time=0.026 ms
+31:8980 bytes from 10.191.6.166: icmp_seq=10 ttl=64 time=0.021 ms
