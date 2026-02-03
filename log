@@ -1,0 +1,4 @@
+grep -R "PING " -n **/oswprvtnet/* | head
+grep -R "bytes from" -n **/oswprvtnet/* | head
+grep -R "time<" -n **/oswprvtnet/* | head
+grep -R "usec" -n **/oswprvtnet/* | head
