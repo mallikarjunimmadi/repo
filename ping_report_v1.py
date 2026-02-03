@@ -14,25 +14,24 @@ Assumptions:
   • Output filenames start with <root_basename> and include timestamp
   • Min/Max are per (src_ip, dst_ip) pair (optionally split by file if --infilename)
 
-New:
-  • Optional auto-extraction of OSWatcher archives under --root:
-      --auto-extract extracts .tar/.tar.gz/.tgz/.zip into <root>/__extracted/<archive_name>/
-      and scans extracted content.
+Enhancement:
+  • --auto-extract: extracts OSWatcher archives (.tar/.tar.gz/.tgz/.zip) under --root
+    into <root>/__extracted/<archive_stem>/ then scans extracted content.
 
-Run with zero args to scan current directory:
-  python3 oswbb_ping_report.py
+Run:
+  python3 oswbb_ping_report.py --root . --auto-extract --debug
 """
 
 import argparse
 import csv
 import logging
+import os
 import re
+import tarfile
+import zipfile
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Tuple, Iterable, Optional, List
-
-import tarfile
-import zipfile
 
 # --- Regexes ---
 PING_HEADER_RE = re.compile(
@@ -40,14 +39,14 @@ PING_HEADER_RE = re.compile(
     r"(?:\s+from\s+(?P<src_ip>\d{1,3}(?:\.\d{1,3}){3}))?",
     re.IGNORECASE
 )
+
+# NOTE: This matches common Linux ping lines with time=XYZ ms
+# If your OSWatcher ping shows "time<1 ms" or "usec", tell me and I’ll adjust it.
 PING_REPLY_RE = re.compile(
     r"bytes\s+from\s+(?P<from_ip>\d{1,3}(?:\.\d{1,3}){3})[:].*?\btime=(?P<ms>[0-9]+(?:\.[0-9]+)?)\s*ms\b",
     re.IGNORECASE
 )
 
-# ---------------------------
-# Bucketing / existing logic
-# ---------------------------
 
 def bucket_for_latency(ms: float) -> str:
     if ms < 1.0:
@@ -57,6 +56,7 @@ def bucket_for_latency(ms: float) -> str:
     if ms < 5.0:
         return "ge_2_lt_5_ms"
     return "ge_5_ms"
+
 
 def get_named_subdirectory(path: Path, marker_dir: str) -> Optional[str]:
     """Return the directory name immediately above marker_dir (e.g., 'db-rac1')."""
@@ -69,6 +69,7 @@ def get_named_subdirectory(path: Path, marker_dir: str) -> Optional[str]:
         return None
     return None
 
+
 def should_include(path: Path, marker_dir: str, extensions: Optional[Iterable[str]]) -> bool:
     if not path.is_file():
         return False
@@ -77,16 +78,20 @@ def should_include(path: Path, marker_dir: str, extensions: Optional[Iterable[st
     exts = {e.lower() for e in extensions} if extensions else {".dat"}
     return path.suffix.lower() in exts
 
+
 def find_files(root: Path, marker_dir: str, extensions: Optional[Iterable[str]]) -> Iterable[Path]:
     for p in root.rglob("*"):
         if should_include(p, marker_dir, extensions):
             yield p
 
-def parse_file(path: Path,
-               counters: Dict[Tuple[str, str, str, str], Dict[str, float]],
-               marker_dir: str,
-               include_file: bool,
-               simple_totals: Dict[str, int]) -> None:
+
+def parse_file(
+    path: Path,
+    counters: Dict[Tuple[str, str, str, str], Dict[str, float]],
+    marker_dir: str,
+    include_file: bool,
+    simple_totals: Dict[str, int],
+) -> None:
     """
     Parse one file and update:
       - detailed counters per (subdir, [file], src, dst)
@@ -133,10 +138,8 @@ def parse_file(path: Path,
                         counters[key]["min"] = min(counters[key]["min"], ms)
                         counters[key]["max"] = max(counters[key]["max"], ms)
 
-                    # Detailed bucket
                     counters[key][bucket_for_latency(ms)] += 1
 
-                    # Simple totals
                     if ms < 1.0:
                         simple_totals["lt_1ms"] += 1
                     elif ms <= 10.0:
@@ -147,18 +150,26 @@ def parse_file(path: Path,
     except Exception as e:
         logging.exception("Failed to parse %s: %s", path, e)
 
-def write_full_or_anomalies_csv(out_path: Path,
-                                counters: Dict[Tuple[str, str, str, str], Dict[str, float]],
-                                include_file: bool,
-                                anomalies_only: bool = False) -> int:
+
+def write_full_or_anomalies_csv(
+    out_path: Path,
+    counters: Dict[Tuple[str, str, str, str], Dict[str, float]],
+    include_file: bool,
+    anomalies_only: bool = False,
+) -> int:
     rows_written = 0
     header = ["subdirectory"]
     if include_file:
         header.append("file_name")
     header += [
-        "source_ip", "destination_ip",
-        "<1ms", ">=1ms & <2ms", ">=2ms & <5ms", ">=5ms",
-        "min_latency_ms", "max_latency_ms",
+        "source_ip",
+        "destination_ip",
+        "<1ms",
+        ">=1ms & <2ms",
+        ">=2ms & <5ms",
+        ">=5ms",
+        "min_latency_ms",
+        "max_latency_ms",
     ]
 
     with out_path.open("w", newline="", encoding="utf-8") as f:
@@ -169,20 +180,27 @@ def write_full_or_anomalies_csv(out_path: Path,
             hi1, hi2, hi3 = b["ge_1_lt_2_ms"], b["ge_2_lt_5_ms"], b["ge_5_ms"]
             if anomalies_only and (hi1 == 0 and hi2 == 0 and hi3 == 0):
                 continue
+
             row = [subdir]
             if include_file:
                 row.append(fname)
             row += [
-                src, dst,
-                b["lt_1ms"], hi1, hi2, hi3,
-                f"{b['min']:.3f}", f"{b['max']:.3f}",
+                src,
+                dst,
+                b["lt_1ms"],
+                hi1,
+                hi2,
+                hi3,
+                f"{b['min']:.3f}",
+                f"{b['max']:.3f}",
             ]
             writer.writerow(row)
             rows_written += 1
+
     return rows_written
 
+
 def write_simple_csv(out_path: Path, simple_totals: Dict[str, int]) -> int:
-    """Write the overall-only simple summary CSV."""
     with out_path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(["category", "count"])
@@ -191,24 +209,22 @@ def write_simple_csv(out_path: Path, simple_totals: Dict[str, int]) -> int:
         writer.writerow([">10ms", simple_totals["gt_10_ms"]])
     return 3
 
+
 def build_output_path(root: Path, base_output: Path, timestamp: str, kind: str) -> Path:
-    """
-    Build output path prefixed with root basename and timestamped.
-    kind ∈ {"full","anomalies","simple"}.
-    Result: <dir>/<root>_ping_report_<kind>_<timestamp>.csv
-    """
     root_prefix = root.name
     return base_output.with_name(
         f"{root_prefix}_ping_report_{kind}_{timestamp}{base_output.suffix}"
     ).resolve()
 
+
 # ---------------------------
-# NEW: Auto-extraction logic
+# Auto-extraction helpers
 # ---------------------------
 
 def is_archive(p: Path) -> bool:
     n = p.name.lower()
     return n.endswith(".tar") or n.endswith(".tar.gz") or n.endswith(".tgz") or n.endswith(".zip")
+
 
 def archive_stem(archive: Path) -> str:
     n = archive.name
@@ -223,27 +239,34 @@ def archive_stem(archive: Path) -> str:
         return n[:-4]
     return archive.stem
 
+
 def safe_extract_tar(tar: tarfile.TarFile, dest: Path) -> None:
     """
     Prevent path traversal. Ensures each member stays within dest.
     """
     dest_resolved = dest.resolve()
+    dest_prefix = str(dest_resolved) + os.sep
+
     for member in tar.getmembers():
         member_path = (dest / member.name).resolve()
-        if not str(member_path).startswith(str(dest_resolved) + str(Path.sep)) and member_path != dest_resolved:
+        if not str(member_path).startswith(dest_prefix) and member_path != dest_resolved:
             raise RuntimeError(f"Unsafe tar member path: {member.name}")
     tar.extractall(dest)
+
 
 def safe_extract_zip(zf: zipfile.ZipFile, dest: Path) -> None:
     """
     Prevent path traversal. Ensures each member stays within dest.
     """
     dest_resolved = dest.resolve()
+    dest_prefix = str(dest_resolved) + os.sep
+
     for name in zf.namelist():
         member_path = (dest / name).resolve()
-        if not str(member_path).startswith(str(dest_resolved) + str(Path.sep)) and member_path != dest_resolved:
+        if not str(member_path).startswith(dest_prefix) and member_path != dest_resolved:
             raise RuntimeError(f"Unsafe zip member path: {name}")
     zf.extractall(dest)
+
 
 def extract_archives(root: Path, extract_to: Path) -> Path:
     """
@@ -254,9 +277,7 @@ def extract_archives(root: Path, extract_to: Path) -> Path:
     archives: List[Path] = [p for p in root.rglob("*") if p.is_file() and is_archive(p)]
     logging.info("Auto-extract: found %d archive(s) under %s", len(archives), root)
 
-    extracted_ok = 0
-    extracted_skip = 0
-    extracted_fail = 0
+    ok = skipped = failed = 0
 
     for a in sorted(archives):
         out_dir = extract_to / archive_stem(a)
@@ -264,7 +285,7 @@ def extract_archives(root: Path, extract_to: Path) -> Path:
 
         marker = out_dir / ".extracted.ok"
         if marker.exists():
-            extracted_skip += 1
+            skipped += 1
             logging.debug("Skip already extracted: %s -> %s", a, out_dir)
             continue
 
@@ -278,20 +299,14 @@ def extract_archives(root: Path, extract_to: Path) -> Path:
                     safe_extract_tar(tf, out_dir)
 
             marker.write_text("ok\n", encoding="utf-8")
-            extracted_ok += 1
+            ok += 1
         except Exception as e:
-            extracted_fail += 1
+            failed += 1
             logging.exception("Failed to extract %s: %s", a, e)
 
-    logging.info(
-        "Auto-extract summary: ok=%d, skipped=%d, failed=%d",
-        extracted_ok, extracted_skip, extracted_fail
-    )
+    logging.info("Auto-extract summary: ok=%d, skipped=%d, failed=%d", ok, skipped, failed)
     return extract_to
 
-# ---------------------------
-# Main
-# ---------------------------
 
 def main():
     ap = argparse.ArgumentParser(
@@ -305,11 +320,16 @@ def main():
     ap.add_argument("--verbose", action="store_true", help="Enable INFO logs.")
     ap.add_argument("--debug", action="store_true", help="Enable DEBUG logs.")
 
-    # NEW:
-    ap.add_argument("--auto-extract", action="store_true",
-                    help="Auto-extract OSWatcher archives (.tar/.tar.gz/.tgz/.zip) under --root before scanning.")
-    ap.add_argument("--extract-to", default="__extracted",
-                    help="Extraction directory name (created under --root). Default: __extracted")
+    ap.add_argument(
+        "--auto-extract",
+        action="store_true",
+        help="Auto-extract OSWatcher archives (.tar/.tar.gz/.tgz/.zip) under --root before scanning.",
+    )
+    ap.add_argument(
+        "--extract-to",
+        default="__extracted",
+        help="Extraction directory name (created under --root). Default: __extracted",
+    )
 
     args = ap.parse_args()
 
@@ -324,7 +344,6 @@ def main():
     root = Path(args.root).resolve()
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    # NEW: optionally extract archives first
     scan_root = root
     if args.auto_extract:
         extract_to = (root / args.extract_to).resolve()
@@ -334,7 +353,7 @@ def main():
     simple_totals = {"lt_1ms": 0, "gt_1_le_10_ms": 0, "gt_10_ms": 0}
 
     files = list(find_files(scan_root, args.marker_dir, args.extensions))
-    logging.info("Found %d matching files under %s", len(files), scan_root)
+    logging.info("Found %d matching file(s) under %s", len(files), scan_root)
 
     for file_path in files:
         parse_file(
@@ -362,8 +381,11 @@ def main():
     print(f"- Simple summary: {simple_path} (3 rows)")
     if args.auto_extract:
         print(f"Scanned extracted root: {scan_root}")
-    print(f"Totals: samples={total_samples}, <1ms={simple_totals['lt_1ms']}, "
-          f">1ms & <=10ms={simple_totals['gt_1_le_10_ms']}, >10ms={simple_totals['gt_10_ms']}")
+    print(
+        f"Totals: samples={total_samples}, <1ms={simple_totals['lt_1ms']}, "
+        f">1ms & <=10ms={simple_totals['gt_1_le_10_ms']}, >10ms={simple_totals['gt_10_ms']}"
+    )
+
 
 if __name__ == "__main__":
     main()
