@@ -1,6 +1,6 @@
-# ESXTOP Offline Bundle v0.0.6.1
+# ESXTOP Offline Visualiser v0.0.6.2
 
-`esxtop-offline_v0.0.6.1.py` is an all-in-one offline workflow for ESXTOP CSV processing.
+`esxtop-offline_v0.0.6.2.py` is an all-in-one offline workflow for ESXTOP CSV processing.
 
 A single run can:
 
@@ -81,7 +81,7 @@ This improves the debug metrics output.
 ## Basic syntax
 
 ```bash
-python3 esxtop-offline_v0.0.6.1.py [OPTIONS]
+python3 esxtop-offline_v0.0.6.2.py [OPTIONS]
 ```
 
 ## Command reference
@@ -98,7 +98,7 @@ Default:
 Example:
 
 ```bash
-python3 esxtop-offline_v0.0.6.1.py --root /data/esxtop
+python3 esxtop-offline_v0.0.6.2.py --root /data/esxtop
 ```
 
 ### `--outdir <PATH>`
@@ -113,7 +113,7 @@ Default:
 Example:
 
 ```bash
-python3 esxtop-offline_v0.0.6.1.py --outdir /tmp/esxtop_output
+python3 esxtop-offline_v0.0.6.2.py --outdir /tmp/esxtop_output
 ```
 
 ### `--group "<GROUP NAME>"`
@@ -122,9 +122,9 @@ Process only one ESXTOP group.
 Examples:
 
 ```bash
-python3 esxtop-offline_v0.0.6.1.py --group "Physical Cpu"
-python3 esxtop-offline_v0.0.6.1.py --group "Network Port"
-python3 esxtop-offline_v0.0.6.1.py --group "Vcpu"
+python3 esxtop-offline_v0.0.6.2.py --group "Physical Cpu"
+python3 esxtop-offline_v0.0.6.2.py --group "Network Port"
+python3 esxtop-offline_v0.0.6.2.py --group "Vcpu"
 ```
 
 ### `--delimiter <CHAR>`
@@ -139,7 +139,7 @@ Default:
 Example:
 
 ```bash
-python3 esxtop-offline_v0.0.6.1.py --delimiter ","
+python3 esxtop-offline_v0.0.6.2.py --delimiter ","
 ```
 
 ### `--recursive`
@@ -148,7 +148,7 @@ Scan subdirectories recursively.
 Example:
 
 ```bash
-python3 esxtop-offline_v0.0.6.1.py --recursive
+python3 esxtop-offline_v0.0.6.2.py --recursive
 ```
 
 ### `--keep-full-header`
@@ -159,7 +159,7 @@ Use this when downstream tools depend on the original ESXTOP column format.
 Example:
 
 ```bash
-python3 esxtop-offline_v0.0.6.1.py --keep-full-header
+python3 esxtop-offline_v0.0.6.2.py --keep-full-header
 ```
 
 ### `--keep-temp`
@@ -170,7 +170,7 @@ Useful for troubleshooting or validation.
 Example:
 
 ```bash
-python3 esxtop-offline_v0.0.6.1.py --keep-temp
+python3 esxtop-offline_v0.0.6.2.py --keep-temp
 ```
 
 ### `--debug`
@@ -179,7 +179,7 @@ Enable runtime metrics and debug statistics.
 Example:
 
 ```bash
-python3 esxtop-offline_v0.0.6.1.py --debug
+python3 esxtop-offline_v0.0.6.2.py --debug
 ```
 
 ## Default run
@@ -187,7 +187,7 @@ python3 esxtop-offline_v0.0.6.1.py --debug
 This is the simplest run:
 
 ```bash
-python3 esxtop-offline_v0.0.6.1.py
+python3 esxtop-offline_v0.0.6.2.py
 ```
 
 What it does:
@@ -205,7 +205,7 @@ What it does:
 ### 1. Current directory, non-recursive, default output
 
 ```bash
-python3 esxtop-offline_v0.0.6.1.py
+python3 esxtop-offline_v0.0.6.2.py
 ```
 
 Best when all source CSV files are in the current folder.
@@ -213,7 +213,7 @@ Best when all source CSV files are in the current folder.
 ### 2. Recursive scan from current directory
 
 ```bash
-python3 esxtop-offline_v0.0.6.1.py --recursive
+python3 esxtop-offline_v0.0.6.2.py --recursive
 ```
 
 Best when source CSV files are spread across subfolders.
@@ -221,7 +221,7 @@ Best when source CSV files are spread across subfolders.
 ### 3. Scan another folder
 
 ```bash
-python3 esxtop-offline_v0.0.6.1.py --root /path/to/esxtop
+python3 esxtop-offline_v0.0.6.2.py --root /path/to/esxtop
 ```
 
 Best when the source data is elsewhere.
@@ -229,7 +229,7 @@ Best when the source data is elsewhere.
 ### 4. Scan another folder recursively
 
 ```bash
-python3 esxtop-offline_v0.0.6.1.py --root /path/to/esxtop --recursive
+python3 esxtop-offline_v0.0.6.2.py --root /path/to/esxtop --recursive
 ```
 
 Best for nested input directories.
@@ -237,13 +237,13 @@ Best for nested input directories.
 ### 5. Write to a different output folder
 
 ```bash
-python3 esxtop-offline_v0.0.6.1.py --outdir /path/to/output
+python3 esxtop-offline_v0.0.6.2.py --outdir /path/to/output
 ```
 
 ### 6. Restrict to a single group
 
 ```bash
-python3 esxtop-offline_v0.0.6.1.py --group "Physical Cpu"
+python3 esxtop-offline_v0.0.6.2.py --group "Physical Cpu"
 ```
 
 Best when you only want one group’s merged CSVs and metadata/viewer built from that filtered output set.
@@ -251,13 +251,13 @@ Best when you only want one group’s merged CSVs and metadata/viewer built from
 ### 7. Restrict to a single group and recurse
 
 ```bash
-python3 esxtop-offline_v0.0.6.1.py --group "Network Port" --recursive
+python3 esxtop-offline_v0.0.6.2.py --group "Network Port" --recursive
 ```
 
 ### 8. Preserve original headers
 
 ```bash
-python3 esxtop-offline_v0.0.6.1.py --keep-full-header
+python3 esxtop-offline_v0.0.6.2.py --keep-full-header
 ```
 
 Best when downstream tools need the original timestamp/header names unchanged.
@@ -265,19 +265,19 @@ Best when downstream tools need the original timestamp/header names unchanged.
 ### 9. Preserve original headers and recurse
 
 ```bash
-python3 esxtop-offline_v0.0.6.1.py --keep-full-header --recursive
+python3 esxtop-offline_v0.0.6.2.py --keep-full-header --recursive
 ```
 
 ### 10. Preserve original headers for a single group
 
 ```bash
-python3 esxtop-offline_v0.0.6.1.py --group "Vcpu" --keep-full-header
+python3 esxtop-offline_v0.0.6.2.py --group "Vcpu" --keep-full-header
 ```
 
 ### 11. Keep temp files
 
 ```bash
-python3 esxtop-offline_v0.0.6.1.py --keep-temp
+python3 esxtop-offline_v0.0.6.2.py --keep-temp
 ```
 
 Useful when you want to inspect chunk/sorted intermediates.
@@ -285,13 +285,13 @@ Useful when you want to inspect chunk/sorted intermediates.
 ### 12. Keep temp files and recurse
 
 ```bash
-python3 esxtop-offline_v0.0.6.1.py --recursive --keep-temp
+python3 esxtop-offline_v0.0.6.2.py --recursive --keep-temp
 ```
 
 ### 13. Enable debug metrics
 
 ```bash
-python3 esxtop-offline_v0.0.6.1.py --debug
+python3 esxtop-offline_v0.0.6.2.py --debug
 ```
 
 Useful for runtime/memory diagnostics.
@@ -299,25 +299,25 @@ Useful for runtime/memory diagnostics.
 ### 14. Debug + recursive
 
 ```bash
-python3 esxtop-offline_v0.0.6.1.py --recursive --debug
+python3 esxtop-offline_v0.0.6.2.py --recursive --debug
 ```
 
 ### 15. Debug + keep temp
 
 ```bash
-python3 esxtop-offline_v0.0.6.1.py --keep-temp --debug
+python3 esxtop-offline_v0.0.6.2.py --keep-temp --debug
 ```
 
 ### 16. Single group + debug
 
 ```bash
-python3 esxtop-offline_v0.0.6.1.py --group "Physical Disk Adapter" --debug
+python3 esxtop-offline_v0.0.6.2.py --group "Physical Disk Adapter" --debug
 ```
 
 ### 17. Full typical production-style run
 
 ```bash
-python3 esxtop-offline_v0.0.6.1.py \
+python3 esxtop-offline_v0.0.6.2.py \
   --root /path/to/esxtop \
   --recursive \
   --outdir /path/to/output \
@@ -332,7 +332,7 @@ All supported options can be combined.
 General pattern:
 
 ```bash
-python3 esxtop-offline_v0.0.6.1.py \
+python3 esxtop-offline_v0.0.6.2.py \
   [--root PATH] \
   [--outdir PATH] \
   [--group "GROUP"] \
@@ -361,13 +361,13 @@ These options are independent and may be used together.
 ### Merge everything under a tree and keep defaults
 
 ```bash
-python3 esxtop-offline_v0.0.6.1.py --root /data/esxtop --recursive
+python3 esxtop-offline_v0.0.6.2.py --root /data/esxtop --recursive
 ```
 
 ### Create a clean viewer bundle for only Network Port
 
 ```bash
-python3 esxtop-offline_v0.0.6.1.py \
+python3 esxtop-offline_v0.0.6.2.py \
   --root /data/esxtop \
   --recursive \
   --group "Network Port" \
@@ -377,7 +377,7 @@ python3 esxtop-offline_v0.0.6.1.py \
 ### Preserve exact headers for downstream tools
 
 ```bash
-python3 esxtop-offline_v0.0.6.1.py \
+python3 esxtop-offline_v0.0.6.2.py \
   --root /data/esxtop \
   --recursive \
   --keep-full-header
@@ -386,7 +386,7 @@ python3 esxtop-offline_v0.0.6.1.py \
 ### Troubleshoot with temp files and runtime stats
 
 ```bash
-python3 esxtop-offline_v0.0.6.1.py \
+python3 esxtop-offline_v0.0.6.2.py \
   --root /data/esxtop \
   --recursive \
   --keep-temp \
@@ -396,7 +396,7 @@ python3 esxtop-offline_v0.0.6.1.py \
 ### Build a portable bundle in a dedicated output folder
 
 ```bash
-python3 esxtop-offline_v0.0.6.1.py \
+python3 esxtop-offline_v0.0.6.2.py \
   --root /data/esxtop \
   --recursive \
   --outdir ./esxtop_bundle
@@ -453,7 +453,7 @@ http://localhost:<PORT>/esxtop-visualizer_v0.0.8.html
 ### Step 1: run the bundle generator
 
 ```bash
-python3 esxtop-offline_v0.0.6.1.py --root /path/to/source --recursive
+python3 esxtop-offline_v0.0.6.2.py --root /path/to/source --recursive
 ```
 
 ### Step 2: start the web server
@@ -522,7 +522,7 @@ Check:
 Run with:
 
 ```bash
-python3 esxtop-offline_v0.0.6.1.py --keep-full-header
+python3 esxtop-offline_v0.0.6.2.py --keep-full-header
 ```
 
 ### Need intermediate temp files for troubleshooting
@@ -530,44 +530,44 @@ python3 esxtop-offline_v0.0.6.1.py --keep-full-header
 Run with:
 
 ```bash
-python3 esxtop-offline_v0.0.6.1.py --keep-temp
+python3 esxtop-offline_v0.0.6.2.py --keep-temp
 ```
 
 ## Quick command cheat sheet
 
 ```bash
 # simplest run
-python3 esxtop-offline_v0.0.6.1.py
+python3 esxtop-offline_v0.0.6.2.py
 
 # recursive scan
-python3 esxtop-offline_v0.0.6.1.py --recursive
+python3 esxtop-offline_v0.0.6.2.py --recursive
 
 # custom root
-python3 esxtop-offline_v0.0.6.1.py --root /data/esxtop
+python3 esxtop-offline_v0.0.6.2.py --root /data/esxtop
 
 # custom output
-python3 esxtop-offline_v0.0.6.1.py --outdir /tmp/esxtop_output
+python3 esxtop-offline_v0.0.6.2.py --outdir /tmp/esxtop_output
 
 # only one group
-python3 esxtop-offline_v0.0.6.1.py --group "Physical Cpu"
+python3 esxtop-offline_v0.0.6.2.py --group "Physical Cpu"
 
 # preserve exact headers
-python3 esxtop-offline_v0.0.6.1.py --keep-full-header
+python3 esxtop-offline_v0.0.6.2.py --keep-full-header
 
 # keep temp files
-python3 esxtop-offline_v0.0.6.1.py --keep-temp
+python3 esxtop-offline_v0.0.6.2.py --keep-temp
 
 # show debug metrics
-python3 esxtop-offline_v0.0.6.1.py --debug
+python3 esxtop-offline_v0.0.6.2.py --debug
 
 # everything together
-python3 esxtop-offline_v0.0.6.1.py --root /data/esxtop --recursive --outdir /tmp/out --group "Network Port" --keep-full-header --keep-temp --debug
+python3 esxtop-offline_v0.0.6.2.py --root /data/esxtop --recursive --outdir /tmp/out --group "Network Port" --keep-full-header --keep-temp --debug
 ```
 
 ## Version notes
 
 This README is written for:
 
-- `esxtop-offline_v0.0.6.1.py`
+- `esxtop-offline_v0.0.6.2.py`
 - bundled metadata generation based on `esxtop-metadata_v0.0.4` logic
 - bundled viewer based on `esxtop-visualizer_v0.0.8`
