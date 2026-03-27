@@ -40,7 +40,7 @@ If `--keep-temp` is **not** used, the temp folder is removed at the end.
 ### Output behavior
 
 - default output directory is `output`
-- final merged group files go to `output/raw`
+- final merged group files go to `output`
 - metadata JSON goes to `output/esxtop-metadata.json`
 - viewer HTML goes to `output/esxtop-visualizer_v0.0.8.html`
 
