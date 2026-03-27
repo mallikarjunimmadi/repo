@@ -10,7 +10,6 @@ A single run can:
 - sort output rows by timestamp
 - generate a metadata file for the viewer
 - generate the HTML visualizer in the output folder
-- print ready-to-use `python3 -m http.server` hints
 
 ## What gets created
 
@@ -20,10 +19,9 @@ Expected structure:
 
 ```text
 output/
-├── raw/
-│   ├── <host>-<group>.csv
-│   ├── <host>-<group>.csv
-│   └── ...
+|
+│<host>-<group>.csv
+│<host>-<group>.csv
 ├── esxtop-metadata.json
 ├── esxtop-visualizer_v0.0.8.html
 └── tmp/              # only during processing, unless --keep-temp is used
