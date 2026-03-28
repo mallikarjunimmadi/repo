@@ -1,0 +1,1393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>ESXTOP Viewer v0.0.8.12</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --panel: #12192b;
+      --panel-2: #182235;
+      --text: #e9eef8;
+      --muted: #99a6bd;
+      --border: #2b3952;
+      --accent: #4f8cff;
+      --btn: #25324a;
+      --btn-hover: #334564;
+      --input: #0f1728;
+      --success: #35c16f;
+      --danger: #ff6b6b;
+      --shadow: 0 8px 22px rgba(0,0,0,0.24);
+    }
+
+    body.light {
+      --bg: #f3f6fb;
+      --panel: #ffffff;
+      --panel-2: #eef3fb;
+      --text: #101827;
+      --muted: #5f6c80;
+      --border: #d6deeb;
+      --accent: #2563eb;
+      --btn: #e7eefb;
+      --btn-hover: #d7e4fb;
+      --input: #ffffff;
+      --success: #0f9d58;
+      --danger: #dc2626;
+      --shadow: 0 8px 22px rgba(10,20,40,0.08);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .app {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .topbar {
+      display: grid;
+      grid-template-columns: 280px 1fr 54px;
+      gap: 12px;
+      padding: 14px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+      align-items: start;
+    }
+
+    .brand {
+      font-size: 18px;
+      font-weight: 700;
+      line-height: 1.25;
+      padding-top: 4px;
+      white-space: nowrap;
+    }
+
+    .toolbar {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(200px, 1fr));
+      gap: 12px;
+    }
+
+    .dropdown {
+      position: relative;
+      min-width: 0;
+    }
+
+    .dropdown-btn {
+      width: 100%;
+      border: 1px solid var(--border);
+      background: var(--panel-2);
+      color: var(--text);
+      border-radius: 14px;
+      padding: 10px 12px;
+      cursor: pointer;
+      text-align: left;
+      min-height: 48px;
+      box-shadow: var(--shadow);
+    }
+
+    .dropdown-label {
+      display: block;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 4px;
+      font-weight: 700;
+    }
+
+    .dropdown-value {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .dropdown-panel {
+      position: absolute;
+      top: calc(100% + 8px);
+      left: 0;
+      right: 0;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+      z-index: 50;
+      display: none;
+      overflow: hidden;
+    }
+
+    .dropdown.open .dropdown-panel {
+      display: block;
+    }
+
+    .dropdown-search {
+      width: calc(100% - 20px);
+      margin: 10px;
+      border: 1px solid var(--border);
+      background: var(--input);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 13px;
+    }
+
+    .dropdown-toolbar {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      padding: 0 10px 10px 10px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+    }
+
+    .dropdown-items {
+      max-height: 260px;
+      overflow: auto;
+      padding: 8px 10px 10px 10px;
+    }
+
+    .dropdown-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 2px;
+      font-size: 13px;
+    }
+
+    .dropdown-item input {
+      margin: 0;
+      flex: 0 0 auto;
+    }
+
+    button, input[type="file"] {
+      border: 1px solid var(--border);
+      background: var(--btn);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 13px;
+    }
+
+    button {
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    button:hover {
+      background: var(--btn-hover);
+    }
+
+    .theme-btn {
+      height: 40px;
+      font-size: 18px;
+    }
+
+    .meta-panel {
+      padding: 12px 14px 0 14px;
+    }
+
+    .meta-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 12px;
+    }
+
+    .field {
+      margin-bottom: 0;
+    }
+
+    .field label {
+      display: block;
+      font-size: 12px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .status {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .status.ok { color: var(--success); }
+    .status.err { color: var(--danger); }
+
+    .info-line {
+      padding: 0 2px;
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .content {
+      padding: 10px 14px 14px 14px;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: 10px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .chart-toolbar {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 8px;
+    }
+
+    #chart {
+      width: 100%;
+      height: 78vh;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: var(--panel);
+    }
+
+    .legend-collapsed #chart {
+      height: 84vh;
+    }
+
+    .small {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    @media (max-width: 1320px) {
+      .topbar {
+        grid-template-columns: 1fr;
+      }
+      .toolbar {
+        grid-template-columns: repeat(3, minmax(220px, 1fr));
+      }
+      .meta-row {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 860px) {
+      .toolbar {
+        grid-template-columns: repeat(2, minmax(220px, 1fr));
+      }
+    }
+
+    @media (max-width: 560px) {
+      .toolbar {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app" id="appRoot">
+    <div class="topbar">
+      <div class="brand">ESXTOP Viewer v0.0.8.12</div>
+
+      <div class="toolbar">
+        <div class="dropdown" id="hostDropdown">
+          <button class="dropdown-btn" type="button">
+            <span class="dropdown-label">Hosts</span>
+            <span class="dropdown-value" id="hostValue">None selected</span>
+          </button>
+          <div class="dropdown-panel">
+            <input class="dropdown-search" id="hostSearch" placeholder="Search hosts..." />
+            <div class="dropdown-toolbar">
+              <button type="button" data-action="all" data-target="hosts">Select All</button>
+              <button type="button" data-action="clear" data-target="hosts">Clear</button>
+            </div>
+            <div class="dropdown-items" id="hostItems"></div>
+          </div>
+        </div>
+
+        <div class="dropdown" id="groupDropdown">
+          <button class="dropdown-btn" type="button">
+            <span class="dropdown-label">Groups</span>
+            <span class="dropdown-value" id="groupValue">None selected</span>
+          </button>
+          <div class="dropdown-panel">
+            <input class="dropdown-search" id="groupSearch" placeholder="Search groups..." />
+            <div class="dropdown-toolbar">
+              <button type="button" data-action="all" data-target="groups">Select All</button>
+              <button type="button" data-action="clear" data-target="groups">Clear</button>
+            </div>
+            <div class="dropdown-items" id="groupItems"></div>
+          </div>
+        </div>
+
+        <div class="dropdown" id="instanceDropdown">
+          <button class="dropdown-btn" type="button">
+            <span class="dropdown-label">Instances</span>
+            <span class="dropdown-value" id="instanceValue">None selected</span>
+          </button>
+          <div class="dropdown-panel">
+            <input class="dropdown-search" id="instanceSearch" placeholder="Search instances..." />
+            <div class="dropdown-toolbar">
+              <button type="button" data-action="all" data-target="instances">Select All</button>
+              <button type="button" data-action="clear" data-target="instances">Clear</button>
+            </div>
+            <div class="dropdown-items" id="instanceItems"></div>
+          </div>
+        </div>
+
+        <div class="dropdown" id="metricDropdown">
+          <button class="dropdown-btn" type="button">
+            <span class="dropdown-label">Metrics</span>
+            <span class="dropdown-value" id="metricValue">None selected</span>
+          </button>
+          <div class="dropdown-panel">
+            <input class="dropdown-search" id="metricSearch" placeholder="Search metrics..." />
+            <div class="dropdown-toolbar">
+              <button type="button" data-action="all" data-target="metrics">Select All</button>
+              <button type="button" data-action="clear" data-target="metrics">Clear</button>
+            </div>
+            <div class="dropdown-items" id="metricItems"></div>
+          </div>
+        </div>
+
+        <div class="dropdown" id="timezoneDropdown">
+          <button class="dropdown-btn" type="button">
+            <span class="dropdown-label">Convert Time Zone</span>
+            <span class="dropdown-value" id="timezoneValue">UTC</span>
+          </button>
+          <div class="dropdown-panel">
+            <input class="dropdown-search" id="timezoneSearch" placeholder="Search timezone..." autocomplete="off" />
+            <div class="dropdown-items" id="timezoneItems"></div>
+          </div>
+        </div>
+      </div>
+
+      <button id="themeToggle" class="theme-btn" title="Toggle dark/light mode">🌙</button>
+    </div>
+
+    <div class="meta-panel">
+      <div class="meta-row">
+        <div class="panel">
+          <div class="field">
+            <label for="metadataFile">Metadata JSON</label>
+            <input type="file" id="metadataFile" accept=".json" />
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="field">
+            <label for="csvFiles">CSV Files (optional fallback)</label>
+            <input type="file" id="csvFiles" accept=".csv" multiple />
+          </div>
+        </div>
+      </div>
+
+      <div class="info-line">
+        <div id="selectionStatus" class="status">No metadata loaded yet.</div>
+        <div id="loadStatus" class="status">Trying to auto-load esxtop-metadata.json ... (same folder as viewer)</div>
+      </div>
+    </div>
+
+    <div class="content">
+      <div class="chart-toolbar">
+        <button id="legendToggleBtn" type="button">Hide Legend</button>
+        <button id="exportGraphCsvBtn" type="button">Export Graph CSV</button>
+      </div>
+      <div id="chart"></div>
+    </div>
+  </div>
+
+  <script>
+    const defaultTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+
+    const state = {
+      metadata: null,
+      csvFileMap: new Map(),
+      selectedHosts: new Set(),
+      selectedGroups: new Set(),
+      selectedInstances: new Set(),
+      selectedMetrics: new Set(),
+      theme: 'dark',
+      baseTraces: [],
+      lastTraces: [],
+      lastTitle: '',
+      legendVisible: true,
+      browserTimeZone: defaultTz,
+      selectedTimeZone: defaultTz
+    };
+
+    const els = {
+      appRoot: document.getElementById('appRoot'),
+      metadataFile: document.getElementById('metadataFile'),
+      csvFiles: document.getElementById('csvFiles'),
+      loadStatus: document.getElementById('loadStatus'),
+      selectionStatus: document.getElementById('selectionStatus'),
+      themeToggle: document.getElementById('themeToggle'),
+      legendToggleBtn: document.getElementById('legendToggleBtn'),
+      exportGraphCsvBtn: document.getElementById('exportGraphCsvBtn'),
+
+      hostItems: document.getElementById('hostItems'),
+      groupItems: document.getElementById('groupItems'),
+      instanceItems: document.getElementById('instanceItems'),
+      metricItems: document.getElementById('metricItems'),
+
+      hostValue: document.getElementById('hostValue'),
+      groupValue: document.getElementById('groupValue'),
+      instanceValue: document.getElementById('instanceValue'),
+      metricValue: document.getElementById('metricValue'),
+
+      hostSearch: document.getElementById('hostSearch'),
+      groupSearch: document.getElementById('groupSearch'),
+      instanceSearch: document.getElementById('instanceSearch'),
+      metricSearch: document.getElementById('metricSearch'),
+      timezoneDropdown: document.getElementById('timezoneDropdown'),
+      timezoneValue: document.getElementById('timezoneValue'),
+      timezoneSearch: document.getElementById('timezoneSearch'),
+      timezoneItems: document.getElementById('timezoneItems')
+    };
+
+    function setStatus(el, text, cls = '') {
+      el.textContent = text;
+      el.className = cls ? `status ${cls}` : 'status';
+    }
+
+    function summarizeSelection(arr) {
+      if (!arr || arr.length === 0) return 'None selected';
+      if (arr.length <= 2) return arr.join(', ');
+      return `${arr.length} selected`;
+    }
+
+    function refreshDropdownSummaries() {
+      els.hostValue.textContent = summarizeSelection([...state.selectedHosts]);
+      els.groupValue.textContent = summarizeSelection([...state.selectedGroups]);
+      els.instanceValue.textContent = summarizeSelection([...state.selectedInstances]);
+      els.metricValue.textContent = summarizeSelection([...state.selectedMetrics]);
+      const tz = state.selectedTimeZone || state.browserTimeZone || 'UTC';
+      els.timezoneValue.textContent = tz === state.browserTimeZone ? `${tz} (Browser default)` : tz;
+    }
+
+    function parseTimestamp(ts) {
+      if (ts == null) return null;
+      const s = String(ts).trim();
+      if (!s) return null;
+
+      const usStyle = /^(\d{2})\/(\d{2})\/(\d{4}) (\d{2}):(\d{2}):(\d{2})$/.exec(s);
+      if (usStyle) {
+        const isoUtc = `${usStyle[3]}-${usStyle[1]}-${usStyle[2]}T${usStyle[4]}:${usStyle[5]}:${usStyle[6]}Z`;
+        const d = new Date(isoUtc);
+        return Number.isNaN(d.getTime()) ? null : d;
+      }
+
+      if (/[zZ]$/.test(s) || /[+\-]\d{2}:\d{2}$/.test(s)) {
+        const d = new Date(s);
+        return Number.isNaN(d.getTime()) ? null : d;
+      }
+
+      const normalized = s.includes('T')
+        ? `${s}Z`
+        : `${s.replace(' ', 'T')}Z`;
+
+      const d = new Date(normalized);
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+
+    function getSupportedTimeZones() {
+      try {
+        if (typeof Intl.supportedValuesOf === 'function') {
+          return Intl.supportedValuesOf('timeZone');
+        }
+      } catch (_) {}
+
+      return [
+        'UTC',
+        'Asia/Kolkata',
+        'Asia/Dubai',
+        'Asia/Singapore',
+        'Asia/Tokyo',
+        'Europe/London',
+        'Europe/Paris',
+        'Europe/Berlin',
+        'America/New_York',
+        'America/Chicago',
+        'America/Denver',
+        'America/Los_Angeles',
+        'Australia/Sydney'
+      ];
+    }
+
+    function renderTimeZoneOptions(filterText = '') {
+      const zones = getSupportedTimeZones().slice();
+      const existing = new Set(zones);
+      if (!existing.has(state.browserTimeZone)) zones.unshift(state.browserTimeZone);
+      if (!zones.includes('UTC')) zones.unshift('UTC');
+
+      const seen = new Set();
+      const normalizedZones = zones.filter(z => {
+        if (seen.has(z)) return false;
+        seen.add(z);
+        return true;
+      });
+
+      const term = (filterText || '').trim().toLowerCase();
+      const filteredZones = term
+        ? normalizedZones.filter(z => z.toLowerCase().includes(term))
+        : normalizedZones;
+
+      els.timezoneItems.innerHTML = '';
+
+      if (filteredZones.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'muted';
+        empty.style.padding = '10px 2px';
+        empty.textContent = 'No matching timezones';
+        els.timezoneItems.appendChild(empty);
+        return;
+      }
+
+      filteredZones.forEach(zone => {
+        const label = document.createElement('label');
+        label.className = 'dropdown-item';
+
+        const radio = document.createElement('input');
+        radio.type = 'radio';
+        radio.name = 'timezoneChoice';
+        radio.value = zone;
+        radio.checked = (state.selectedTimeZone || state.browserTimeZone) === zone;
+        radio.addEventListener('change', () => {
+          state.selectedTimeZone = zone;
+          refreshDropdownSummaries();
+          updateSelectionStatus();
+          renderChart(state.baseTraces, state.lastTitle);
+          els.timezoneDropdown.classList.remove('open');
+        });
+
+        const textNode = document.createElement('span');
+        textNode.textContent = zone === state.browserTimeZone ? `${zone} (Browser default)` : zone;
+
+        label.appendChild(radio);
+        label.appendChild(textNode);
+        els.timezoneItems.appendChild(label);
+      });
+    }
+
+    function formatTimestampForTimeZone(date, timeZone) {
+      if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+      return new Intl.DateTimeFormat('en-CA', {
+        timeZone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      }).format(date).replace(',', '');
+    }
+
+
+
+    function getTimeZoneWallParts(date, timeZone) {
+      if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
+      const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      }).formatToParts(date);
+
+      const out = {};
+      for (const part of parts) {
+        if (part.type !== 'literal') out[part.type] = part.value;
+      }
+      return out;
+    }
+
+    function toPlotlyDisplayIso(date, timeZone) {
+      const p = getTimeZoneWallParts(date, timeZone);
+      if (!p) return '';
+      return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}.000Z`;
+    }
+
+    function parseCsvLine(line) {
+      const out = [];
+      let cur = '';
+      let inQuotes = false;
+
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '"') {
+          if (inQuotes && line[i + 1] === '"') {
+            cur += '"';
+            i++;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (ch === ',' && !inQuotes) {
+          out.push(cur);
+          cur = '';
+        } else {
+          cur += ch;
+        }
+      }
+
+      out.push(cur);
+      return out;
+    }
+
+    async function readFileText(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(reader.error || new Error('Failed to read file'));
+        reader.readAsText(file);
+      });
+    }
+
+    async function fetchText(url) {
+      const res = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.text();
+    }
+
+    function chartLayout(title = '') {
+      return {
+        title,
+        paper_bgcolor: getComputedStyle(document.body).getPropertyValue('--panel'),
+        plot_bgcolor: getComputedStyle(document.body).getPropertyValue('--panel'),
+        font: { color: getComputedStyle(document.body).getPropertyValue('--text').trim() },
+        xaxis: {
+          title: `Timestamp (${state.selectedTimeZone || state.browserTimeZone}, source: UTC)`,
+          gridcolor: getComputedStyle(document.body).getPropertyValue('--border').trim()
+        },
+        yaxis: {
+          title: 'Value',
+          gridcolor: getComputedStyle(document.body).getPropertyValue('--border').trim()
+        },
+        legend: {
+          orientation: 'h',
+          tracegroupgap: 5
+        },
+        showlegend: state.legendVisible,
+        margin: { l: 60, r: 30, t: 50, b: 50 },
+        hovermode: 'closest',
+        hoverlabel: {
+          align: 'left',
+          namelength: -1
+        }
+      };
+    }
+
+    function prepareTracesForDisplay(baseTraces) {
+      const selectedTz = state.selectedTimeZone || state.browserTimeZone || 'UTC';
+      return (baseTraces || []).map(trace => {
+        const rawX = trace._rawX || trace.x || [];
+        const y = trace.y || [];
+        const x = rawX.map(dt => {
+          const parsed = dt instanceof Date ? dt : new Date(dt);
+          return Number.isNaN(parsed.getTime()) ? dt : toPlotlyDisplayIso(parsed, selectedTz);
+        });
+        const text = rawX.map((dt, idx) => {
+          const parsed = dt instanceof Date ? dt : new Date(dt);
+          return buildHoverText(
+            trace.meta?.instance || '',
+            trace.meta?.metric || '',
+            y[idx],
+            formatTimestampForTimeZone(parsed, selectedTz)
+          );
+        });
+
+        return {
+          ...trace,
+          x,
+          text
+        };
+      });
+    }
+
+    function renderChart(baseTraces, title = '') {
+      state.baseTraces = baseTraces || [];
+      state.lastTraces = prepareTracesForDisplay(state.baseTraces);
+      state.lastTitle = title;
+
+      Plotly.newPlot('chart', state.lastTraces, chartLayout(title), {
+        responsive: true,
+        displaylogo: false,
+        modeBarButtonsToRemove: ['lasso2d', 'select2d']
+      });
+    }
+
+    function renderEmptyChart(message = '') {
+      renderChart([], message);
+    }
+
+    function loadTheme() {
+      const saved = localStorage.getItem('esxtop-viewer-theme');
+      state.theme = saved || 'dark';
+      document.body.classList.toggle('light', state.theme === 'light');
+      els.themeToggle.textContent = state.theme === 'light' ? '☀️' : '🌙';
+    }
+
+    els.themeToggle.addEventListener('click', () => {
+      state.theme = state.theme === 'dark' ? 'light' : 'dark';
+      localStorage.setItem('esxtop-viewer-theme', state.theme);
+      loadTheme();
+      renderChart(state.baseTraces, state.lastTitle);
+    });
+
+    els.exportGraphCsvBtn.addEventListener('click', exportCurrentGraphCsv);
+
+    els.legendToggleBtn.addEventListener('click', () => {
+      state.legendVisible = !state.legendVisible;
+      els.legendToggleBtn.textContent = state.legendVisible ? 'Hide Legend' : 'Show Legend';
+      els.appRoot.classList.toggle('legend-collapsed', !state.legendVisible);
+      renderChart(state.baseTraces, state.lastTitle);
+    });
+
+    function getFilteredValues(values, searchTerm = '') {
+      const term = (searchTerm || '').trim().toLowerCase();
+      return values.filter(v => v.toLowerCase().includes(term));
+    }
+
+    function createCheckboxList(container, values, selectedSet, onChange, searchTerm = '') {
+      container.innerHTML = '';
+      const filtered = getFilteredValues(values, searchTerm);
+
+      if (filtered.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'small';
+        empty.textContent = 'No values available';
+        container.appendChild(empty);
+        return;
+      }
+
+      filtered.forEach(value => {
+        const label = document.createElement('label');
+        label.className = 'dropdown-item';
+
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = selectedSet.has(value);
+        cb.addEventListener('click', e => e.stopPropagation());
+        cb.addEventListener('change', async () => {
+          if (cb.checked) selectedSet.add(value);
+          else selectedSet.delete(value);
+          await onChange();
+        });
+
+        const span = document.createElement('span');
+        span.textContent = value;
+
+        label.appendChild(cb);
+        label.appendChild(span);
+        container.appendChild(label);
+      });
+    }
+
+    function getAvailableGroups() {
+      const groupSet = new Set();
+      [...state.selectedHosts].forEach(host => {
+        const hostGroups = state.metadata?.host_groups?.[host] || {};
+        Object.keys(hostGroups).forEach(g => groupSet.add(g));
+      });
+      return [...groupSet].sort();
+    }
+
+    function getAvailableInstances() {
+      const instanceSet = new Set();
+      (state.metadata?.files || [])
+        .filter(f => state.selectedHosts.has(f.host) && state.selectedGroups.has(f.group))
+        .forEach(f => (f.instances || []).forEach(i => instanceSet.add(i)));
+      return [...instanceSet].sort();
+    }
+
+    function getAvailableMetricsForGroupOrInstance() {
+      const metricSet = new Set();
+      (state.metadata?.files || [])
+        .filter(f => state.selectedHosts.has(f.host) && state.selectedGroups.has(f.group))
+        .forEach(fileMeta => {
+          const im = fileMeta.instance_metrics || {};
+          if (state.selectedInstances.size > 0) {
+            [...state.selectedInstances].forEach(inst => {
+              (im[inst] || []).forEach(m => metricSet.add(m));
+            });
+          } else {
+            Object.values(im).forEach(metrics => {
+              (metrics || []).forEach(m => metricSet.add(m));
+            });
+          }
+        });
+      return [...metricSet].sort();
+    }
+
+    async function renderHosts() {
+      const hosts = (state.metadata?.hosts || []).slice().sort();
+      createCheckboxList(els.hostItems, hosts, state.selectedHosts, async () => {
+        state.selectedGroups.clear();
+        state.selectedInstances.clear();
+        state.selectedMetrics.clear();
+        await refreshGroups();
+        await refreshInstances();
+        await refreshMetrics();
+        refreshDropdownSummaries();
+        await maybeVisualize();
+      }, els.hostSearch.value);
+    }
+
+    async function refreshGroups() {
+      const groups = getAvailableGroups();
+      state.selectedGroups = new Set([...state.selectedGroups].filter(g => groups.includes(g)));
+      createCheckboxList(els.groupItems, groups, state.selectedGroups, async () => {
+        state.selectedInstances.clear();
+        state.selectedMetrics.clear();
+        await refreshInstances();
+        await refreshMetrics();
+        refreshDropdownSummaries();
+        await maybeVisualize();
+      }, els.groupSearch.value);
+    }
+
+    async function refreshInstances() {
+      const instances = getAvailableInstances();
+      state.selectedInstances = new Set([...state.selectedInstances].filter(i => instances.includes(i)));
+      createCheckboxList(els.instanceItems, instances, state.selectedInstances, async () => {
+        refreshDropdownSummaries();
+        await maybeVisualize();
+      }, els.instanceSearch.value);
+    }
+
+    async function refreshMetrics() {
+      const metrics = getAvailableMetricsForGroupOrInstance();
+      state.selectedMetrics = new Set([...state.selectedMetrics].filter(m => metrics.includes(m)));
+      createCheckboxList(els.metricItems, metrics, state.selectedMetrics, async () => {
+        refreshDropdownSummaries();
+        await maybeVisualize();
+      }, els.metricSearch.value);
+    }
+
+    function updateSelectionStatus(extra = '') {
+      const msg =
+        `Hosts: ${state.selectedHosts.size} | ` +
+        `Groups: ${state.selectedGroups.size} | ` +
+        `Instances: ${state.selectedInstances.size} | ` +
+        `Metrics: ${state.selectedMetrics.size} | ` +
+        `CSV uploads: ${state.csvFileMap.size} | ` +
+        `Time Zone: ${state.selectedTimeZone}` +
+        (extra ? ` | ${extra}` : '');
+      setStatus(els.selectionStatus, msg, 'ok');
+    }
+
+    function loadMetadataObject(metadata) {
+      state.metadata = metadata;
+      state.selectedHosts.clear();
+      state.selectedGroups.clear();
+      state.selectedInstances.clear();
+      state.selectedMetrics.clear();
+      renderHosts();
+      refreshGroups();
+      refreshInstances();
+      refreshMetrics();
+      refreshDropdownSummaries();
+      updateSelectionStatus();
+    }
+
+    async function tryAutoLoadMetadata() {
+      const candidates = [
+        'esxtop-metadata.json',
+        './esxtop-metadata.json',
+        new URL('esxtop-metadata.json', window.location.href).toString()
+      ];
+
+      let lastErr = null;
+      for (const candidate of candidates) {
+        try {
+          const text = await fetchText(candidate);
+          const metadata = JSON.parse(text);
+          loadMetadataObject(metadata);
+          setStatus(
+            els.loadStatus,
+            `Auto-loaded metadata from ${candidate}. Files: ${metadata.file_count || (metadata.files || []).length}`,
+            'ok'
+          );
+          return true;
+        } catch (err) {
+          lastErr = err;
+        }
+      }
+
+      setStatus(
+        els.loadStatus,
+        `Auto-load failed. Select metadata JSON manually. ${lastErr ? '(' + (lastErr.message || lastErr) + ')' : ''}`,
+        'err'
+      );
+      return false;
+    }
+
+    async function getCsvTextForMeta(fileMeta) {
+      const uploaded = state.csvFileMap.get(fileMeta.file_name);
+      if (uploaded) return await readFileText(uploaded);
+
+      const tryPaths = [];
+      if (fileMeta.relative_path) tryPaths.push(fileMeta.relative_path);
+      if (fileMeta.full_path) tryPaths.push(fileMeta.full_path);
+      if (fileMeta.file_name) tryPaths.push(fileMeta.file_name);
+
+      for (const p of tryPaths) {
+        try {
+          return await fetchText(p);
+        } catch (_) {}
+      }
+
+      throw new Error(`Cannot access ${fileMeta.file_name}`);
+    }
+
+    function buildLegendName(host, group, instance, metric) {
+      return `${host} | ${group} | ${instance} | ${metric}`;
+    }
+
+    function buildHoverText(instance, metric, value, timestamp) {
+      return `Instance: ${instance}<br>Metric: ${metric}<br>Value: ${value}<br>Timestamp: ${timestamp}`;
+    }
+
+    function csvEscape(value) {
+      if (value == null) return '';
+      const s = String(value);
+      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    }
+
+    async function downloadTextFile(filename, content, mimeType = 'text/plain;charset=utf-8') {
+      const blob = new Blob(['﻿', content], { type: mimeType });
+
+      if (window.navigator && typeof window.navigator.msSaveOrOpenBlob === 'function') {
+        window.navigator.msSaveOrOpenBlob(blob, filename);
+        return 'downloaded';
+      }
+
+      if (window.isSecureContext && typeof window.showSaveFilePicker === 'function') {
+        try {
+          const handle = await window.showSaveFilePicker({
+            suggestedName: filename,
+            types: [{
+              description: 'CSV file',
+              accept: { 'text/csv': ['.csv'], 'text/plain': ['.txt'] }
+            }]
+          });
+          const writable = await handle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+          return 'saved';
+        } catch (pickerErr) {
+          if (pickerErr && pickerErr.name !== 'AbortError') {
+            console.warn('showSaveFilePicker failed, falling back to anchor download', pickerErr);
+          }
+        }
+      }
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.rel = 'noopener';
+      a.style.position = 'fixed';
+      a.style.left = '-9999px';
+      document.body.appendChild(a);
+
+      try {
+        a.click();
+        return 'downloaded';
+      } catch (clickErr) {
+        console.error('CSV download failed', clickErr);
+        try {
+          window.open(url, '_blank');
+          return 'opened';
+        } catch (openErr) {
+          console.error('CSV fallback open failed', openErr);
+          return 'failed';
+        }
+      } finally {
+        setTimeout(() => {
+          a.remove();
+          URL.revokeObjectURL(url);
+        }, 10000);
+      }
+    }
+
+
+    async function exportCurrentGraphCsv() {
+      if (!state.baseTraces || state.baseTraces.length === 0) {
+        setStatus(els.loadStatus, 'Nothing to export. Generate a graph first.', 'err');
+        return;
+      }
+
+      const tz = state.selectedTimeZone || state.browserTimeZone || 'UTC';
+      const rows = [];
+
+      state.baseTraces.forEach(trace => {
+        const rawX = trace._rawX || [];
+        const yVals = trace.y || [];
+        for (let i = 0; i < rawX.length; i += 1) {
+          const utcIso = rawX[i];
+          const dt = new Date(utcIso);
+          rows.push({
+            display_timestamp: formatTimestampForTimeZone(dt, tz),
+            source_utc_timestamp: utcIso,
+            timezone: tz,
+            series: trace.name || '',
+            host: trace.host || '',
+            group: trace.group || '',
+            instance: trace.instance || '',
+            metric: trace.metric || '',
+            value: yVals[i] ?? ''
+          });
+        }
+      });
+
+      if (rows.length === 0) {
+        setStatus(els.loadStatus, 'Nothing to export. The current graph has no plotted points.', 'err');
+        return;
+      }
+
+      rows.sort((a, b) => {
+        if (a.source_utc_timestamp !== b.source_utc_timestamp) {
+          return a.source_utc_timestamp.localeCompare(b.source_utc_timestamp);
+        }
+        return a.series.localeCompare(b.series);
+      });
+
+      const headers = [
+        'display_timestamp',
+        'source_utc_timestamp',
+        'timezone',
+        'series',
+        'host',
+        'group',
+        'instance',
+        'metric',
+        'value'
+      ];
+
+      const csv = [
+        headers.join(','),
+        ...rows.map(row => headers.map(h => csvEscape(row[h])).join(','))
+      ].join('\n');
+
+      const safeTz = tz.replace(/[^A-Za-z0-9._-]+/g, '_');
+      const stamp = new Date().toISOString().replace(/[:]/g, '-').replace(/\..+/, '');
+      const filename = `esxtop-graph-export_${safeTz}_${stamp}.csv`;
+      setStatus(els.loadStatus, `Preparing graph CSV export with ${rows.length} rows (${tz})...`, 'ok');
+      const result = await downloadTextFile(filename, csv, 'text/csv;charset=utf-8');
+      if (result === 'downloaded' || result === 'saved') {
+        setStatus(els.loadStatus, `Exported graph CSV with ${rows.length} rows (${tz}).`, 'ok');
+      } else if (result === 'opened') {
+        setStatus(els.loadStatus, `Opened CSV fallback for ${rows.length} rows (${tz}). Save the opened content as ${filename}.`, 'warn');
+      } else {
+        setStatus(els.loadStatus, `CSV export failed for ${rows.length} rows (${tz}).`, 'err');
+      }
+    }
+
+    async function visualize() {
+      if (!state.metadata) {
+        renderEmptyChart();
+        return;
+      }
+
+      const matchingFiles = (state.metadata.files || []).filter(f =>
+        state.selectedHosts.has(f.host) && state.selectedGroups.has(f.group)
+      );
+
+      if (matchingFiles.length === 0 || state.selectedGroups.size === 0) {
+        renderEmptyChart('Select host and group to visualize');
+        updateSelectionStatus();
+        return;
+      }
+
+      if (state.selectedInstances.size === 0 && state.selectedMetrics.size === 0) {
+        renderEmptyChart('Select at least one instance or one metric to visualize');
+        updateSelectionStatus();
+        return;
+      }
+
+      const traces = [];
+      let inaccessibleFiles = 0;
+
+      for (const fileMeta of matchingFiles) {
+        const selectedColumns = (fileMeta.columns || []).filter(c => {
+          const instSelected = state.selectedInstances.size > 0;
+          const metricSelected = state.selectedMetrics.size > 0;
+
+          if (instSelected && metricSelected) {
+            return state.selectedInstances.has(c.instance) && state.selectedMetrics.has(c.metric);
+          }
+          if (instSelected && !metricSelected) {
+            return state.selectedInstances.has(c.instance);
+          }
+          if (!instSelected && metricSelected) {
+            return state.selectedMetrics.has(c.metric);
+          }
+          return false;
+        });
+
+        if (selectedColumns.length === 0) continue;
+
+        let text;
+        try {
+          text = await getCsvTextForMeta(fileMeta);
+        } catch (_) {
+          inaccessibleFiles++;
+          continue;
+        }
+
+        const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
+        if (lines.length < 2) continue;
+
+        const headers = parseCsvLine(lines[0]);
+        const idxMap = new Map();
+        headers.forEach((h, idx) => idxMap.set(h, idx));
+
+        const tsIndex = idxMap.get(fileMeta.timestamp_header);
+        if (tsIndex === undefined) continue;
+
+        const traceMap = new Map();
+
+        selectedColumns.forEach(col => {
+          const idx = idxMap.get(col.header);
+          if (idx === undefined) return;
+
+          const key = `${fileMeta.host}|${fileMeta.group}|${col.instance}|${col.metric}|${col.header}`;
+          if (!traceMap.has(key)) {
+            traceMap.set(key, {
+              x: [],
+              y: [],
+              text: [],
+              name: buildLegendName(fileMeta.host, fileMeta.group, col.instance, col.metric),
+              mode: 'lines',
+              type: 'scatter',
+              hovertemplate: '%{text}<extra></extra>',
+              meta: {
+                host: fileMeta.host,
+                group: fileMeta.group,
+                instance: col.instance,
+                metric: col.metric
+              },
+              _rawX: [],
+              _colIndices: []
+            });
+          }
+          traceMap.get(key)._colIndices.push(idx);
+        });
+
+        for (let i = 1; i < lines.length; i++) {
+          const row = parseCsvLine(lines[i]);
+          const tsRaw = row[tsIndex];
+          const dt = parseTimestamp(tsRaw);
+          if (!dt) continue;
+
+          traceMap.forEach(trace => {
+            for (const colIdx of trace._colIndices) {
+              const rawValue = row[colIdx];
+              if (rawValue === undefined || rawValue === '') continue;
+
+              const num = Number(rawValue);
+              if (Number.isNaN(num)) continue;
+
+              trace._rawX.push(dt);
+              trace.y.push(num);
+            }
+          });
+        }
+
+        traceMap.forEach(trace => {
+          delete trace._colIndices;
+          if ((trace._rawX || []).length > 0) traces.push(trace);
+        });
+      }
+
+      if (traces.length === 0) {
+        const msg = state.csvFileMap.size === 0
+          ? 'No chart data. Serve this folder with a local web server or upload the matching CSV files.'
+          : 'No numeric data found for the current selection.';
+        renderEmptyChart(msg);
+        updateSelectionStatus(inaccessibleFiles ? `inaccessible files: ${inaccessibleFiles}` : '');
+        return;
+      }
+
+      const title =
+        `Hosts: ${state.selectedHosts.size} | ` +
+        `Groups: ${state.selectedGroups.size} | ` +
+        `Instances: ${state.selectedInstances.size} | ` +
+        `Metrics: ${state.selectedMetrics.size}`;
+
+      renderChart(traces, title);
+      updateSelectionStatus(inaccessibleFiles ? `inaccessible files: ${inaccessibleFiles}` : '');
+    }
+
+    async function maybeVisualize() {
+      refreshDropdownSummaries();
+      await visualize();
+    }
+
+    els.metadataFile.addEventListener('change', async () => {
+      const file = els.metadataFile.files[0];
+      if (!file) return;
+
+      try {
+        const text = await readFileText(file);
+        const metadata = JSON.parse(text);
+        loadMetadataObject(metadata);
+        setStatus(els.loadStatus, `Metadata loaded. Files: ${metadata.file_count || (metadata.files || []).length}`, 'ok');
+      } catch (err) {
+        setStatus(els.loadStatus, `Failed to load metadata: ${err.message || err}`, 'err');
+      }
+    });
+
+    els.csvFiles.addEventListener('change', async () => {
+      state.csvFileMap = new Map();
+      Array.from(els.csvFiles.files || []).forEach(file => state.csvFileMap.set(file.name, file));
+      await maybeVisualize();
+    });
+
+    els.timezoneSearch.addEventListener('input', () => {
+      renderTimeZoneOptions(els.timezoneSearch.value);
+    });
+
+    ['hostSearch', 'groupSearch', 'instanceSearch', 'metricSearch'].forEach(id => {
+      els[id].addEventListener('input', async () => {
+        if (id === 'hostSearch') await renderHosts();
+        if (id === 'groupSearch') await refreshGroups();
+        if (id === 'instanceSearch') await refreshInstances();
+        if (id === 'metricSearch') await refreshMetrics();
+      });
+    });
+
+    document.querySelectorAll('.dropdown').forEach(drop => {
+      const btn = drop.querySelector('.dropdown-btn');
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        document.querySelectorAll('.dropdown.open').forEach(d => {
+          if (d !== drop) d.classList.remove('open');
+        });
+        drop.classList.toggle('open');
+      });
+
+      drop.querySelector('.dropdown-panel').addEventListener('click', e => {
+        e.stopPropagation();
+      });
+    });
+
+    document.addEventListener('click', () => {
+      document.querySelectorAll('.dropdown.open').forEach(d => d.classList.remove('open'));
+    });
+
+    document.querySelectorAll('[data-action]').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        e.stopPropagation();
+
+        const target = btn.dataset.target;
+        const action = btn.dataset.action;
+
+        let allValues = [];
+        let filteredValues = [];
+        let setRef = null;
+        let searchTerm = '';
+
+        if (target === 'hosts') {
+          allValues = state.metadata?.hosts || [];
+          searchTerm = els.hostSearch.value;
+          setRef = state.selectedHosts;
+        } else if (target === 'groups') {
+          allValues = getAvailableGroups();
+          searchTerm = els.groupSearch.value;
+          setRef = state.selectedGroups;
+        } else if (target === 'instances') {
+          allValues = getAvailableInstances();
+          searchTerm = els.instanceSearch.value;
+          setRef = state.selectedInstances;
+        } else if (target === 'metrics') {
+          allValues = getAvailableMetricsForGroupOrInstance();
+          searchTerm = els.metricSearch.value;
+          setRef = state.selectedMetrics;
+        }
+
+        if (!setRef) return;
+
+        filteredValues = getFilteredValues(allValues, searchTerm);
+
+        if (action === 'clear') {
+          filteredValues.forEach(v => setRef.delete(v));
+        } else if (action === 'all') {
+          filteredValues.forEach(v => setRef.add(v));
+        }
+
+        if (target === 'hosts') {
+          state.selectedGroups.clear();
+          state.selectedInstances.clear();
+          state.selectedMetrics.clear();
+          await refreshGroups();
+          await refreshInstances();
+          await refreshMetrics();
+          await renderHosts();
+        } else if (target === 'groups') {
+          state.selectedInstances.clear();
+          state.selectedMetrics.clear();
+          await refreshGroups();
+          await refreshInstances();
+          await refreshMetrics();
+        } else if (target === 'instances') {
+          await refreshInstances();
+          await refreshMetrics();
+        } else if (target === 'metrics') {
+          await refreshMetrics();
+        }
+
+        refreshDropdownSummaries();
+        await maybeVisualize();
+      });
+    });
+
+    loadTheme();
+    renderTimeZoneOptions();
+    updateSelectionStatus();
+    renderEmptyChart('Make selections to visualize');
+
+    let autoLoadStarted = false;
+
+    async function kickOffAutoLoadMetadata(reason = 'init') {
+      if (state.metadata || autoLoadStarted) return;
+      autoLoadStarted = true;
+      try {
+        await tryAutoLoadMetadata();
+      } finally {
+        if (!state.metadata) autoLoadStarted = false;
+      }
+    }
+
+    // Try immediately because this script is at the end of <body>.
+    kickOffAutoLoadMetadata('immediate');
+
+    // Keep fallbacks in case the page is still settling.
+    window.addEventListener('DOMContentLoaded', () => {
+      kickOffAutoLoadMetadata('domcontentloaded');
+    }, { once: true });
+
+    window.addEventListener('load', () => {
+      kickOffAutoLoadMetadata('load');
+      setTimeout(() => kickOffAutoLoadMetadata('post-load-250ms'), 250);
+      setTimeout(() => kickOffAutoLoadMetadata('post-load-1000ms'), 1000);
+    }, { once: true });
+  </script>
+</body>
+</html>
