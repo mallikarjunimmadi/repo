@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-esxtop-offline_v0.0.6.1.py
+esxtop-offline_v0.0.6.2.py
 
-Version: v0.0.6.1
+Version: v0.0.6.2
 
 Description:
     Offline ESXTOP CSV processor using temp-file merge + external sort.
@@ -20,11 +20,11 @@ Features:
     - Shows runtime metrics only when --debug is used
 
 Examples:
-    python3 esxtop-offline_v0.0.6.1.py
-    python3 esxtop-offline_v0.0.6.1.py --recursive
-    python3 esxtop-offline_v0.0.6.1.py --group "Physical Cpu"
-    python3 esxtop-offline_v0.0.6.1.py --keep-full-header
-    python3 esxtop-offline_v0.0.6.1.py --debug
+    python3 esxtop-offline_v0.0.6.2.py
+    python3 esxtop-offline_v0.0.6.2.py --recursive
+    python3 esxtop-offline_v0.0.6.2.py --group "Physical Cpu"
+    python3 esxtop-offline_v0.0.6.2.py --keep-full-header
+    python3 esxtop-offline_v0.0.6.2.py --debug
 """
 
 import argparse
