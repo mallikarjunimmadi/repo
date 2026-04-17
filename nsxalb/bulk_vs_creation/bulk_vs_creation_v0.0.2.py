@@ -21,6 +21,8 @@ from requests.packages.urllib3.exceptions import InsecureRequestWarning
 import urllib3
 urllib3.disable_warnings(InsecureRequestWarning)
 
+VERSION = "0.0.2"
+
 
 # ---------- Logger ----------
 def setup_logger(log_dir="logs", debug=False):
@@ -385,6 +387,7 @@ Examples:
     p.add_argument("--log-dir", default="logs", help="Directory to store log files (default: ./logs)")
     p.add_argument("--dry-run", action="store_true", help="Run in validation-only mode without API calls")
     p.add_argument("--debug", action="store_true", help="Enable detailed debug logging (payloads, responses)")
+    p.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
     p.add_argument("--generate-sample-csv", action="store_true",
                    help="Generate a sample CSV template and exit (no other args allowed)")
     a=p.parse_args()
