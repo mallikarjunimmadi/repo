@@ -11,7 +11,7 @@ bulk_vs_creation_v0.0.2.py
 Version:
 
 ```bash
-/Users/mi013830/tools/scripts/avi/avi-venv/bin/python bulk_vs_creation_v0.0.2.py --version
+/Users/imallikarjun/tools/scripts/avi/avi-venv/bin/python bulk_vs_creation_v0.0.2.py --version
 ```
 
 Expected output:
@@ -37,25 +37,25 @@ bulk_vs_creation_v0.0.2.py 0.0.2
 Use the local Avi virtual environment so the script can import `avisdk`:
 
 ```bash
-/Users/mi013830/tools/scripts/avi/avi-venv/bin/python
+/Users/imallikarjun/tools/scripts/avi/avi-venv/bin/python
 ```
 
 Run commands from this directory:
 
 ```bash
-cd /Users/mi013830/tools/scripts/avi/bulk_vs_creation
+cd /Users/imallikarjun/tools/scripts/avi/bulk_vs_creation
 ```
 
 ## Help
 
 ```bash
-/Users/mi013830/tools/scripts/avi/avi-venv/bin/python bulk_vs_creation_v0.0.2.py --help
+/Users/imallikarjun/tools/scripts/avi/avi-venv/bin/python bulk_vs_creation_v0.0.2.py --help
 ```
 
 ## Generate Sample CSV
 
 ```bash
-/Users/mi013830/tools/scripts/avi/avi-venv/bin/python bulk_vs_creation_v0.0.2.py --generate-sample-csv
+/Users/imallikarjun/tools/scripts/avi/avi-venv/bin/python bulk_vs_creation_v0.0.2.py --generate-sample-csv
 ```
 
 This creates a file named like:
@@ -125,7 +125,7 @@ The subnet `addr` and `mask` are taken from the network object's IPv4 `configure
 Use this first to validate CSV input and generated payloads without creating objects:
 
 ```bash
-/Users/mi013830/tools/scripts/avi/avi-venv/bin/python bulk_vs_creation_v0.0.2.py \
+/Users/imallikarjun/tools/scripts/avi/avi-venv/bin/python bulk_vs_creation_v0.0.2.py \
   --controller avilb.vmi.local \
   --csv my_vs_list.csv \
   --dry-run
@@ -134,7 +134,7 @@ Use this first to validate CSV input and generated payloads without creating obj
 ### Dry Run With Debug Payloads
 
 ```bash
-/Users/mi013830/tools/scripts/avi/avi-venv/bin/python bulk_vs_creation_v0.0.2.py \
+/Users/imallikarjun/tools/scripts/avi/avi-venv/bin/python bulk_vs_creation_v0.0.2.py \
   --controller avilb.vmi.local \
   --csv my_vs_list.csv \
   --dry-run \
@@ -144,7 +144,7 @@ Use this first to validate CSV input and generated payloads without creating obj
 ### Actual Creation
 
 ```bash
-/Users/mi013830/tools/scripts/avi/avi-venv/bin/python bulk_vs_creation_v0.0.2.py \
+/Users/imallikarjun/tools/scripts/avi/avi-venv/bin/python bulk_vs_creation_v0.0.2.py \
   --controller avilb.vmi.local \
   --csv my_vs_list.csv
 ```
@@ -154,7 +154,7 @@ Use this first to validate CSV input and generated payloads without creating obj
 The script prompts for the password if `--password` is omitted:
 
 ```bash
-/Users/mi013830/tools/scripts/avi/avi-venv/bin/python bulk_vs_creation_v0.0.2.py \
+/Users/imallikarjun/tools/scripts/avi/avi-venv/bin/python bulk_vs_creation_v0.0.2.py \
   --controller avilb.vmi.local \
   --username admin \
   --csv my_vs_list.csv
@@ -163,7 +163,7 @@ The script prompts for the password if `--password` is omitted:
 ### Actual Creation With Tenant
 
 ```bash
-/Users/mi013830/tools/scripts/avi/avi-venv/bin/python bulk_vs_creation_v0.0.2.py \
+/Users/imallikarjun/tools/scripts/avi/avi-venv/bin/python bulk_vs_creation_v0.0.2.py \
   --controller avilb.vmi.local \
   --username admin \
   --tenant admin \
@@ -173,7 +173,7 @@ The script prompts for the password if `--password` is omitted:
 ### Custom Log Directory
 
 ```bash
-/Users/mi013830/tools/scripts/avi/avi-venv/bin/python bulk_vs_creation_v0.0.2.py \
+/Users/imallikarjun/tools/scripts/avi/avi-venv/bin/python bulk_vs_creation_v0.0.2.py \
   --controller avilb.vmi.local \
   --csv my_vs_list.csv \
   --log-dir ./logs
@@ -182,7 +182,7 @@ The script prompts for the password if `--password` is omitted:
 ### Debug Mode For API Responses
 
 ```bash
-/Users/mi013830/tools/scripts/avi/avi-venv/bin/python bulk_vs_creation_v0.0.2.py \
+/Users/imallikarjun/tools/scripts/avi/avi-venv/bin/python bulk_vs_creation_v0.0.2.py \
   --controller avilb.vmi.local \
   --csv my_vs_list.csv \
   --debug
@@ -191,7 +191,7 @@ The script prompts for the password if `--password` is omitted:
 ### Show Version
 
 ```bash
-/Users/mi013830/tools/scripts/avi/avi-venv/bin/python bulk_vs_creation_v0.0.2.py --version
+/Users/imallikarjun/tools/scripts/avi/avi-venv/bin/python bulk_vs_creation_v0.0.2.py --version
 ```
 
 ## Logs
