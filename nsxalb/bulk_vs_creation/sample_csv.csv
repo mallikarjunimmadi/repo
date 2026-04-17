@@ -1,3 +1,4 @@
-vs_name,vs_ip,vs_port,pool_name,pool_members,vip_network,vip_subnet,vip_mask,pool_network,se_group
-web_vs1,10.10.10.10,443,web_pool1,10.10.20.11:443;10.10.20.12:443,frontend-net,10.10.10.0,24,backend-net,SEGroup-Prod
-web_vs2,auto,80,web_pool2,10.10.30.11:80;10.10.30.12:80,frontend-net,10.10.10.0,24,backend-net,SEGroup-Test
+vs_name,vs_ip,vs_port,pool_name,pool_members,vip_network,pool_network,se_group,vsvip_name,application_profile,health_monitor,ssl_profile,cloud_name
+tcp_vs1,10.10.10.11,1521,ora_pool,10.10.20.11:1521;10.10.20.12:1521,vlan203,m01-avi-se-b-prod-1456,Internal-SE-Group,,System-L4-Application,System-TCP,,NSX-T-UAT
+http_vs1,10.10.10.12,80,web_pool,10.10.20.21:80;10.10.20.22:80,vlan203,m01-avi-se-b-prod-1456,Internal-SE-Group,,System-HTTP,System-HTTP,,NSX-T-UAT
+https_vs1,10.10.10.13,443,secure_pool,10.10.20.31:443;10.10.20.32:443,vlan203,m01-avi-se-b-prod-1456,Internal-SE-Group,,System-Secure-HTTP,System-HTTPS,,NSX-T-UAT
