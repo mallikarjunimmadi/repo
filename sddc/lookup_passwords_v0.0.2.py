@@ -207,8 +207,11 @@ def prompt_missing_args(args):
     if not args.password:
         args.password = getpass.getpass("Enter password: ")
 
-    # Precedence: --all > --resource-name > --resource-type
+    # Precedence: --all > --id > --resource-name > --resource-type
     if args.all:
+        return args
+
+    if args.id:
         return args
 
     if args.resource_name:
@@ -216,10 +219,11 @@ def prompt_missing_args(args):
         return args
 
     if args.resource_type:
-        default = args.resource_type.upper()
-        if default not in allowed_types:
-            default = None
-        args.resource_type = select_from_list("Select resource type:", allowed_types, default=default)
+        typed_resource = args.resource_type.strip()
+        args.resource_type = next(
+            (resource_type for resource_type in allowed_types if resource_type.upper() == typed_resource.upper()),
+            typed_resource,
+        )
         return args
 
     # Nothing specific given: prompt for mode
