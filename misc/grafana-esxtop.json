@@ -7,3 +7,4 @@ from(bucket: "${bucket}")
   |> group(columns: ["_measurement", "instance"])
   |> aggregateWindow(every: 50ms, fn: mean, createEmpty: false)
   |> yield(name: "mean")
+  
