@@ -93,10 +93,10 @@ Column notes:
 For `vip_network` and `pool_network`, the script accepts any of these formats:
 
 ```text
-b1u03-uat-web-vl978
+network-app
 network-a223286c-6313-4c22-b317-abf82fdb5704
 /api/network/network-a223286c-6313-4c22-b317-abf82fdb5704
-https://avilb.vmi.local/api/network/network-a223286c-6313-4c22-b317-abf82fdb5704#b1u03-uat-web-vl978
+https://avilb.vmi.local/api/network/network-a223286c-6313-4c22-b317-abf82fdb5704#network-app
 ```
 
 The script fetches the network object and builds placement payload like:
@@ -104,7 +104,7 @@ The script fetches the network object and builds placement payload like:
 ```json
 "placement_networks": [
   {
-    "network_ref": "https://avilb.vmi.local/api/network/network-a223286c-6313-4c22-b317-abf82fdb5704#b1u03-uat-web-vl978",
+    "network_ref": "https://avilb.vmi.local/api/network/network-a223286c-6313-4c22-b317-abf82fdb5704#network-app",
     "subnet": {
       "ip_addr": {
         "addr": "10.187.66.128",
