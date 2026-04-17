@@ -11,7 +11,7 @@ bulk_vs_creation_v0.0.2.py
 Version:
 
 ```bash
-/Users/imallikarjun/tools/scripts/avi/avi-venv/bin/python bulk_vs_creation_v0.0.2.py --version
+python3 bulk_vs_creation_v0.0.2.py --version
 ```
 
 Expected output:
@@ -34,28 +34,28 @@ bulk_vs_creation_v0.0.2.py 0.0.2
 
 ## Requirements
 
-Use the local Avi virtual environment so the script can import `avisdk`:
+Use a Python environment where `avisdk` is installed. If using a virtual environment, activate it first:
 
 ```bash
-/Users/imallikarjun/tools/scripts/avi/avi-venv/bin/python
+source <venv>/bin/activate
 ```
 
 Run commands from this directory:
 
 ```bash
-cd /Users/imallikarjun/tools/scripts/avi/bulk_vs_creation
+cd <repo>/bulk_vs_creation
 ```
 
 ## Help
 
 ```bash
-/Users/imallikarjun/tools/scripts/avi/avi-venv/bin/python bulk_vs_creation_v0.0.2.py --help
+python3 bulk_vs_creation_v0.0.2.py --help
 ```
 
 ## Generate Sample CSV
 
 ```bash
-/Users/imallikarjun/tools/scripts/avi/avi-venv/bin/python bulk_vs_creation_v0.0.2.py --generate-sample-csv
+python3 bulk_vs_creation_v0.0.2.py --generate-sample-csv
 ```
 
 This creates a file named like:
@@ -96,7 +96,7 @@ For `vip_network` and `pool_network`, the script accepts any of these formats:
 b1u03-uat-web-vl978
 network-a223286c-6313-4c22-b317-abf82fdb5704
 /api/network/network-a223286c-6313-4c22-b317-abf82fdb5704
-https://b1u03avilb.corp.ad.sbi/api/network/network-a223286c-6313-4c22-b317-abf82fdb5704#b1u03-uat-web-vl978
+https://avilb.vmi.local/api/network/network-a223286c-6313-4c22-b317-abf82fdb5704#b1u03-uat-web-vl978
 ```
 
 The script fetches the network object and builds placement payload like:
@@ -104,7 +104,7 @@ The script fetches the network object and builds placement payload like:
 ```json
 "placement_networks": [
   {
-    "network_ref": "https://b1u03avilb.corp.ad.sbi/api/network/network-a223286c-6313-4c22-b317-abf82fdb5704#b1u03-uat-web-vl978",
+    "network_ref": "https://avilb.vmi.local/api/network/network-a223286c-6313-4c22-b317-abf82fdb5704#b1u03-uat-web-vl978",
     "subnet": {
       "ip_addr": {
         "addr": "10.187.66.128",
@@ -125,7 +125,7 @@ The subnet `addr` and `mask` are taken from the network object's IPv4 `configure
 Use this first to validate CSV input and generated payloads without creating objects:
 
 ```bash
-/Users/imallikarjun/tools/scripts/avi/avi-venv/bin/python bulk_vs_creation_v0.0.2.py \
+python3 bulk_vs_creation_v0.0.2.py \
   --controller avilb.vmi.local \
   --csv my_vs_list.csv \
   --dry-run
@@ -134,7 +134,7 @@ Use this first to validate CSV input and generated payloads without creating obj
 ### Dry Run With Debug Payloads
 
 ```bash
-/Users/imallikarjun/tools/scripts/avi/avi-venv/bin/python bulk_vs_creation_v0.0.2.py \
+python3 bulk_vs_creation_v0.0.2.py \
   --controller avilb.vmi.local \
   --csv my_vs_list.csv \
   --dry-run \
@@ -144,7 +144,7 @@ Use this first to validate CSV input and generated payloads without creating obj
 ### Actual Creation
 
 ```bash
-/Users/imallikarjun/tools/scripts/avi/avi-venv/bin/python bulk_vs_creation_v0.0.2.py \
+python3 bulk_vs_creation_v0.0.2.py \
   --controller avilb.vmi.local \
   --csv my_vs_list.csv
 ```
@@ -154,7 +154,7 @@ Use this first to validate CSV input and generated payloads without creating obj
 The script prompts for the password if `--password` is omitted:
 
 ```bash
-/Users/imallikarjun/tools/scripts/avi/avi-venv/bin/python bulk_vs_creation_v0.0.2.py \
+python3 bulk_vs_creation_v0.0.2.py \
   --controller avilb.vmi.local \
   --username admin \
   --csv my_vs_list.csv
@@ -163,7 +163,7 @@ The script prompts for the password if `--password` is omitted:
 ### Actual Creation With Tenant
 
 ```bash
-/Users/imallikarjun/tools/scripts/avi/avi-venv/bin/python bulk_vs_creation_v0.0.2.py \
+python3 bulk_vs_creation_v0.0.2.py \
   --controller avilb.vmi.local \
   --username admin \
   --tenant admin \
@@ -173,7 +173,7 @@ The script prompts for the password if `--password` is omitted:
 ### Custom Log Directory
 
 ```bash
-/Users/imallikarjun/tools/scripts/avi/avi-venv/bin/python bulk_vs_creation_v0.0.2.py \
+python3 bulk_vs_creation_v0.0.2.py \
   --controller avilb.vmi.local \
   --csv my_vs_list.csv \
   --log-dir ./logs
@@ -182,7 +182,7 @@ The script prompts for the password if `--password` is omitted:
 ### Debug Mode For API Responses
 
 ```bash
-/Users/imallikarjun/tools/scripts/avi/avi-venv/bin/python bulk_vs_creation_v0.0.2.py \
+python3 bulk_vs_creation_v0.0.2.py \
   --controller avilb.vmi.local \
   --csv my_vs_list.csv \
   --debug
@@ -191,7 +191,7 @@ The script prompts for the password if `--password` is omitted:
 ### Show Version
 
 ```bash
-/Users/imallikarjun/tools/scripts/avi/avi-venv/bin/python bulk_vs_creation_v0.0.2.py --version
+python3 bulk_vs_creation_v0.0.2.py --version
 ```
 
 ## Logs
@@ -215,4 +215,3 @@ avi_vs_create_YYYYMMDD_HHMMSS.log
 3. Run with `--dry-run --debug`.
 4. Review the generated payloads in the log.
 5. Run without `--dry-run` to create objects.
-
