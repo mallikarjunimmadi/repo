@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-bulk_create_vs_full_placement_dryrun.py
----------------------------------------
+bulk_vs_creation_v0.0.2.py
+--------------------------
 Bulk-create Virtual Services, Pools, and VSVIPs with NSX-T compliance.
 
 CSV-driven configuration
@@ -360,19 +360,19 @@ def main():
     examples = """
 Examples:
   # 1. Generate a ready-to-fill sample CSV template
-  python3 bulk_create_vs_full_placement_dryrun.py --generate-sample-csv
+  python3 bulk_vs_creation_v0.0.2.py --generate-sample-csv
 
   # 2. Dry-run (no changes, only payloads logged)
-  python3 bulk_create_vs_full_placement_dryrun.py --controller avilb.vmi.local --csv my_vs_list.csv --dry-run
+  python3 bulk_vs_creation_v0.0.2.py --controller avilb.vmi.local --csv my_vs_list.csv --dry-run
 
   # 3. Actual creation (execute API calls)
-  python3 bulk_create_vs_full_placement_dryrun.py --controller avilb.vmi.local --csv my_vs_list.csv
+  python3 bulk_vs_creation_v0.0.2.py --controller avilb.vmi.local --csv my_vs_list.csv
 
   # 4. Enable full debug logging (print payloads & API responses)
-  python3 bulk_create_vs_full_placement_dryrun.py --controller avilb.vmi.local --csv my_vs_list.csv --debug
+  python3 bulk_vs_creation_v0.0.2.py --controller avilb.vmi.local --csv my_vs_list.csv --debug
 
   # 5. Combined dry-run + debug (safe validation mode)
-  python3 bulk_create_vs_full_placement_dryrun.py --controller avilb.vmi.local --csv my_vs_list.csv --dry-run --debug
+  python3 bulk_vs_creation_v0.0.2.py --controller avilb.vmi.local --csv my_vs_list.csv --dry-run --debug
 """
     p=argparse.ArgumentParser(
         description="Bulk-create NSX-T compatible Virtual Services, Pools, and VSVIPs from a CSV input.",
