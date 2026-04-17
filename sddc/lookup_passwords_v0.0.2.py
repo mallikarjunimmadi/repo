@@ -216,10 +216,9 @@ def prompt_missing_args(args):
         return args
 
     if args.resource_type:
-        default = args.resource_type.upper()
-        if default not in allowed_types:
-            default = None
-        args.resource_type = select_from_list("Select resource type:", allowed_types, default=default)
+        args.resource_type = args.resource_type.upper()
+        if args.resource_type not in allowed_types:
+            LOG.warning("Using custom resource type '%s'. Expected one of: %s", args.resource_type, ", ".join(allowed_types))
         return args
 
     # Nothing specific given: prompt for mode
