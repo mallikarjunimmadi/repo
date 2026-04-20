@@ -32,6 +32,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 import random
 import re
+import socket
 import sys
 import time
 from datetime import datetime
@@ -45,20 +46,34 @@ import requests
 # Logging
 # -----------------------------
 
-def setup_logging(log_file: str, level: str = "INFO") -> None:
+def setup_logging(log_file: str, level: str = "INFO", include_runtime_identity: bool = False) -> None:
     logger = logging.getLogger()
     logger.setLevel(getattr(logging, level.upper(), logging.INFO))
-    fmt = logging.Formatter(
-        "%(asctime)s.%(msecs)03d %(levelname)-8s %(name)s %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+    log_format = "%(asctime)s.%(msecs)03d %(levelname)-8s %(message)s"
+    if include_runtime_identity:
+        log_format = "%(asctime)s.%(msecs)03d %(levelname)-8s %(runtime_identity)s %(message)s"
+    fmt = logging.Formatter(log_format, datefmt="%Y-%m-%d %H:%M:%S")
     ch = logging.StreamHandler(sys.stdout)
     ch.setFormatter(fmt)
+    if include_runtime_identity:
+        identity_filter = RuntimeIdentityFilter()
+        ch.addFilter(identity_filter)
     logger.addHandler(ch)
     fh = RotatingFileHandler(log_file, maxBytes=10 * 1024 * 1024, backupCount=5)
     fh.setFormatter(fmt)
+    if include_runtime_identity:
+        fh.addFilter(identity_filter)
     logger.addHandler(fh)
     logger.info("Logging to: %s", log_file)
+
+class RuntimeIdentityFilter(logging.Filter):
+    def __init__(self) -> None:
+        super().__init__()
+        self.runtime_identity = f"{getpass.getuser()}@{socket.gethostname()}"
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.runtime_identity = self.runtime_identity
+        return True
 
 # -----------------------------
 # Utilities
@@ -619,7 +634,7 @@ def main():
 
     run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_file = args.log_file or f"nsxt_unused_objects_{run_timestamp}.log"
-    setup_logging(log_file, "DEBUG" if args.debug else "INFO")
+    setup_logging(log_file, "DEBUG" if args.debug else "INFO", include_runtime_identity=args.debug)
 
     # Prompt for any missing critical inputs
     raw_nsx_hosts = args.nsx or [ensure_value(None, "NSX Manager FQDN/IP(s): ", secret=False)]
