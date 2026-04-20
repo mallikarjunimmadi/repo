@@ -161,7 +161,7 @@ The empty-groups report uses a simple expression heuristic:
 --page-size        Page size for NSX list APIs. Default: 1000.
 --threads          Worker threads, clamped between 1 and 10. Default: 5.
 --log-file         Rotating log file path. Default: current directory with timestamp.
---debug            Enable detailed debug logging.
+--debug            Enable detailed debug logging, including local username/hostname.
 ```
 
 ## Examples
@@ -216,6 +216,8 @@ python3 nsxt_unused_objects_v0.0.2.py \
   --user admin \
   --debug
 ```
+
+When `--debug` is enabled, log lines include the local system identity in `username@hostname` format. In normal mode, logs omit the Python logger name so entries do not show `root`.
 
 Write detailed HTTP/page-level logs to a file:
 
