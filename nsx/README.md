@@ -160,19 +160,24 @@ The empty-groups report uses a simple expression heuristic:
 --jitter           Random jitter added to retry delay. Default: 0.25.
 --page-size        Page size for NSX list APIs. Default: 1000.
 --threads          Worker threads, clamped between 1 and 10. Default: 5.
---log-file         Optional rotating log file path.
---log-level        DEBUG, INFO, WARNING, ERROR. Default: INFO.
+--log-file         Rotating log file path. Default: current directory with timestamp.
+--debug            Enable detailed debug logging.
 ```
 
 ## Examples
 
-Single manager with a log file:
+Single manager:
 
 ```bash
 python3 nsxt_unused_objects_v0.0.2.py \
   --nsx nsx01.example.local \
-  --user admin \
-  --log-file nsxt_unused_objects.log
+  --user admin
+```
+
+If `--log-file` is not provided, the script creates a log file in the current directory:
+
+```text
+nsxt_unused_objects_YYYYMMDD_HHMMSS.log
 ```
 
 Multiple managers with a custom prefix:
@@ -203,10 +208,30 @@ python3 nsxt_unused_objects_v0.0.2.py \
   --page-size 200
 ```
 
+Show very detailed progress while the script runs:
+
+```bash
+python3 nsxt_unused_objects_v0.0.2.py \
+  --nsx nsx01.example.local \
+  --user admin \
+  --debug
+```
+
+Write detailed HTTP/page-level logs to a file:
+
+```bash
+python3 nsxt_unused_objects_v0.0.2.py \
+  --nsx nsx01.example.local \
+  --user admin \
+  --debug \
+  --log-file nsxt_unused_objects_debug.log
+```
+
 ## Notes
 
 - The script reads objects through the NSX Policy API.
 - Services and Groups are fetched in detail so system-owned flags can be checked more accurately.
 - DFW and Gateway Firewall rules are scanned for service and group references.
+- Progress is logged during long-running discovery, object-fetch, DFW scan, and Gateway Firewall scan stages.
 - `--exclude-system true` checks several common system/default flags, including `system_owned`, `_system_owned`, `is_system_owned`, `is_default`, and `is_policy_default`.
 - If multiple NSX Managers are scanned and one fails, reports are still written for successful managers, then the script exits with an error listing failed managers.
