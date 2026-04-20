@@ -217,7 +217,7 @@ python3 nsxt_unused_objects_v0.0.2.py \
   --debug
 ```
 
-When `--debug` is enabled, log lines include the local system identity in `username@hostname` format. In normal mode, logs omit the Python logger name so entries do not show `root`.
+When `--debug` is enabled, log lines include the local system identity in `username@hostname` format.
 
 Write detailed HTTP/page-level logs to a file:
 
