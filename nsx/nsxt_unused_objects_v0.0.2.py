@@ -45,7 +45,7 @@ import requests
 # Logging
 # -----------------------------
 
-def setup_logging(log_file: Optional[str], level: str = "INFO") -> None:
+def setup_logging(log_file: str, level: str = "INFO") -> None:
     logger = logging.getLogger()
     logger.setLevel(getattr(logging, level.upper(), logging.INFO))
     fmt = logging.Formatter(
@@ -55,10 +55,10 @@ def setup_logging(log_file: Optional[str], level: str = "INFO") -> None:
     ch = logging.StreamHandler(sys.stdout)
     ch.setFormatter(fmt)
     logger.addHandler(ch)
-    if log_file:
-        fh = RotatingFileHandler(log_file, maxBytes=10 * 1024 * 1024, backupCount=5)
-        fh.setFormatter(fmt)
-        logger.addHandler(fh)
+    fh = RotatingFileHandler(log_file, maxBytes=10 * 1024 * 1024, backupCount=5)
+    fh.setFormatter(fmt)
+    logger.addHandler(fh)
+    logger.info("Logging to: %s", log_file)
 
 # -----------------------------
 # Utilities
@@ -117,6 +117,12 @@ def clamp_threads(n: int) -> int:
     if n < 1: return 1
     if n > 10: return 10
     return n
+
+def log_progress(label: str, completed: int, total: int, every: int) -> None:
+    if total <= 0:
+        return
+    if completed == 1 or completed == total or (every > 0 and completed % every == 0):
+        logging.info("%s: %d/%d complete (%.1f%%)", label, completed, total, completed * 100.0 / total)
 
 # -----------------------------
 # NSX Client (retries, backoff, per-thread sessions)
@@ -240,7 +246,7 @@ def collect_all_service_paths(nsx: NSXClient) -> List[str]:
     logging.info("Listed %d Services (shallow)", len(paths))
     return paths
 
-def collect_all_group_paths(nsx: NSXClient, threads: int) -> List[str]:
+def collect_all_group_paths(nsx: NSXClient, threads: int, progress_every: int) -> List[str]:
     paths: List[str] = []
     domains = nsx.paged_get_all("/policy/api/v1/infra/domains")
     logging.info("Discovered %d Domains", len(domains))
@@ -254,17 +260,20 @@ def collect_all_group_paths(nsx: NSXClient, threads: int) -> List[str]:
 
     with ThreadPoolExecutor(max_workers=clamp_threads(min(threads, len(domain_ids)) or 1)) as ex:
         futures = [ex.submit(_list_domain_groups, did) for did in domain_ids]
+        completed = 0
         for fut in as_completed(futures):
             paths.extend(fut.result())
+            completed += 1
+            log_progress(f"{nsx.host} group domain discovery", completed, len(futures), progress_every)
 
     logging.info("Total Groups (shallow across domains): %d", len(paths))
     return paths
 
-def fetch_objects_threaded(nsx: NSXClient, policy_paths: Iterable[str], threads: int) -> Dict[str, dict]:
+def fetch_objects_threaded(nsx: NSXClient, policy_paths: Iterable[str], threads: int, progress_every: int, object_label: str) -> Dict[str, dict]:
     """Threaded GET of each policy object by path. Returns {path: full_object}."""
     results: Dict[str, dict] = {}
     paths = list(policy_paths)
-    logging.info("Fetching %d objects in detail (threads=%d)...", len(paths), threads)
+    logging.info("Fetching %d %s objects in detail (threads=%d)...", len(paths), object_label, threads)
 
     def _fetch(p: str):
         try:
@@ -276,16 +285,19 @@ def fetch_objects_threaded(nsx: NSXClient, policy_paths: Iterable[str], threads:
 
     with ThreadPoolExecutor(max_workers=threads) as ex:
         futures = [ex.submit(_fetch, p) for p in paths]
+        completed = 0
         for fut in as_completed(futures):
             p, obj = fut.result()
             if obj:
                 results[p] = obj
-    logging.info("Fetched %d/%d objects", len(results), len(paths))
+            completed += 1
+            log_progress(f"{nsx.host} detail fetch for {object_label}", completed, len(futures), progress_every)
+    logging.info("Fetched %d/%d %s objects", len(results), len(paths), object_label)
     return results
 
-def load_services_full_filtered(nsx: NSXClient, exclude_system: bool, threads: int) -> Dict[str, dict]:
+def load_services_full_filtered(nsx: NSXClient, exclude_system: bool, threads: int, progress_every: int) -> Dict[str, dict]:
     svc_paths = collect_all_service_paths(nsx)
-    svc_map = fetch_objects_threaded(nsx, svc_paths, threads)
+    svc_map = fetch_objects_threaded(nsx, svc_paths, threads, progress_every, "Service")
     kept, excluded = {}, 0
     for p, o in svc_map.items():
         if exclude_system:
@@ -299,9 +311,9 @@ def load_services_full_filtered(nsx: NSXClient, exclude_system: bool, threads: i
     logging.info("Services kept: %d (excluded system: %d)", len(kept), excluded)
     return kept
 
-def load_groups_full_filtered(nsx: NSXClient, exclude_system: bool, threads: int) -> Dict[str, dict]:
-    grp_paths = collect_all_group_paths(nsx, threads)
-    grp_map = fetch_objects_threaded(nsx, grp_paths, threads)
+def load_groups_full_filtered(nsx: NSXClient, exclude_system: bool, threads: int, progress_every: int) -> Dict[str, dict]:
+    grp_paths = collect_all_group_paths(nsx, threads, progress_every)
+    grp_map = fetch_objects_threaded(nsx, grp_paths, threads, progress_every, "Group")
     kept, excluded = {}, 0
     for p, o in grp_map.items():
         if exclude_system:
@@ -344,7 +356,7 @@ def list_gateway_policies_for_t1(nsx: NSXClient, t1_id: str) -> List[dict]:
 def list_gp_rules(nsx: NSXClient, base_path: str, policy_id: str) -> List[dict]:
     return nsx.paged_get_all(f"{base_path}/{policy_id}/rules")
 
-def scan_dfw_threaded(nsx: NSXClient, threads: int):
+def scan_dfw_threaded(nsx: NSXClient, threads: int, progress_every: int):
     svc_hits, grp_hits = [], []
     domains = nsx.paged_get_all("/policy/api/v1/infra/domains")
     domain_ids = [d.get("id") for d in domains if d.get("id")]
@@ -364,21 +376,27 @@ def scan_dfw_threaded(nsx: NSXClient, threads: int):
     tasks = []
     with ThreadPoolExecutor(max_workers=clamp_threads(min(threads, len(domain_ids)) or 1)) as ex:
         futures = [ex.submit(_list_policy_tasks, did) for did in domain_ids]
+        completed = 0
         for fut in as_completed(futures):
             tasks.extend(fut.result())
+            completed += 1
+            log_progress(f"{nsx.host} DFW policy discovery by domain", completed, len(futures), progress_every)
 
     logging.info("DFW: scheduling %d policy scans (threads=%d)", len(tasks), threads)
     with ThreadPoolExecutor(max_workers=threads) as ex:
         futures = [ex.submit(_scan_policy, did, pid) for (did, pid) in tasks]
+        completed = 0
         for fut in as_completed(futures):
             s, g = fut.result()
             svc_hits.extend(s)
             grp_hits.extend(g)
+            completed += 1
+            log_progress(f"{nsx.host} DFW rule scan", completed, len(futures), progress_every)
 
     logging.info("DFW: %d rules with Services, %d rules with Group refs", len(svc_hits), len(grp_hits))
     return svc_hits, grp_hits
 
-def scan_gwfw_threaded(nsx: NSXClient, threads: int):
+def scan_gwfw_threaded(nsx: NSXClient, threads: int, progress_every: int):
     svc_hits, grp_hits = [], []
     gw_tasks: List[Tuple[str, str, str, str]] = []
     tier_tasks: List[Tuple[str, str]] = []
@@ -398,8 +416,11 @@ def scan_gwfw_threaded(nsx: NSXClient, threads: int):
 
     with ThreadPoolExecutor(max_workers=clamp_threads(min(threads, len(tier_tasks)) or 1)) as ex:
         futures = [ex.submit(_list_gateway_policy_tasks, tier, tid) for tier, tid in tier_tasks]
+        completed = 0
         for fut in as_completed(futures):
             gw_tasks.extend(fut.result())
+            completed += 1
+            log_progress(f"{nsx.host} GW-FW policy discovery by gateway", completed, len(futures), progress_every)
 
     logging.info("GW-FW: scheduling %d policy scans (threads=%d)", len(gw_tasks), threads)
 
@@ -414,10 +435,13 @@ def scan_gwfw_threaded(nsx: NSXClient, threads: int):
 
     with ThreadPoolExecutor(max_workers=threads) as ex:
         futures = [ex.submit(_scan_gw_policy, tier, tid, pid, base) for (tier, tid, pid, base) in gw_tasks]
+        completed = 0
         for fut in as_completed(futures):
             s, g = fut.result()
             svc_hits.extend(s)
             grp_hits.extend(g)
+            completed += 1
+            log_progress(f"{nsx.host} GW-FW rule scan", completed, len(futures), progress_every)
 
     logging.info("GW-FW: %d rules with Services, %d rules with Group refs", len(svc_hits), len(grp_hits))
     return svc_hits, grp_hits
@@ -444,17 +468,21 @@ def is_group_empty_by_expression(group_obj: dict) -> bool:
 def timestamped_csv(out_prefix: str, report_name: str, run_timestamp: str) -> str:
     return f"{out_prefix}_{report_name}_{run_timestamp}.csv"
 
-def build_report_rows(nsx: NSXClient, source_nsx: str, exclude_system: bool, threads: int) -> Dict[str, List[List[object]]]:
+def build_report_rows(nsx: NSXClient, source_nsx: str, exclude_system: bool, threads: int, progress_every: int) -> Dict[str, List[List[object]]]:
+    logging.info("[%s] Stage 1/5: loading Services", source_nsx)
     # Load full objects and filter by system flags using per-object GETs
-    services_by_path = load_services_full_filtered(nsx, exclude_system=exclude_system, threads=threads)
-    groups_by_path   = load_groups_full_filtered(nsx, exclude_system=exclude_system, threads=threads)
+    services_by_path = load_services_full_filtered(nsx, exclude_system=exclude_system, threads=threads, progress_every=progress_every)
+
+    logging.info("[%s] Stage 2/5: loading Groups", source_nsx)
+    groups_by_path = load_groups_full_filtered(nsx, exclude_system=exclude_system, threads=threads, progress_every=progress_every)
 
     # Initialize usage indexes
     svc_usage: Dict[str, List[str]] = {p: [] for p in services_by_path.keys()}
     grp_usage: Dict[str, List[str]] = {p: [] for p in groups_by_path.keys()}
 
     # DFW references (threaded)
-    dfw_svc_hits, dfw_grp_hits = scan_dfw_threaded(nsx, threads=threads)
+    logging.info("[%s] Stage 3/5: scanning DFW rules", source_nsx)
+    dfw_svc_hits, dfw_grp_hits = scan_dfw_threaded(nsx, threads=threads, progress_every=progress_every)
     for (domain_id, policy_id, rule) in dfw_svc_hits:
         rid = rule.get("id") or rule.get("display_name") or "<unnamed>"
         for sp in (rule.get("services") or []):
@@ -474,7 +502,8 @@ def build_report_rows(nsx: NSXClient, source_nsx: str, exclude_system: bool, thr
                 append_unique(grp_usage[sc], f"DFW(SCOPE): domain={domain_id}, policy={policy_id}, rule={rid}")
 
     # Gateway FW references (threaded)
-    gw_svc_hits, gw_grp_hits = scan_gwfw_threaded(nsx, threads=threads)
+    logging.info("[%s] Stage 4/5: scanning Gateway Firewall rules", source_nsx)
+    gw_svc_hits, gw_grp_hits = scan_gwfw_threaded(nsx, threads=threads, progress_every=progress_every)
     for (tier, tier_id, policy_id, rule) in gw_svc_hits:
         rid = rule.get("id") or rule.get("display_name") or "<unnamed>"
         for sp in (rule.get("services") or []):
@@ -501,6 +530,7 @@ def build_report_rows(nsx: NSXClient, source_nsx: str, exclude_system: bool, thr
         "groups_empty": [],
     }
 
+    logging.info("[%s] Stage 5/5: building CSV rows", source_nsx)
     for sp, svc in services_by_path.items():
         name = svc.get("display_name") or svc.get("id") or ""
         sid  = svc.get("id") or ""
@@ -525,6 +555,15 @@ def build_report_rows(nsx: NSXClient, source_nsx: str, exclude_system: bool, thr
             rows["groups_empty"].append([source_nsx, name, gid, gp])
 
     logging.info("Groups empty by expression for %s: %d", source_nsx, len(rows["groups_empty"]))
+    logging.info(
+        "[%s] Row totals: services_usage=%d services_unused=%d groups_usage=%d groups_unused=%d groups_empty=%d",
+        source_nsx,
+        len(rows["services_usage"]),
+        len(rows["services_unused"]),
+        len(rows["groups_usage"]),
+        len(rows["groups_unused"]),
+        len(rows["groups_empty"]),
+    )
     return rows
 
 def extend_report_rows(target: Dict[str, List[List[object]]], source: Dict[str, List[List[object]]]) -> None:
@@ -574,11 +613,13 @@ def main():
     ap.add_argument("--retry-sleep", type=float, default=2.0, help="Fixed sleep (seconds) before each retry. Default 2.0")
     ap.add_argument("--page-size", type=int, default=1000, help="Page size for NSX list APIs (default 1000)")
     ap.add_argument("--threads", type=int, default=5, help="Number of worker threads (1-10). Default 5")
-    ap.add_argument("--log-file", default=None, help="Path to log file (rotating, 10MB x 5)")
-    ap.add_argument("--log-level", default="INFO", help="Log level (DEBUG, INFO, WARNING, ERROR)")
+    ap.add_argument("--log-file", default=None, help="Path to log file (rotating, 10MB x 5). Default: current directory with timestamp.")
+    ap.add_argument("--debug", action="store_true", help="Enable detailed debug logging, including every progress update and HTTP/page-level details.")
     args = ap.parse_args()
 
-    setup_logging(args.log_file, args.log_level)
+    run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_file = args.log_file or f"nsxt_unused_objects_{run_timestamp}.log"
+    setup_logging(log_file, "DEBUG" if args.debug else "INFO")
 
     # Prompt for any missing critical inputs
     raw_nsx_hosts = args.nsx or [ensure_value(None, "NSX Manager FQDN/IP(s): ", secret=False)]
@@ -592,7 +633,7 @@ def main():
     verify_ssl = bool_from_str(args.verify_ssl)
     exclude_system = bool_from_str(args.exclude_system)
     threads = clamp_threads(args.threads)
-    run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    progress_every = 1 if args.debug else 50
     out_prefix = args.out_prefix or (filename_safe(nsx_hosts[0]) if len(nsx_hosts) == 1 else "nsx_managers")
     combined_rows: Dict[str, List[List[object]]] = {
         "services_usage": [],
@@ -624,7 +665,13 @@ def main():
         )
 
         try:
-            rows = build_report_rows(nsx, nsx_host, exclude_system=exclude_system, threads=threads)
+            rows = build_report_rows(
+                nsx,
+                nsx_host,
+                exclude_system=exclude_system,
+                threads=threads,
+                progress_every=progress_every,
+            )
         except Exception as e:
             failed_hosts.append(nsx_host)
             logging.exception("Fatal error during report generation for %s: %s", nsx_host, e)
