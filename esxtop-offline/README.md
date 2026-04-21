@@ -20,10 +20,9 @@ Expected structure:
 
 ```text
 output/
-├── raw/
-│   ├── <host>-<group>.csv
-│   ├── <host>-<group>.csv
-│   └── ...
+├── <host>-<group>.csv
+├── <host>-<group>.csv
+├── ...
 ├── esxtop-metadata.json
 ├── esxtop-visualizer_v0.0.8.html
 └── tmp/              # only during processing, unless --keep-temp is used
@@ -42,15 +41,18 @@ If `--keep-temp` is **not** used, the temp folder is removed at the end.
 ### Output behavior
 
 - default output directory is `output`
-- final merged group files go to `output/raw`
+- final merged group files go directly into `output`
+- with `--no-merge`, each source-folder batch gets its own subdirectory under `output`
 - metadata JSON goes to `output/esxtop-metadata.json`
 - viewer HTML goes to `output/esxtop-visualizer_v0.0.8.html`
 
 ### Header behavior
 
-Default behavior writes cleaned headers.
+Default behavior keeps the original ESXTOP timestamp/header names exactly as-is.
 
-Use `--keep-full-header` when you want to preserve the original ESXTOP-style timestamp/header names exactly as they appeared in the source data.
+You can omit a header-mode flag entirely, or use `--keep-full-header` explicitly for the same result.
+
+Use `--normalize-headers` when you want the legacy cleaned header format instead.
 
 ### Resource metrics
 
@@ -152,14 +154,27 @@ python3 esxtop-offline_v0.0.6.3.py --recursive
 ```
 
 ### `--keep-full-header`
-Keep the original timestamp/header names exactly as-is.
+Explicitly keep the original timestamp/header names exactly as-is.
 
-Use this when downstream tools depend on the original ESXTOP column format.
+This is already the default behavior, so the flag is optional.
 
-Example:
+Examples:
 
 ```bash
+python3 esxtop-offline_v0.0.6.3.py
 python3 esxtop-offline_v0.0.6.3.py --keep-full-header
+```
+
+### `--normalize-headers`
+Normalize timestamp/header names to the legacy cleaned format.
+
+Use this when downstream tools expect cleaned headers instead of original ESXTOP names.
+
+Examples:
+
+```bash
+python3 esxtop-offline_v0.0.6.3.py --normalize-headers
+python3 esxtop-offline_v0.0.6.3.py --normalize-headers --recursive
 ```
 
 ### `--keep-temp`
@@ -195,7 +210,7 @@ What it does:
 - scans `.` for `*.csv`
 - does **not** recurse into subdirectories
 - writes output into `./output`
-- creates group CSVs in `./output/raw`
+- creates group CSVs directly in `./output`
 - creates `./output/esxtop-metadata.json`
 - creates `./output/esxtop-visualizer_v0.0.8.html`
 - prints web server hints
@@ -254,7 +269,15 @@ Best when you only want one group’s merged CSVs and metadata/viewer built from
 python3 esxtop-offline_v0.0.6.3.py --group "Network Port" --recursive
 ```
 
-### 8. Preserve original headers
+### 8. Default original headers
+
+```bash
+python3 esxtop-offline_v0.0.6.3.py
+```
+
+Best when you want the default original timestamp/header names without specifying a header-mode flag.
+
+### 9. Explicitly preserve original headers
 
 ```bash
 python3 esxtop-offline_v0.0.6.3.py --keep-full-header
@@ -262,19 +285,33 @@ python3 esxtop-offline_v0.0.6.3.py --keep-full-header
 
 Best when downstream tools need the original timestamp/header names unchanged.
 
-### 9. Preserve original headers and recurse
+### 10. Use normalized headers
+
+```bash
+python3 esxtop-offline_v0.0.6.3.py --normalize-headers
+```
+
+Best when downstream tools expect the legacy cleaned header format.
+
+### 11. Use normalized headers and recurse
+
+```bash
+python3 esxtop-offline_v0.0.6.3.py --normalize-headers --recursive
+```
+
+### 12. Preserve original headers and recurse
 
 ```bash
 python3 esxtop-offline_v0.0.6.3.py --keep-full-header --recursive
 ```
 
-### 10. Preserve original headers for a single group
+### 13. Preserve original headers for a single group
 
 ```bash
 python3 esxtop-offline_v0.0.6.3.py --group "Vcpu" --keep-full-header
 ```
 
-### 11. Keep temp files
+### 14. Keep temp files
 
 ```bash
 python3 esxtop-offline_v0.0.6.3.py --keep-temp
@@ -282,13 +319,13 @@ python3 esxtop-offline_v0.0.6.3.py --keep-temp
 
 Useful when you want to inspect chunk/sorted intermediates.
 
-### 12. Keep temp files and recurse
+### 15. Keep temp files and recurse
 
 ```bash
 python3 esxtop-offline_v0.0.6.3.py --recursive --keep-temp
 ```
 
-### 13. Enable debug metrics
+### 16. Enable debug metrics
 
 ```bash
 python3 esxtop-offline_v0.0.6.3.py --debug
@@ -296,25 +333,25 @@ python3 esxtop-offline_v0.0.6.3.py --debug
 
 Useful for runtime/memory diagnostics.
 
-### 14. Debug + recursive
+### 17. Debug + recursive
 
 ```bash
 python3 esxtop-offline_v0.0.6.3.py --recursive --debug
 ```
 
-### 15. Debug + keep temp
+### 18. Debug + keep temp
 
 ```bash
 python3 esxtop-offline_v0.0.6.3.py --keep-temp --debug
 ```
 
-### 16. Single group + debug
+### 19. Single group + debug
 
 ```bash
 python3 esxtop-offline_v0.0.6.3.py --group "Physical Disk Adapter" --debug
 ```
 
-### 17. Full typical production-style run
+### 20. Full typical production-style run
 
 ```bash
 python3 esxtop-offline_v0.0.6.3.py \
@@ -339,6 +376,7 @@ python3 esxtop-offline_v0.0.6.3.py \
   [--delimiter ","] \
   [--recursive] \
   [--keep-full-header] \
+  [--normalize-headers] \
   [--keep-temp] \
   [--debug]
 ```
@@ -349,7 +387,8 @@ python3 esxtop-offline_v0.0.6.3.py \
 - `--recursive` changes whether subdirectories are scanned
 - `--group` filters the extraction to one group only
 - `--outdir` changes where final outputs are written
-- `--keep-full-header` changes header style only
+- `--keep-full-header` explicitly selects the default original-header mode
+- `--normalize-headers` switches to the legacy cleaned-header mode
 - `--keep-temp` controls temp cleanup only
 - `--debug` only affects metrics output
 - `--delimiter` changes CSV read/write delimiter
@@ -383,6 +422,15 @@ python3 esxtop-offline_v0.0.6.3.py \
   --keep-full-header
 ```
 
+### Produce cleaned legacy-style headers
+
+```bash
+python3 esxtop-offline_v0.0.6.3.py \
+  --root /data/esxtop \
+  --recursive \
+  --normalize-headers
+```
+
 ### Troubleshoot with temp files and runtime stats
 
 ```bash
@@ -404,7 +452,7 @@ python3 esxtop-offline_v0.0.6.3.py \
 
 ## Output files explained
 
-### `output/raw/*.csv`
+### `output/*.csv`
 Final merged and sorted CSV files, one per host/group.
 
 ### `output/esxtop-metadata.json`
@@ -517,12 +565,20 @@ Check:
 - you are serving the output directory with `python3 -m http.server`
 - metadata and CSV files are in the output folder produced by the script
 
-### Downstream tool rejects headers
+### Need original ESXTOP headers explicitly
 
 Run with:
 
 ```bash
 python3 esxtop-offline_v0.0.6.3.py --keep-full-header
+```
+
+### Downstream tool rejects original headers
+
+Run with:
+
+```bash
+python3 esxtop-offline_v0.0.6.3.py --normalize-headers
 ```
 
 ### Need intermediate temp files for troubleshooting
@@ -539,6 +595,12 @@ python3 esxtop-offline_v0.0.6.3.py --keep-temp
 # simplest run
 python3 esxtop-offline_v0.0.6.3.py
 
+# explicitly keep original headers (same result as default)
+python3 esxtop-offline_v0.0.6.3.py --keep-full-header
+
+# use normalized legacy headers
+python3 esxtop-offline_v0.0.6.3.py --normalize-headers
+
 # recursive scan
 python3 esxtop-offline_v0.0.6.3.py --recursive
 
@@ -551,8 +613,11 @@ python3 esxtop-offline_v0.0.6.3.py --outdir /tmp/esxtop_output
 # only one group
 python3 esxtop-offline_v0.0.6.3.py --group "Physical Cpu"
 
-# preserve exact headers
+# preserve exact headers explicitly
 python3 esxtop-offline_v0.0.6.3.py --keep-full-header
+
+# cleaned legacy headers
+python3 esxtop-offline_v0.0.6.3.py --normalize-headers
 
 # keep temp files
 python3 esxtop-offline_v0.0.6.3.py --keep-temp
