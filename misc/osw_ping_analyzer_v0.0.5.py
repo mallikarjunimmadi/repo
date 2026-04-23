@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ping_analyzer_v0.1.5.py
+osw_ping_analyzer_v0.0.5.py
 
 Cross-platform (Linux/macOS/Windows) ping spike analyzer for OSWatcher private-network ping logs.
 
@@ -18,7 +18,7 @@ Key behaviors:
     event_time = file_start_time + offset_seconds
 - Produces THREE timestamped CSV outputs:
   1) detailed: ping_analysis_<timestamp>.csv
-     - only threshold breaches, includes event_time
+     - only threshold breaches, includes event_time, sorted by event_time ascending
   2) summary: ping_summary_<timestamp>.csv
      - grouped by (file, src_ip, dst_ip, bytes), includes total_breaches + max_latency
      - NO timestamps in summary
@@ -46,7 +46,43 @@ import csv
 from collections import defaultdict
 
 
-VERSION = "0.1.5"
+SCRIPT_NAME = "osw_ping_analyzer_v0.0.5.py"
+VERSION = "0.0.5"
+
+EXAMPLES = f"""examples:
+  Show help:
+    python3 {SCRIPT_NAME} --help
+
+  Show script version:
+    python3 {SCRIPT_NAME} --version
+
+  Analyze from the current directory using defaults:
+    python3 {SCRIPT_NAME}
+
+  Analyze a specific OSWatcher root directory:
+    python3 {SCRIPT_NAME} --root /path/to/oswatcher/archive
+
+  Analyze one .dat file directly:
+    python3 {SCRIPT_NAME} --root /path/to/oswprvtnet/private_ping.dat
+
+  Write reports and log to a dedicated output directory:
+    python3 {SCRIPT_NAME} --root /path/to/oswatcher/archive --outdir ./reports --log ./reports/osw_ping_analyzer.log
+
+  Use a different latency threshold:
+    python3 {SCRIPT_NAME} --root /path/to/oswatcher/archive --threshold 50
+
+  Change ping timing assumptions for event_time calculation:
+    python3 {SCRIPT_NAME} --root /path/to/oswatcher/archive --pings-per-host 10 --interval 1
+
+  Include multiple file extensions:
+    python3 {SCRIPT_NAME} --root /path/to/oswatcher/archive --extensions .dat,.txt
+
+  Customize latency bucket edges:
+    python3 {SCRIPT_NAME} --root /path/to/oswatcher/archive --bucket-edges 1,5,10,20,50,100,200,500
+
+  Enable debug logging:
+    python3 {SCRIPT_NAME} --root /path/to/oswatcher/archive --debug
+"""
 
 
 # -----------------------------
@@ -232,6 +268,16 @@ def write_csv(path: str, rows: list, fields: list) -> None:
         writer.writerows(rows)
 
 
+def sort_by_event_time(rows: list) -> list:
+    """
+    Sort detailed breach rows chronologically by event_time.
+    """
+    return sorted(
+        rows,
+        key=lambda x: datetime.datetime.strptime(x["event_time"], "%Y-%m-%d %H:%M:%S")
+    )
+
+
 # -----------------------------
 # Summary generation
 # -----------------------------
@@ -336,7 +382,11 @@ def generate_buckets(all_rows: list, edges: list):
 # Main
 # -----------------------------
 def main():
-    parser = argparse.ArgumentParser(description=f"Ping Analyzer v{VERSION}")
+    parser = argparse.ArgumentParser(
+        description=f"{SCRIPT_NAME} - OSWatcher private-network ping analyzer v{VERSION}",
+        epilog=EXAMPLES,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
 
     parser.add_argument("--root", default=".", help="Base directory to search (default: current working directory)")
     parser.add_argument("--target-dir", default="oswprvtnet",
@@ -350,8 +400,9 @@ def main():
     parser.add_argument("--bucket-edges", default="1,5,10,20,50,100,200",
                         help="Comma-separated latency bucket edges in ms (default: 1,5,10,20,50,100,200)")
     parser.add_argument("--outdir", default=".", help="Output directory (default: current directory)")
-    parser.add_argument("--log", default="ping_analyzer.log", help="Log file path")
+    parser.add_argument("--log", default="osw_ping_analyzer.log", help="Log file path")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
+    parser.add_argument("--version", action="version", version=f"{SCRIPT_NAME} {VERSION}")
 
     args = parser.parse_args()
 
@@ -393,7 +444,8 @@ def main():
             logging.warning(f"No directories named '{args.target_dir}' found under: {args.root}")
 
     # Detailed report (breaches only)
-    write_csv(detailed_path, breach_rows, [
+    detailed_rows = sort_by_event_time(breach_rows)
+    write_csv(detailed_path, detailed_rows, [
         "file",
         "file_timestamp",
         "src_ip",
