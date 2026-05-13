@@ -1,4 +1,4 @@
-# vSphere ESXi Hardening
+# vSphere ESXi Local User Validation
 
 PowerCLI script to validate and remediate ESXi local user access and lockdown configuration across hosts managed by one or more connected vCenters.
 
