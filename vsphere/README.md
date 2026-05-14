@@ -19,7 +19,8 @@ Script file:
 - Validates whether each required user is in the lockdown exception list.
 - Can remediate missing local users, assign `ReadOnly` access, enable lockdown mode, and add users to lockdown exceptions.
 - Can test direct connectivity to each ESXi host by using a specific supplied or prompted username and password.
-- In `--check-connectivity` mode, temporarily disables lockdown when needed, tests connectivity, and restores the original lockdown mode.
+- In `--check-connectivity` mode, can either preserve lockdown or temporarily disable and restore it, depending on `--lockdown-mode`.
+- Supports `--lockdown-mode enable|disable` in `--check-connectivity` mode to control whether lockdown is preserved or temporarily disabled during the connectivity test. The default is `enable`.
 
 ## Requirements
 
@@ -119,16 +120,19 @@ Performs all validation checks and then attempts a direct `Connect-VIServer` log
 Credential behavior:
 
 - Use `--username <username>` and `--pass <password>` to provide credentials directly
+- Optionally use `--lockdown-mode enable|disable`
 - If one or both are not passed, the script prompts for the missing value
 - If the prompted username or password is left blank, the script fails
 - If no host input is provided, connectivity is tested against all hosts in connected vCenters
-- If the host is in lockdown mode, the script temporarily disables lockdown, attempts connectivity, and then restores the original mode
+- `--lockdown-mode` is accepted only with `--check-connectivity`
+- If `--lockdown-mode enable` is used, or if the flag is omitted, the script keeps lockdown enabled and does not temporarily disable it
+- If `--lockdown-mode disable` is used, the script temporarily disables lockdown when needed, tests connectivity, and restores the original mode
 - The report captures the pre-check and post-check lockdown modes, whether lockdown was temporarily disabled, the restore status, and the connectivity result
 
 Example:
 
 ```powershell
-.\vsphere-esxi-hardening_v0.0.1.ps1 --check-connectivity --host esxi01.example.com --username SOCVA --pass 'StrongPassword123!'
+.\vsphere-esxi-hardening_v0.0.1.ps1 --check-connectivity --host esxi01.example.com --username SOCVA --pass 'StrongPassword123!' --lockdown-mode enable
 ```
 
 ## Command Reference
@@ -140,6 +144,7 @@ Example:
 - `--csv` CSV file containing hosts.
 - `--username` Specific username for `--check-connectivity`.
 - `--pass` Password used for remediation or connectivity checks.
+- `--lockdown-mode` Connectivity-only option. Accepts `enable` or `disable`.
 - `--help` Show built-in usage output.
 
 Only one mode should be used in a single run.
@@ -159,6 +164,7 @@ The report includes:
 - Cluster
 - Host
 - Username
+- Requested lockdown mode behavior
 - User present status
 - Read-only access status
 - Lockdown mode
@@ -199,7 +205,7 @@ Check connectivity from CSV input:
 Check connectivity for all hosts in connected vCenters:
 
 ```powershell
-.\vsphere-esxi-hardening_v0.0.1.ps1 --check-connectivity --username SOCVA
+.\vsphere-esxi-hardening_v0.0.1.ps1 --check-connectivity --username SOCVA --lockdown-mode enable
 ```
 
 Validate all hosts in connected vCenters:
