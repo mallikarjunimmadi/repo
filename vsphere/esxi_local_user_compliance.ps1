@@ -1,6 +1,3 @@
-[CmdletBinding()]
-param()
-
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
@@ -8,7 +5,7 @@ $ErrorActionPreference = 'Stop'
 # Configurable settings
 # ============================================================================
 $RequiredUsernames = @(
-    'USER-01'
+    'SOCVA'
 )
 
 $ReportDirectory = Join-Path -Path $PSScriptRoot -ChildPath 'reports'
