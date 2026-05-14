@@ -1,15 +1,15 @@
-# vSphere ESXi Local User Validation
+# vSphere ESXi Hardening
 
 PowerCLI script to validate and remediate ESXi local user access and lockdown configuration across hosts managed by one or more connected vCenters.
 
 Script file:
 
-- `esxi_local_user_compliance.ps1`
+- `vsphere-esxi-hardening_v0.0.1.ps1`
 
 ## Features
 
 - Uses existing PowerCLI vCenter sessions and stops if no vCenter is connected.
-- Supports one host, multiple comma-separated hosts, or CSV input.
+- Supports one host, multiple comma-separated hosts with a single `--host` argument, or CSV input.
 - In `--validate` and `--check-connectivity` mode, defaults to all hosts in connected vCenters when no host input is supplied.
 - Resolves the parent vCenter and cluster for each target host.
 - Writes live logs to console and to a timestamped log file.
@@ -19,6 +19,7 @@ Script file:
 - Validates whether each required user is in the lockdown exception list.
 - Can remediate missing local users, assign `ReadOnly` access, enable lockdown mode, and add users to lockdown exceptions.
 - Can test direct connectivity to each ESXi host by using a specific supplied or prompted username and password.
+- In `--check-connectivity` mode, temporarily disables lockdown when needed, tests connectivity, and restores the original lockdown mode.
 
 ## Requirements
 
@@ -55,7 +56,7 @@ Notes:
 The script accepts hosts in any one of these ways:
 
 - `--host esxi01.example.com`
-- `--hosts esxi01.example.com,esxi02.example.com`
+- `--host esxi01.example.com,esxi02.example.com`
 - `--csv .\hosts.csv`
 
 CSV input should contain a host column named `Host` by default. You can change that by editing `InputCsvHostColumn` at the top of the script.
@@ -88,7 +89,7 @@ Checks:
 Example:
 
 ```powershell
-.\esxi_local_user_compliance.ps1 --validate --hosts esxi01.example.com,esxi02.example.com
+.\vsphere-esxi-hardening_v0.0.1.ps1 --validate --host esxi01.example.com,esxi02.example.com
 ```
 
 ### Remediate
@@ -108,7 +109,7 @@ Password behavior:
 Example:
 
 ```powershell
-.\esxi_local_user_compliance.ps1 --remediate --csv .\hosts.csv --pass 'StrongPassword123!'
+.\vsphere-esxi-hardening_v0.0.1.ps1 --remediate --csv .\hosts.csv --pass 'StrongPassword123!'
 ```
 
 ### Check Connectivity
@@ -121,11 +122,13 @@ Credential behavior:
 - If one or both are not passed, the script prompts for the missing value
 - If the prompted username or password is left blank, the script fails
 - If no host input is provided, connectivity is tested against all hosts in connected vCenters
+- If the host is in lockdown mode, the script temporarily disables lockdown, attempts connectivity, and then restores the original mode
+- The report captures the pre-check and post-check lockdown modes, whether lockdown was temporarily disabled, the restore status, and the connectivity result
 
 Example:
 
 ```powershell
-.\esxi_local_user_compliance.ps1 --check-connectivity --host esxi01.example.com --username SOCVA --pass 'StrongPassword123!'
+.\vsphere-esxi-hardening_v0.0.1.ps1 --check-connectivity --host esxi01.example.com --username SOCVA --pass 'StrongPassword123!'
 ```
 
 ## Command Reference
@@ -133,8 +136,7 @@ Example:
 - `--validate` Run validation checks only.
 - `--remediate` Validate and fix local user / lockdown configuration.
 - `--check-connectivity` Validate and test direct ESXi login.
-- `--host` Single ESXi host.
-- `--hosts` Comma-separated ESXi hosts.
+- `--host` One ESXi host or a comma-separated list of ESXi hosts.
 - `--csv` CSV file containing hosts.
 - `--username` Specific username for `--check-connectivity`.
 - `--pass` Password used for remediation or connectivity checks.
@@ -160,6 +162,10 @@ The report includes:
 - User present status
 - Read-only access status
 - Lockdown mode
+- Pre-check lockdown mode
+- Post-check lockdown mode
+- Lockdown temporarily disabled status
+- Lockdown restore status
 - Lockdown exception membership
 - Connectivity test result
 - Action status and message
@@ -169,37 +175,37 @@ The report includes:
 Validate a single host:
 
 ```powershell
-.\esxi_local_user_compliance.ps1 --validate --host esxi01.example.com
+.\vsphere-esxi-hardening_v0.0.1.ps1 --validate --host esxi01.example.com
 ```
 
 Validate multiple hosts:
 
 ```powershell
-.\esxi_local_user_compliance.ps1 --validate --hosts esxi01.example.com,esxi02.example.com
+.\vsphere-esxi-hardening_v0.0.1.ps1 --validate --host esxi01.example.com,esxi02.example.com
 ```
 
 Remediate using secure prompt for password:
 
 ```powershell
-.\esxi_local_user_compliance.ps1 --remediate --hosts esxi01.example.com,esxi02.example.com
+.\vsphere-esxi-hardening_v0.0.1.ps1 --remediate --host esxi01.example.com,esxi02.example.com
 ```
 
 Check connectivity from CSV input:
 
 ```powershell
-.\esxi_local_user_compliance.ps1 --check-connectivity --csv .\hosts.csv --username SOCVA
+.\vsphere-esxi-hardening_v0.0.1.ps1 --check-connectivity --csv .\hosts.csv --username SOCVA
 ```
 
 Check connectivity for all hosts in connected vCenters:
 
 ```powershell
-.\esxi_local_user_compliance.ps1 --check-connectivity --username SOCVA
+.\vsphere-esxi-hardening_v0.0.1.ps1 --check-connectivity --username SOCVA
 ```
 
 Validate all hosts in connected vCenters:
 
 ```powershell
-.\esxi_local_user_compliance.ps1 --validate
+.\vsphere-esxi-hardening_v0.0.1.ps1 --validate
 ```
 
 ## Notes
