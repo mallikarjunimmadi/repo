@@ -26,7 +26,7 @@ function Show-Usage {
 Usage:
   .\vsphere-esxi-hardening_v0.0.1.ps1 --validate --host esxi01
   .\vsphere-esxi-hardening_v0.0.1.ps1 --remediate --host esxi01,esxi02 --pass MyPassword!
-  .\vsphere-esxi-hardening_v0.0.1.ps1 --check-connectivity --csv .\hosts.csv --username SOCVA --pass MyPassword!
+  .\vsphere-esxi-hardening_v0.0.1.ps1 --check-connectivity --csv .\hosts.csv --username SOCVA --pass MyPassword! --lockdown-mode enable
 
 Supported arguments:
   --validate
@@ -36,6 +36,7 @@ Supported arguments:
   --csv <path-to-csv>
   --username <username>
   --pass <password>
+  --lockdown-mode <enable|disable>
   --help
 
 Notes:
@@ -92,6 +93,7 @@ function Parse-Arguments {
         CsvPath = $null
         Username = $null
         Password = $null
+        LockdownMode = $null
         Help = $false
     }
 
@@ -169,6 +171,23 @@ function Parse-Arguments {
                     $value = $Arguments[$index]
                 }
                 $parsed.Password = $value
+                break
+            }
+            '^--?lockdown-mode$' {
+                if (-not $value) {
+                    $index++
+                    if ($index -ge $Arguments.Count) {
+                        throw "Missing value for $token"
+                    }
+                    $value = $Arguments[$index]
+                }
+
+                $normalizedValue = $value.Trim().ToLowerInvariant()
+                if ($normalizedValue -notin @('enable', 'disable')) {
+                    throw "--lockdown-mode accepts only 'enable' or 'disable'."
+                }
+
+                $parsed.LockdownMode = $normalizedValue
                 break
             }
             '^--?help$' {
@@ -601,6 +620,9 @@ function Invoke-ConnectivityCheckWithLockdownHandling {
 
         [Parameter(Mandatory = $true)]
         [string]$Password
+        ,
+        [Parameter(Mandatory = $true)]
+        [string]$LockdownModePreference
     )
 
     $result = [ordered]@{
@@ -617,10 +639,13 @@ function Invoke-ConnectivityCheckWithLockdownHandling {
     $result.PreLockdownMode = $originalMode
 
     try {
-        if ($originalMode -ne 'lockdownDisabled') {
+        if ($originalMode -ne 'lockdownDisabled' -and $LockdownModePreference -eq 'disable') {
             Write-Log -Level 'WARN' -Message "Host '$($Context.VMHost.Name)' is in lockdown mode '$originalMode'. Disabling lockdown temporarily for connectivity validation."
             $null = Set-LockdownMode -Context $Context -Mode 'lockdownDisabled'
             $result.LockdownTemporarilyDisabled = $true
+        }
+        elseif ($originalMode -ne 'lockdownDisabled' -and $LockdownModePreference -eq 'enable') {
+            Write-Log -Message "Host '$($Context.VMHost.Name)' is in lockdown mode '$originalMode'. Preserving lockdown because --lockdown-mode enable was requested."
         }
 
         $connectivity = Test-HostConnectivity -Hostname $Context.VMHost.Name -Username $Username -Password $Password
@@ -691,6 +716,10 @@ try {
         throw 'Select one mode: --validate, --remediate, or --check-connectivity.'
     }
 
+    if ($cli.LockdownMode -and $cli.Mode -ne 'check-connectivity') {
+        throw '--lockdown-mode can be used only with --check-connectivity.'
+    }
+
     $connectedVIServers = @(Get-ConnectedVCenterServers)
     if ($connectedVIServers.Count -eq 0) {
         throw 'No connected vCenters were found. Connect to one or more vCenters first, then rerun the script.'
@@ -720,12 +749,16 @@ try {
 
     $plainTextPassword = $null
     $connectivityUsername = $null
+    $connectivityLockdownMode = 'enable'
     if ($cli.Mode -eq 'remediate') {
         $plainTextPassword = Get-PlainTextPassword -ProvidedPassword $cli.Password -PromptMessage 'Enter password for required host user account(s)'
     }
     if ($cli.Mode -eq 'check-connectivity') {
         $connectivityUsername = Get-RequiredValue -ProvidedValue $cli.Username -PromptMessage 'Enter username for ESXi connectivity check'
         $plainTextPassword = Get-PlainTextPassword -ProvidedPassword $cli.Password -PromptMessage 'Enter password for ESXi connectivity check'
+        if ($cli.LockdownMode) {
+            $connectivityLockdownMode = $cli.LockdownMode
+        }
     }
 
     foreach ($resolvedHost in $resolvedHosts) {
@@ -743,7 +776,7 @@ try {
         }
 
         if ($cli.Mode -eq 'check-connectivity') {
-            $hostConnectivityResult = Invoke-ConnectivityCheckWithLockdownHandling -Context $context -Username $connectivityUsername -Password $plainTextPassword
+            $hostConnectivityResult = Invoke-ConnectivityCheckWithLockdownHandling -Context $context -Username $connectivityUsername -Password $plainTextPassword -LockdownModePreference $connectivityLockdownMode
         }
 
         foreach ($username in $RequiredUsernames) {
@@ -815,6 +848,7 @@ try {
                 Host = $context.VMHost.Name
                 Username = $username
                 ConnectivityUsername = $connectivityUsername
+                RequestedLockdownMode = $connectivityLockdownMode
                 UserPresent = $userPresent
                 ReadOnlyAccess = $readOnly
                 LockdownMode = $lockdownMode
