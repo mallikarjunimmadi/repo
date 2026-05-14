@@ -24,16 +24,15 @@ $Script:ReportRows = New-Object System.Collections.Generic.List[object]
 function Show-Usage {
     @'
 Usage:
-  .\vsphere-esxi-hardening_v0.0.1.ps1 --validate --hosts esxi01
-  .\vsphere-esxi-hardening_v0.0.1.ps1 --remediate --hosts esxi01,esxi02 --pass MyPassword!
+  .\vsphere-esxi-hardening_v0.0.1.ps1 --validate --host esxi01
+  .\vsphere-esxi-hardening_v0.0.1.ps1 --remediate --host esxi01,esxi02 --pass MyPassword!
   .\vsphere-esxi-hardening_v0.0.1.ps1 --check-connectivity --csv .\hosts.csv --username SOCVA --pass MyPassword!
 
 Supported arguments:
   --validate
   --remediate
   --check-connectivity
-  --host <hostname>
-  --hosts <host1,host2>
+  --host <host1,host2>
   --csv <path-to-csv>
   --username <username>
   --pass <password>
@@ -499,6 +498,41 @@ function Ensure-LockdownMode {
     Write-Log -Level 'SUCCESS' -Message "Set lockdown mode to '$DesiredLockdownMode' on host '$($Context.VMHost.Name)'."
 }
 
+function Get-CurrentLockdownMode {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Context
+    )
+
+    if (-not $Context.AccessManager) {
+        throw "HostAccessManager is not available for host $($Context.VMHost.Name)."
+    }
+
+    $Context.AccessManager.UpdateViewData('LockdownMode')
+    return [string]$Context.AccessManager.LockdownMode
+}
+
+function Set-LockdownMode {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Context,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Mode
+    )
+
+    $currentMode = Get-CurrentLockdownMode -Context $Context
+    if ($currentMode -eq $Mode) {
+        Write-Log -Message "Host '$($Context.VMHost.Name)' is already in lockdown mode '$Mode'."
+        return $currentMode
+    }
+
+    $Context.AccessManager.ChangeLockdownMode($Mode)
+    $updatedMode = Get-CurrentLockdownMode -Context $Context
+    Write-Log -Level 'SUCCESS' -Message "Changed lockdown mode on host '$($Context.VMHost.Name)' from '$currentMode' to '$updatedMode'."
+    return $updatedMode
+}
+
 function Ensure-LockdownExceptionUser {
     param(
         [Parameter(Mandatory = $true)]
@@ -557,6 +591,70 @@ function Test-HostConnectivity {
     return [pscustomobject]$result
 }
 
+function Invoke-ConnectivityCheckWithLockdownHandling {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Context,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Username,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Password
+    )
+
+    $result = [ordered]@{
+        ConnectivityAttempted = $true
+        ConnectivityStatus = 'Failed'
+        ConnectivityMessage = $null
+        PreLockdownMode = $null
+        PostLockdownMode = $null
+        LockdownTemporarilyDisabled = $false
+        LockdownRestoreStatus = 'NotRequired'
+    }
+
+    $originalMode = Get-CurrentLockdownMode -Context $Context
+    $result.PreLockdownMode = $originalMode
+
+    try {
+        if ($originalMode -ne 'lockdownDisabled') {
+            Write-Log -Level 'WARN' -Message "Host '$($Context.VMHost.Name)' is in lockdown mode '$originalMode'. Disabling lockdown temporarily for connectivity validation."
+            $null = Set-LockdownMode -Context $Context -Mode 'lockdownDisabled'
+            $result.LockdownTemporarilyDisabled = $true
+        }
+
+        $connectivity = Test-HostConnectivity -Hostname $Context.VMHost.Name -Username $Username -Password $Password
+        $result.ConnectivityStatus = $connectivity.ConnectivityStatus
+        $result.ConnectivityMessage = $connectivity.ConnectivityMessage
+    }
+    catch {
+        $result.ConnectivityMessage = $_.Exception.Message
+    }
+    finally {
+        try {
+            if ($result.LockdownTemporarilyDisabled) {
+                Write-Log -Message "Restoring lockdown mode '$originalMode' on host '$($Context.VMHost.Name)' after connectivity validation."
+                $null = Set-LockdownMode -Context $Context -Mode $originalMode
+                $result.LockdownRestoreStatus = 'Restored'
+            }
+
+            $result.PostLockdownMode = Get-CurrentLockdownMode -Context $Context
+        }
+        catch {
+            $result.LockdownRestoreStatus = 'Failed'
+
+            if ($result.ConnectivityMessage) {
+                $result.ConnectivityMessage = "$($result.ConnectivityMessage) Lockdown restore error: $($_.Exception.Message)"
+            }
+            else {
+                $result.ConnectivityMessage = "Lockdown restore error: $($_.Exception.Message)"
+            }
+        }
+    }
+
+    return [pscustomobject]$result
+}
+
 function Add-ReportRow {
     param(
         [Parameter(Mandatory = $true)]
@@ -609,7 +707,7 @@ try {
             $resolvedHosts = @(Get-AllConnectedHosts -VIServers $connectedVIServers)
         }
         else {
-            throw 'Provide at least one target host by using --host/--hosts or --csv.'
+            throw 'Provide at least one target host by using --host or --csv.'
         }
     }
     else {
@@ -634,6 +732,20 @@ try {
         $context = Get-HostContext -VMHost $resolvedHost.VMHost -VCenter $resolvedHost.VCenter
         Write-Log -Message "Processing host '$($context.VMHost.Name)' in vCenter '$($context.VCenter)' and cluster '$($context.Cluster)'."
 
+        $hostConnectivityResult = [pscustomobject]@{
+            ConnectivityAttempted = $false
+            ConnectivityStatus = 'NotRequested'
+            ConnectivityMessage = $null
+            PreLockdownMode = $null
+            PostLockdownMode = $null
+            LockdownTemporarilyDisabled = $false
+            LockdownRestoreStatus = 'NotRequested'
+        }
+
+        if ($cli.Mode -eq 'check-connectivity') {
+            $hostConnectivityResult = Invoke-ConnectivityCheckWithLockdownHandling -Context $context -Username $connectivityUsername -Password $plainTextPassword
+        }
+
         foreach ($username in $RequiredUsernames) {
             $userPresent = $false
             $readOnly = $false
@@ -645,6 +757,10 @@ try {
                 ConnectivityAttempted = $false
                 ConnectivityStatus = 'NotRequested'
                 ConnectivityMessage = $null
+                PreLockdownMode = $null
+                PostLockdownMode = $null
+                LockdownTemporarilyDisabled = $false
+                LockdownRestoreStatus = 'NotRequested'
             }
 
             try {
@@ -664,14 +780,26 @@ try {
                 }
 
                 $lockdownException = (Get-LockdownExceptions -Context $context) -contains $username
-                $lockdownMode = [string]$context.AccessManager.LockdownMode
+                $lockdownMode = Get-CurrentLockdownMode -Context $context
 
                 if ($cli.Mode -eq 'check-connectivity') {
-                    $connectivityResult = Test-HostConnectivity -Hostname $context.VMHost.Name -Username $connectivityUsername -Password $plainTextPassword
+                    $connectivityResult = $hostConnectivityResult
+                    if ($connectivityResult.LockdownRestoreStatus -eq 'Failed') {
+                        $actionStatus = 'Failed'
+                        $actionMessage = $connectivityResult.ConnectivityMessage
+                    }
                 }
 
-                $actionMessage = 'Completed successfully.'
-                Write-Log -Level 'SUCCESS' -Message "Completed checks for user '$username' on host '$($context.VMHost.Name)'."
+                if (-not $actionMessage) {
+                    $actionMessage = 'Completed successfully.'
+                }
+
+                if ($actionStatus -eq 'Failed') {
+                    Write-Log -Level 'ERROR' -Message "Completed checks with errors for user '$username' on host '$($context.VMHost.Name)'."
+                }
+                else {
+                    Write-Log -Level 'SUCCESS' -Message "Completed checks for user '$username' on host '$($context.VMHost.Name)'."
+                }
             }
             catch {
                 $actionStatus = 'Failed'
@@ -690,6 +818,10 @@ try {
                 UserPresent = $userPresent
                 ReadOnlyAccess = $readOnly
                 LockdownMode = $lockdownMode
+                PreLockdownMode = $connectivityResult.PreLockdownMode
+                PostLockdownMode = $connectivityResult.PostLockdownMode
+                LockdownTemporarilyDisabled = $connectivityResult.LockdownTemporarilyDisabled
+                LockdownRestoreStatus = $connectivityResult.LockdownRestoreStatus
                 InLockdownExceptionList = $lockdownException
                 ConnectivityAttempted = $connectivityResult.ConnectivityAttempted
                 ConnectivityStatus = $connectivityResult.ConnectivityStatus
