@@ -1,215 +1,840 @@
-# vSphere ESXi Hardening
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
 
-PowerCLI script to validate and remediate ESXi local user access and lockdown configuration across hosts managed by one or more connected vCenters.
+# ============================================================================
+# Configurable settings
+# ============================================================================
+$RequiredUsernames = @(
+    'SOCVA'
+)
 
-Script file:
+$ReportDirectory = Join-Path -Path $PSScriptRoot -ChildPath 'reports'
+$LogDirectory = Join-Path -Path $PSScriptRoot -ChildPath 'logs'
+$InputCsvHostColumn = 'Host'
+$DesiredLockdownMode = 'lockdownNormal'
+$DefaultUserDescription = 'Managed by vsphere-esxi-hardening script'
 
-- `vsphere-esxi-hardening_v0.0.1.ps1`
+# ============================================================================
+# Runtime state
+# ============================================================================
+$Script:LogFile = $null
+$Script:ReportFile = $null
+$Script:ReportRows = New-Object System.Collections.Generic.List[object]
 
-## Features
+function Show-Usage {
+    @'
+Usage:
+  .\vsphere-esxi-hardening_v0.0.1.ps1 --validate --host esxi01
+  .\vsphere-esxi-hardening_v0.0.1.ps1 --remediate --host esxi01,esxi02 --pass MyPassword!
+  .\vsphere-esxi-hardening_v0.0.1.ps1 --check-connectivity --csv .\hosts.csv --username SOCVA --pass MyPassword!
 
-- Uses existing PowerCLI vCenter sessions and stops if no vCenter is connected.
-- Supports one host, multiple comma-separated hosts with a single `--host` argument, or CSV input.
-- In `--validate` and `--check-connectivity` mode, defaults to all hosts in connected vCenters when no host input is supplied.
-- Resolves the parent vCenter and cluster for each target host.
-- Writes live logs to console and to a timestamped log file.
-- Exports a timestamped CSV report for every run.
-- Validates whether required local users exist on each ESXi host.
-- Validates whether each required user has `ReadOnly` host access.
-- Validates whether each required user is in the lockdown exception list.
-- Can remediate missing local users, assign `ReadOnly` access, enable lockdown mode, and add users to lockdown exceptions.
-- Can test direct connectivity to each ESXi host by using a specific supplied or prompted username and password.
-- In `--check-connectivity` mode, temporarily disables lockdown when needed, tests connectivity, and restores the original lockdown mode.
-
-## Requirements
-
-- PowerShell with VMware PowerCLI available.
-- You must connect to one or more vCenters before running the script.
-- Your current vCenter session must have enough privileges to inspect and change ESXi host local accounts and lockdown settings.
-
-Example vCenter connection:
-
-```powershell
-Connect-VIServer -Server vcsa01.example.com
-Connect-VIServer -Server vcsa02.example.com
-```
-
-## Configurable Settings
-
-Update these values near the top of the script:
-
-- `RequiredUsernames`
-- `ReportDirectory`
-- `LogDirectory`
-- `InputCsvHostColumn`
-- `DesiredLockdownMode`
-- `DefaultUserDescription`
+Supported arguments:
+  --validate
+  --remediate
+  --check-connectivity
+  --host <host1,host2>
+  --csv <path-to-csv>
+  --username <username>
+  --pass <password>
+  --help
 
 Notes:
+  - Connect to one or more vCenters before running this script.
+  - CSV input should contain a host column. Default column name is "Host".
+  - The same password is used for all usernames listed in $RequiredUsernames.
+  - --validate and --check-connectivity default to all hosts in connected vCenters if no host input is provided.
+'@
+}
 
-- `RequiredUsernames` supports one or more usernames.
-- In remediation and connectivity mode, the same password is used for every username in `RequiredUsernames`.
-- Default lockdown mode is `lockdownNormal`.
+function Initialize-OutputPaths {
+    $timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
 
-## Input Options
+    foreach ($directory in @($ReportDirectory, $LogDirectory)) {
+        if (-not (Test-Path -Path $directory)) {
+            New-Item -Path $directory -ItemType Directory -Force | Out-Null
+        }
+    }
 
-The script accepts hosts in any one of these ways:
+    $Script:LogFile = Join-Path -Path $LogDirectory -ChildPath "vsphere-esxi-hardening_$timestamp.log"
+    $Script:ReportFile = Join-Path -Path $ReportDirectory -ChildPath "vsphere-esxi-hardening_$timestamp.csv"
+}
 
-- `--host esxi01.example.com`
-- `--host esxi01.example.com,esxi02.example.com`
-- `--csv .\hosts.csv`
+function Write-Log {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Message,
 
-CSV input should contain a host column named `Host` by default. You can change that by editing `InputCsvHostColumn` at the top of the script.
+        [ValidateSet('INFO', 'WARN', 'ERROR', 'SUCCESS')]
+        [string]$Level = 'INFO'
+    )
 
-If no host input is provided:
+    $timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+    $line = "[{0}] [{1}] {2}" -f $timestamp, $Level, $Message
 
-- `--validate` checks all hosts in all connected vCenters
-- `--check-connectivity` checks all hosts in all connected vCenters
-- `--remediate` still requires explicit host input
+    switch ($Level) {
+        'ERROR' { Write-Host $line -ForegroundColor Red }
+        'WARN' { Write-Host $line -ForegroundColor Yellow }
+        'SUCCESS' { Write-Host $line -ForegroundColor Green }
+        default { Write-Host $line }
+    }
 
-Example CSV:
+    Add-Content -Path $Script:LogFile -Value $line
+}
 
-```csv
-Host
-esxi01.example.com
-esxi02.example.com
-```
+function Parse-Arguments {
+    param(
+        [string[]]$Arguments
+    )
 
-## Modes
+    $parsed = [ordered]@{
+        Mode = $null
+        HostArgument = $null
+        CsvPath = $null
+        Username = $null
+        Password = $null
+        Help = $false
+    }
 
-### Validate
+    $index = 0
+    while ($index -lt $Arguments.Count) {
+        $token = $Arguments[$index]
+        $value = $null
 
-Checks:
+        if ($token -match '^(--?[A-Za-z0-9-]+)=(.+)$') {
+            $token = $matches[1]
+            $value = $matches[2]
+        }
 
-- Whether each required username exists on the ESXi host
-- Whether the user has `ReadOnly` host access
-- Whether the user is in the lockdown exception list
-- Current lockdown mode
+        switch -Regex ($token) {
+            '^--?validate$' {
+                if ($parsed.Mode -and $parsed.Mode -ne 'validate') {
+                    throw 'Specify only one mode: --validate, --remediate, or --check-connectivity.'
+                }
+                $parsed.Mode = 'validate'
+                break
+            }
+            '^--?remediate$' {
+                if ($parsed.Mode -and $parsed.Mode -ne 'remediate') {
+                    throw 'Specify only one mode: --validate, --remediate, or --check-connectivity.'
+                }
+                $parsed.Mode = 'remediate'
+                break
+            }
+            '^--?check-connectivity$' {
+                if ($parsed.Mode -and $parsed.Mode -ne 'check-connectivity') {
+                    throw 'Specify only one mode: --validate, --remediate, or --check-connectivity.'
+                }
+                $parsed.Mode = 'check-connectivity'
+                break
+            }
+            '^--?hosts?$' {
+                if (-not $value) {
+                    $index++
+                    if ($index -ge $Arguments.Count) {
+                        throw "Missing value for $token"
+                    }
+                    $value = $Arguments[$index]
+                }
+                $parsed.HostArgument = $value
+                break
+            }
+            '^--?csv$' {
+                if (-not $value) {
+                    $index++
+                    if ($index -ge $Arguments.Count) {
+                        throw "Missing value for $token"
+                    }
+                    $value = $Arguments[$index]
+                }
+                $parsed.CsvPath = $value
+                break
+            }
+            '^--?user(name)?$' {
+                if (-not $value) {
+                    $index++
+                    if ($index -ge $Arguments.Count) {
+                        throw "Missing value for $token"
+                    }
+                    $value = $Arguments[$index]
+                }
+                $parsed.Username = $value
+                break
+            }
+            '^--?pass(word)?$' {
+                if (-not $value) {
+                    $index++
+                    if ($index -ge $Arguments.Count) {
+                        throw "Missing value for $token"
+                    }
+                    $value = $Arguments[$index]
+                }
+                $parsed.Password = $value
+                break
+            }
+            '^--?help$' {
+                $parsed.Help = $true
+                break
+            }
+            default {
+                throw "Unknown argument: $token"
+            }
+        }
 
-Example:
+        $index++
+    }
 
-```powershell
-.\vsphere-esxi-hardening_v0.0.1.ps1 --validate --host esxi01.example.com,esxi02.example.com
-```
+    return [pscustomobject]$parsed
+}
 
-### Remediate
+function Get-RequiredValue {
+    param(
+        [string]$ProvidedValue,
+        [string]$PromptMessage
+    )
 
-Performs these actions for each configured username:
+    if ($ProvidedValue -and $ProvidedValue.Trim()) {
+        return $ProvidedValue.Trim()
+    }
 
-- Creates the local user if it does not already exist
-- Assigns `ReadOnly` host access
-- Sets the host lockdown mode to the configured value
-- Adds the user to the lockdown exception list
+    $value = Read-Host -Prompt $PromptMessage
+    if (-not $value -or -not $value.Trim()) {
+        throw "$PromptMessage is required."
+    }
 
-Password behavior:
+    return $value.Trim()
+}
 
-- Use `--pass <password>` to supply the password on the command line
-- If `--pass` is not provided, the script prompts securely
+function Get-PlainTextPassword {
+    param(
+        [string]$ProvidedPassword,
+        [string]$PromptMessage = 'Enter password'
+    )
 
-Example:
+    if ($ProvidedPassword -and $ProvidedPassword.Trim()) {
+        return $ProvidedPassword
+    }
 
-```powershell
-.\vsphere-esxi-hardening_v0.0.1.ps1 --remediate --csv .\hosts.csv --pass 'StrongPassword123!'
-```
+    $securePassword = Read-Host -Prompt $PromptMessage -AsSecureString
+    $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword)
 
-### Check Connectivity
+    try {
+        $plainTextPassword = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)
+        if (-not $plainTextPassword -or -not $plainTextPassword.Trim()) {
+            throw "$PromptMessage is required."
+        }
 
-Performs all validation checks and then attempts a direct `Connect-VIServer` login to each ESXi host by using the specific username and password supplied on the command line or entered at the prompt.
+        return $plainTextPassword
+    }
+    finally {
+        if ($ptr -ne [IntPtr]::Zero) {
+            [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
+        }
+    }
+}
 
-Credential behavior:
+function Get-ConnectedVCenterServers {
+    if (Get-Variable -Name DefaultVIServers -Scope Global -ErrorAction SilentlyContinue) {
+        $servers = @($global:DefaultVIServers | Where-Object { $_.IsConnected -eq $true })
+        if ($servers.Count -gt 0) {
+            return $servers
+        }
+    }
 
-- Use `--username <username>` and `--pass <password>` to provide credentials directly
-- If one or both are not passed, the script prompts for the missing value
-- If the prompted username or password is left blank, the script fails
-- If no host input is provided, connectivity is tested against all hosts in connected vCenters
-- If the host is in lockdown mode, the script temporarily disables lockdown, attempts connectivity, and then restores the original mode
-- The report captures the pre-check and post-check lockdown modes, whether lockdown was temporarily disabled, the restore status, and the connectivity result
+    if (Get-Variable -Name DefaultVIServer -Scope Global -ErrorAction SilentlyContinue) {
+        return @($global:DefaultVIServer | Where-Object { $_.IsConnected -eq $true })
+    }
 
-Example:
+    return @()
+}
 
-```powershell
-.\vsphere-esxi-hardening_v0.0.1.ps1 --check-connectivity --host esxi01.example.com --username SOCVA --pass 'StrongPassword123!'
-```
+function Get-HostNamesFromInput {
+    param(
+        [string]$HostArgument,
+        [string]$CsvPath
+    )
 
-## Command Reference
+    $names = New-Object System.Collections.Generic.List[string]
 
-- `--validate` Run validation checks only.
-- `--remediate` Validate and fix local user / lockdown configuration.
-- `--check-connectivity` Validate and test direct ESXi login.
-- `--host` One ESXi host or a comma-separated list of ESXi hosts.
-- `--csv` CSV file containing hosts.
-- `--username` Specific username for `--check-connectivity`.
-- `--pass` Password used for remediation or connectivity checks.
-- `--help` Show built-in usage output.
+    if ($HostArgument) {
+        foreach ($entry in ($HostArgument -split ',')) {
+            $trimmed = $entry.Trim()
+            if ($trimmed) {
+                $names.Add($trimmed)
+            }
+        }
+    }
 
-Only one mode should be used in a single run.
+    if ($CsvPath) {
+        if (-not (Test-Path -Path $CsvPath)) {
+            throw "CSV file not found: $CsvPath"
+        }
 
-## Output
+        $rows = Import-Csv -Path $CsvPath
+        foreach ($row in $rows) {
+            $propertyName = $InputCsvHostColumn
 
-Each run creates:
+            if (-not ($row.PSObject.Properties.Name -contains $propertyName)) {
+                $propertyName = $row.PSObject.Properties.Name | Select-Object -First 1
+                if (-not $propertyName) {
+                    continue
+                }
+            }
 
-- A log file under the configured `LogDirectory`
-- A CSV report under the configured `ReportDirectory`
+            $value = [string]$row.$propertyName
+            if ($value -and $value.Trim()) {
+                $names.Add($value.Trim())
+            }
+        }
+    }
 
-The report includes:
+    return @($names | Sort-Object -Unique)
+}
 
-- Timestamp
-- Mode
-- vCenter
-- Cluster
-- Host
-- Username
-- User present status
-- Read-only access status
-- Lockdown mode
-- Pre-check lockdown mode
-- Post-check lockdown mode
-- Lockdown temporarily disabled status
-- Lockdown restore status
-- Lockdown exception membership
-- Connectivity test result
-- Action status and message
+function Resolve-TargetHosts {
+    param(
+        [string[]]$HostNames,
+        [array]$VIServers
+    )
 
-## Examples
+    $resolvedHosts = New-Object System.Collections.Generic.List[object]
 
-Validate a single host:
+    foreach ($hostName in $HostNames) {
+        $matches = New-Object System.Collections.Generic.List[object]
 
-```powershell
-.\vsphere-esxi-hardening_v0.0.1.ps1 --validate --host esxi01.example.com
-```
+        foreach ($viServer in $VIServers) {
+            $vmHosts = @(Get-VMHost -Server $viServer -Name $hostName -ErrorAction SilentlyContinue)
+            foreach ($vmHost in $vmHosts) {
+                $matches.Add([pscustomobject]@{
+                    VMHost = $vmHost
+                    VCenter = $viServer.Name
+                })
+            }
+        }
 
-Validate multiple hosts:
+        if ($matches.Count -eq 0) {
+            Write-Log -Level 'ERROR' -Message "Host '$hostName' was not found in any connected vCenter."
+            continue
+        }
 
-```powershell
-.\vsphere-esxi-hardening_v0.0.1.ps1 --validate --host esxi01.example.com,esxi02.example.com
-```
+        foreach ($match in $matches) {
+            $resolvedHosts.Add($match)
+        }
+    }
 
-Remediate using secure prompt for password:
+    return @($resolvedHosts)
+}
 
-```powershell
-.\vsphere-esxi-hardening_v0.0.1.ps1 --remediate --host esxi01.example.com,esxi02.example.com
-```
+function Get-AllConnectedHosts {
+    param(
+        [array]$VIServers
+    )
 
-Check connectivity from CSV input:
+    $resolvedHosts = New-Object System.Collections.Generic.List[object]
 
-```powershell
-.\vsphere-esxi-hardening_v0.0.1.ps1 --check-connectivity --csv .\hosts.csv --username SOCVA
-```
+    foreach ($viServer in $VIServers) {
+        $vmHosts = @(Get-VMHost -Server $viServer -ErrorAction SilentlyContinue)
+        foreach ($vmHost in $vmHosts) {
+            $resolvedHosts.Add([pscustomobject]@{
+                VMHost = $vmHost
+                VCenter = $viServer.Name
+            })
+        }
+    }
 
-Check connectivity for all hosts in connected vCenters:
+    return @(
+        $resolvedHosts |
+            Sort-Object -Property @{ Expression = { $_.VCenter } }, @{ Expression = { $_.VMHost.Name } } -Unique
+    )
+}
 
-```powershell
-.\vsphere-esxi-hardening_v0.0.1.ps1 --check-connectivity --username SOCVA
-```
+function Get-HostContext {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$VMHost,
 
-Validate all hosts in connected vCenters:
+        [Parameter(Mandatory = $true)]
+        [string]$VCenter
+    )
 
-```powershell
-.\vsphere-esxi-hardening_v0.0.1.ps1 --validate
-```
+    $hostView = Get-View -Id $VMHost.Id
+    $cluster = @(Get-Cluster -VMHost $VMHost -ErrorAction SilentlyContinue | Select-Object -First 1)
 
-## Notes
+    $userDirectoryView = $null
+    $accountManagerView = $null
+    $hostAccessManagerView = $null
 
-- The script works only if you already have at least one active PowerCLI vCenter connection.
-- Hosts not found in any connected vCenter are logged and skipped.
-- The script uses ESXi host-side APIs exposed through vCenter to manage local accounts and lockdown exceptions.
+    if ($hostView.ConfigManager.UserDirectory) {
+        $userDirectoryView = Get-View -Id $hostView.ConfigManager.UserDirectory
+    }
+
+    if ($hostView.ConfigManager.AccountManager) {
+        $accountManagerView = Get-View -Id $hostView.ConfigManager.AccountManager
+    }
+
+    if ($hostView.ConfigManager.HostAccessManager) {
+        $hostAccessManagerView = Get-View -Id $hostView.ConfigManager.HostAccessManager
+    }
+
+    return [pscustomobject]@{
+        VMHost = $VMHost
+        VCenter = $VCenter
+        Cluster = if ($cluster) { $cluster.Name } else { 'Standalone' }
+        HostView = $hostView
+        UserDirectory = $userDirectoryView
+        AccountManager = $accountManagerView
+        AccessManager = $hostAccessManagerView
+    }
+}
+
+function Test-HostUserPresence {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Context,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Username
+    )
+
+    if (-not $Context.UserDirectory) {
+        throw "UserDirectory is not available for host $($Context.VMHost.Name)."
+    }
+
+    $results = @($Context.UserDirectory.RetrieveUserGroups('', $Username, '', '', $true, $true, $false))
+    return ($results | Where-Object { $_.Principal -eq $Username }).Count -gt 0
+}
+
+function Get-HostAccessEntry {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Context,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Username
+    )
+
+    if (-not $Context.AccessManager) {
+        throw "HostAccessManager is not available for host $($Context.VMHost.Name)."
+    }
+
+    $entries = @($Context.AccessManager.RetrieveHostAccessControlEntries())
+    return $entries | Where-Object { $_.Group -eq $false -and $_.Principal -eq $Username } | Select-Object -First 1
+}
+
+function Get-LockdownExceptions {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Context
+    )
+
+    if (-not $Context.AccessManager) {
+        throw "HostAccessManager is not available for host $($Context.VMHost.Name)."
+    }
+
+    return @($Context.AccessManager.QueryLockdownExceptions())
+}
+
+function Ensure-HostUser {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Context,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Username,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Password
+    )
+
+    if (Test-HostUserPresence -Context $Context -Username $Username) {
+        Write-Log -Message "User '$Username' already exists on host '$($Context.VMHost.Name)'."
+        return
+    }
+
+    if (-not $Context.AccountManager) {
+        throw "AccountManager is not available for host $($Context.VMHost.Name)."
+    }
+
+    $userSpec = New-Object VMware.Vim.HostAccountSpec
+    $userSpec.Id = $Username
+    $userSpec.Password = $Password
+    $userSpec.Description = $DefaultUserDescription
+
+    $Context.AccountManager.CreateUser($userSpec)
+    Write-Log -Level 'SUCCESS' -Message "Created user '$Username' on host '$($Context.VMHost.Name)'."
+}
+
+function Ensure-ReadOnlyAccess {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Context,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Username
+    )
+
+    $entry = Get-HostAccessEntry -Context $Context -Username $Username
+    if ($entry -and $entry.AccessMode -eq 'accessReadOnly') {
+        Write-Log -Message "User '$Username' already has ReadOnly access on host '$($Context.VMHost.Name)'."
+        return
+    }
+
+    $Context.AccessManager.ChangeAccessMode($Username, $false, 'accessReadOnly')
+    Write-Log -Level 'SUCCESS' -Message "Assigned ReadOnly access to '$Username' on host '$($Context.VMHost.Name)'."
+}
+
+function Ensure-LockdownMode {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Context
+    )
+
+    $currentMode = [string]$Context.AccessManager.LockdownMode
+    if ($currentMode -eq $DesiredLockdownMode) {
+        Write-Log -Message "Host '$($Context.VMHost.Name)' is already in lockdown mode '$DesiredLockdownMode'."
+        return
+    }
+
+    $Context.AccessManager.ChangeLockdownMode($DesiredLockdownMode)
+    Write-Log -Level 'SUCCESS' -Message "Set lockdown mode to '$DesiredLockdownMode' on host '$($Context.VMHost.Name)'."
+}
+
+function Get-CurrentLockdownMode {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Context
+    )
+
+    if (-not $Context.AccessManager) {
+        throw "HostAccessManager is not available for host $($Context.VMHost.Name)."
+    }
+
+    $Context.AccessManager.UpdateViewData('LockdownMode')
+    return [string]$Context.AccessManager.LockdownMode
+}
+
+function Set-LockdownMode {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Context,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Mode
+    )
+
+    $currentMode = Get-CurrentLockdownMode -Context $Context
+    if ($currentMode -eq $Mode) {
+        Write-Log -Message "Host '$($Context.VMHost.Name)' is already in lockdown mode '$Mode'."
+        return $currentMode
+    }
+
+    $Context.AccessManager.ChangeLockdownMode($Mode)
+    $updatedMode = Get-CurrentLockdownMode -Context $Context
+    Write-Log -Level 'SUCCESS' -Message "Changed lockdown mode on host '$($Context.VMHost.Name)' from '$currentMode' to '$updatedMode'."
+    return $updatedMode
+}
+
+function Ensure-LockdownExceptionUser {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Context,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Username
+    )
+
+    $currentExceptions = New-Object System.Collections.Generic.List[string]
+    foreach ($user in (Get-LockdownExceptions -Context $Context)) {
+        [void]$currentExceptions.Add($user)
+    }
+
+    if ($currentExceptions.Contains($Username)) {
+        Write-Log -Message "User '$Username' is already in the lockdown exception list on host '$($Context.VMHost.Name)'."
+        return
+    }
+
+    [void]$currentExceptions.Add($Username)
+    $Context.AccessManager.UpdateLockdownExceptions(@($currentExceptions | Sort-Object -Unique))
+    Write-Log -Level 'SUCCESS' -Message "Added '$Username' to lockdown exceptions on host '$($Context.VMHost.Name)'."
+}
+
+function Test-HostConnectivity {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Hostname,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Username,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Password
+    )
+
+    $result = [ordered]@{
+        ConnectivityAttempted = $true
+        ConnectivityStatus = 'Failed'
+        ConnectivityMessage = $null
+    }
+
+    try {
+        $hostConnection = Connect-VIServer -Server $Hostname -User $Username -Password $Password -Force -NotDefault -WarningAction SilentlyContinue
+        $result.ConnectivityStatus = 'Success'
+        $result.ConnectivityMessage = "Connected successfully as '$Username'."
+
+        if ($hostConnection) {
+            Disconnect-VIServer -Server $hostConnection -Confirm:$false | Out-Null
+        }
+    }
+    catch {
+        $result.ConnectivityMessage = $_.Exception.Message
+    }
+
+    return [pscustomobject]$result
+}
+
+function Invoke-ConnectivityCheckWithLockdownHandling {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Context,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Username,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Password
+    )
+
+    $result = [ordered]@{
+        ConnectivityAttempted = $true
+        ConnectivityStatus = 'Failed'
+        ConnectivityMessage = $null
+        PreLockdownMode = $null
+        PostLockdownMode = $null
+        LockdownTemporarilyDisabled = $false
+        LockdownRestoreStatus = 'NotRequired'
+    }
+
+    $originalMode = Get-CurrentLockdownMode -Context $Context
+    $result.PreLockdownMode = $originalMode
+
+    try {
+        if ($originalMode -ne 'lockdownDisabled') {
+            Write-Log -Level 'WARN' -Message "Host '$($Context.VMHost.Name)' is in lockdown mode '$originalMode'. Disabling lockdown temporarily for connectivity validation."
+            $null = Set-LockdownMode -Context $Context -Mode 'lockdownDisabled'
+            $result.LockdownTemporarilyDisabled = $true
+        }
+
+        $connectivity = Test-HostConnectivity -Hostname $Context.VMHost.Name -Username $Username -Password $Password
+        $result.ConnectivityStatus = $connectivity.ConnectivityStatus
+        $result.ConnectivityMessage = $connectivity.ConnectivityMessage
+    }
+    catch {
+        $result.ConnectivityMessage = $_.Exception.Message
+    }
+    finally {
+        try {
+            if ($result.LockdownTemporarilyDisabled) {
+                Write-Log -Message "Restoring lockdown mode '$originalMode' on host '$($Context.VMHost.Name)' after connectivity validation."
+                $null = Set-LockdownMode -Context $Context -Mode $originalMode
+                $result.LockdownRestoreStatus = 'Restored'
+            }
+
+            $result.PostLockdownMode = Get-CurrentLockdownMode -Context $Context
+        }
+        catch {
+            $result.LockdownRestoreStatus = 'Failed'
+
+            if ($result.ConnectivityMessage) {
+                $result.ConnectivityMessage = "$($result.ConnectivityMessage) Lockdown restore error: $($_.Exception.Message)"
+            }
+            else {
+                $result.ConnectivityMessage = "Lockdown restore error: $($_.Exception.Message)"
+            }
+        }
+    }
+
+    return [pscustomobject]$result
+}
+
+function Add-ReportRow {
+    param(
+        [Parameter(Mandatory = $true)]
+        [psobject]$Row
+    )
+
+    $Script:ReportRows.Add($Row)
+}
+
+function Export-Report {
+    if ($Script:ReportRows.Count -eq 0) {
+        Write-Log -Level 'WARN' -Message 'No report rows were generated.'
+        return
+    }
+
+    $Script:ReportRows |
+        Export-Csv -Path $Script:ReportFile -NoTypeInformation -Force
+
+    Write-Log -Level 'SUCCESS' -Message "Report written to $($Script:ReportFile)"
+    Write-Log -Level 'SUCCESS' -Message "Log written to $($Script:LogFile)"
+}
+
+Initialize-OutputPaths
+
+try {
+    $cli = Parse-Arguments -Arguments $args
+
+    if ($cli.Help) {
+        Show-Usage
+        exit 0
+    }
+
+    if (-not $cli.Mode) {
+        throw 'Select one mode: --validate, --remediate, or --check-connectivity.'
+    }
+
+    $connectedVIServers = @(Get-ConnectedVCenterServers)
+    if ($connectedVIServers.Count -eq 0) {
+        throw 'No connected vCenters were found. Connect to one or more vCenters first, then rerun the script.'
+    }
+
+    Write-Log -Message ("Connected vCenters detected: {0}" -f (($connectedVIServers | Select-Object -ExpandProperty Name) -join ', '))
+
+    $hostNames = @(Get-HostNamesFromInput -HostArgument $cli.HostArgument -CsvPath $cli.CsvPath)
+    $resolvedHosts = @()
+
+    if ($hostNames.Count -eq 0) {
+        if ($cli.Mode -in @('validate', 'check-connectivity')) {
+            Write-Log -Level 'WARN' -Message "No host input was provided. Defaulting to all hosts across connected vCenters for mode '$($cli.Mode)'."
+            $resolvedHosts = @(Get-AllConnectedHosts -VIServers $connectedVIServers)
+        }
+        else {
+            throw 'Provide at least one target host by using --host or --csv.'
+        }
+    }
+    else {
+        $resolvedHosts = @(Resolve-TargetHosts -HostNames $hostNames -VIServers $connectedVIServers)
+    }
+
+    if ($resolvedHosts.Count -eq 0) {
+        throw 'None of the requested hosts could be resolved from the connected vCenters.'
+    }
+
+    $plainTextPassword = $null
+    $connectivityUsername = $null
+    if ($cli.Mode -eq 'remediate') {
+        $plainTextPassword = Get-PlainTextPassword -ProvidedPassword $cli.Password -PromptMessage 'Enter password for required host user account(s)'
+    }
+    if ($cli.Mode -eq 'check-connectivity') {
+        $connectivityUsername = Get-RequiredValue -ProvidedValue $cli.Username -PromptMessage 'Enter username for ESXi connectivity check'
+        $plainTextPassword = Get-PlainTextPassword -ProvidedPassword $cli.Password -PromptMessage 'Enter password for ESXi connectivity check'
+    }
+
+    foreach ($resolvedHost in $resolvedHosts) {
+        $context = Get-HostContext -VMHost $resolvedHost.VMHost -VCenter $resolvedHost.VCenter
+        Write-Log -Message "Processing host '$($context.VMHost.Name)' in vCenter '$($context.VCenter)' and cluster '$($context.Cluster)'."
+
+        $hostConnectivityResult = [pscustomobject]@{
+            ConnectivityAttempted = $false
+            ConnectivityStatus = 'NotRequested'
+            ConnectivityMessage = $null
+            PreLockdownMode = $null
+            PostLockdownMode = $null
+            LockdownTemporarilyDisabled = $false
+            LockdownRestoreStatus = 'NotRequested'
+        }
+
+        if ($cli.Mode -eq 'check-connectivity') {
+            $hostConnectivityResult = Invoke-ConnectivityCheckWithLockdownHandling -Context $context -Username $connectivityUsername -Password $plainTextPassword
+        }
+
+        foreach ($username in $RequiredUsernames) {
+            $userPresent = $false
+            $readOnly = $false
+            $lockdownException = $false
+            $lockdownMode = $null
+            $actionStatus = 'Validated'
+            $actionMessage = $null
+            $connectivityResult = [pscustomobject]@{
+                ConnectivityAttempted = $false
+                ConnectivityStatus = 'NotRequested'
+                ConnectivityMessage = $null
+                PreLockdownMode = $null
+                PostLockdownMode = $null
+                LockdownTemporarilyDisabled = $false
+                LockdownRestoreStatus = 'NotRequested'
+            }
+
+            try {
+                if ($cli.Mode -eq 'remediate') {
+                    Ensure-HostUser -Context $context -Username $username -Password $plainTextPassword
+                    Ensure-ReadOnlyAccess -Context $context -Username $username
+                    Ensure-LockdownMode -Context $context
+                    Ensure-LockdownExceptionUser -Context $context -Username $username
+                    $actionStatus = 'Remediated'
+                }
+
+                $userPresent = Test-HostUserPresence -Context $context -Username $username
+
+                if ($userPresent) {
+                    $entry = Get-HostAccessEntry -Context $context -Username $username
+                    $readOnly = ($entry -and $entry.AccessMode -eq 'accessReadOnly')
+                }
+
+                $lockdownException = (Get-LockdownExceptions -Context $context) -contains $username
+                $lockdownMode = Get-CurrentLockdownMode -Context $context
+
+                if ($cli.Mode -eq 'check-connectivity') {
+                    $connectivityResult = $hostConnectivityResult
+                    if ($connectivityResult.LockdownRestoreStatus -eq 'Failed') {
+                        $actionStatus = 'Failed'
+                        $actionMessage = $connectivityResult.ConnectivityMessage
+                    }
+                }
+
+                if (-not $actionMessage) {
+                    $actionMessage = 'Completed successfully.'
+                }
+
+                if ($actionStatus -eq 'Failed') {
+                    Write-Log -Level 'ERROR' -Message "Completed checks with errors for user '$username' on host '$($context.VMHost.Name)'."
+                }
+                else {
+                    Write-Log -Level 'SUCCESS' -Message "Completed checks for user '$username' on host '$($context.VMHost.Name)'."
+                }
+            }
+            catch {
+                $actionStatus = 'Failed'
+                $actionMessage = $_.Exception.Message
+                Write-Log -Level 'ERROR' -Message "Failed on host '$($context.VMHost.Name)' for user '$username': $actionMessage"
+            }
+
+            Add-ReportRow -Row ([pscustomobject]@{
+                Timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+                Mode = $cli.Mode
+                VCenter = $context.VCenter
+                Cluster = $context.Cluster
+                Host = $context.VMHost.Name
+                Username = $username
+                ConnectivityUsername = $connectivityUsername
+                UserPresent = $userPresent
+                ReadOnlyAccess = $readOnly
+                LockdownMode = $lockdownMode
+                PreLockdownMode = $connectivityResult.PreLockdownMode
+                PostLockdownMode = $connectivityResult.PostLockdownMode
+                LockdownTemporarilyDisabled = $connectivityResult.LockdownTemporarilyDisabled
+                LockdownRestoreStatus = $connectivityResult.LockdownRestoreStatus
+                InLockdownExceptionList = $lockdownException
+                ConnectivityAttempted = $connectivityResult.ConnectivityAttempted
+                ConnectivityStatus = $connectivityResult.ConnectivityStatus
+                ConnectivityMessage = $connectivityResult.ConnectivityMessage
+                ActionStatus = $actionStatus
+                ActionMessage = $actionMessage
+            })
+        }
+    }
+
+    Export-Report
+}
+catch {
+    Write-Log -Level 'ERROR' -Message $_.Exception.Message
+    throw
+}
