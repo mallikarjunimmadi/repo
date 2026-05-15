@@ -21,6 +21,15 @@ $AllowedHostConnectionStates = @('Connected', 'Maintenance')
 $Script:LogFile = $null
 $Script:ReportFile = $null
 $Script:ReportRows = New-Object System.Collections.Generic.List[object]
+$Script:Summary = [ordered]@{
+    InputHostCount = 0
+    ResolvedHostCount = 0
+    ProcessedHostCount = 0
+    SkippedHostCount = 0
+    SuccessCount = 0
+    FailedCount = 0
+    SkippedCount = 0
+}
 
 function Show-Usage {
     @'
@@ -596,11 +605,18 @@ function Get-CurrentLockdownMode {
         [object]$Context
     )
 
-    if (-not $Context.AccessManager) {
-        throw "HostAccessManager is not available for host $($Context.VMHost.Name)."
+    if (-not $Context.VMHost) {
+        throw "VMHost is not available in context."
     }
 
-    return [string]((Get-View -Id $Context.AccessManagerMoRef -Property LockdownMode).LockdownMode)
+    $freshHostView = Get-View -Id $Context.VMHost.Id -Property Config.LockdownMode
+    $lockdownMode = @($freshHostView.Config.LockdownMode | Select-Object -First 1)
+
+    if ($lockdownMode.Count -eq 0 -or -not $lockdownMode[0]) {
+        return $null
+    }
+
+    return [string]$lockdownMode[0]
 }
 
 function Set-LockdownMode {
@@ -759,6 +775,13 @@ function Add-ReportRow {
     )
 
     $Script:ReportRows.Add($Row)
+
+    if (Test-Path -Path $Script:ReportFile) {
+        $Row | Export-Csv -Path $Script:ReportFile -NoTypeInformation -Append -Force
+    }
+    else {
+        $Row | Export-Csv -Path $Script:ReportFile -NoTypeInformation -Force
+    }
 }
 
 function Export-Report {
@@ -767,11 +790,47 @@ function Export-Report {
         return
     }
 
-    $Script:ReportRows |
-        Export-Csv -Path $Script:ReportFile -NoTypeInformation -Force
-
     Write-Log -Level 'SUCCESS' -Message "Report written to $($Script:ReportFile)"
     Write-Log -Level 'SUCCESS' -Message "Log written to $($Script:LogFile)"
+}
+
+function Write-Summary {
+    $modeKey = switch ($cli.Mode) {
+        'validate' { 'Validate' }
+        'remediate' { 'Remediate' }
+        'check-connectivity' { 'CheckConnectivity' }
+        default { 'Validate' }
+    }
+
+    $metrics = @(
+        [ordered]@{ Metric = 'InputHosts'; Validate = 0; Remediate = 0; CheckConnectivity = 0 },
+        [ordered]@{ Metric = 'ResolvedHosts'; Validate = 0; Remediate = 0; CheckConnectivity = 0 },
+        [ordered]@{ Metric = 'ProcessedHosts'; Validate = 0; Remediate = 0; CheckConnectivity = 0 },
+        [ordered]@{ Metric = 'SkippedHosts'; Validate = 0; Remediate = 0; CheckConnectivity = 0 },
+        [ordered]@{ Metric = 'SuccessRows'; Validate = 0; Remediate = 0; CheckConnectivity = 0 },
+        [ordered]@{ Metric = 'FailedRows'; Validate = 0; Remediate = 0; CheckConnectivity = 0 },
+        [ordered]@{ Metric = 'SkippedRows'; Validate = 0; Remediate = 0; CheckConnectivity = 0 }
+    )
+
+    $metrics[0][$modeKey] = $Script:Summary.InputHostCount
+    $metrics[1][$modeKey] = $Script:Summary.ResolvedHostCount
+    $metrics[2][$modeKey] = $Script:Summary.ProcessedHostCount
+    $metrics[3][$modeKey] = $Script:Summary.SkippedHostCount
+    $metrics[4][$modeKey] = $Script:Summary.SuccessCount
+    $metrics[5][$modeKey] = $Script:Summary.FailedCount
+    $metrics[6][$modeKey] = $Script:Summary.SkippedCount
+
+    Write-Log -Message 'Summary Table:'
+    $tableLines = $metrics |
+        ForEach-Object { [pscustomobject]$_ } |
+        Format-Table -AutoSize |
+        Out-String -Width 200
+
+    foreach ($line in ($tableLines -split "`r?`n")) {
+        if ($line.Trim()) {
+            Write-Log -Message $line
+        }
+    }
 }
 
 Initialize-OutputPaths
@@ -800,6 +859,7 @@ try {
     Write-Log -Message ("Connected vCenters detected: {0}" -f (($connectedVIServers | Select-Object -ExpandProperty Name) -join ', '))
 
     $hostNames = @(Get-HostNamesFromInput -HostArgument $cli.HostArgument -CsvPath $cli.CsvPath)
+    $Script:Summary.InputHostCount = $hostNames.Count
     $resolvedHosts = @()
 
     if ($hostNames.Count -eq 0) {
@@ -818,6 +878,8 @@ try {
     if ($resolvedHosts.Count -eq 0) {
         throw 'None of the requested hosts could be resolved from the connected vCenters.'
     }
+
+    $Script:Summary.ResolvedHostCount = $resolvedHosts.Count
 
     $plainTextPassword = $null
     $connectivityUsername = $null
@@ -838,6 +900,7 @@ try {
         Write-Log -Message "Processing host '$($context.VMHost.Name)' in vCenter '$($context.VCenter)' and cluster '$($context.Cluster)'."
 
         if (-not $resolvedHost.IsEligible) {
+            $Script:Summary.SkippedHostCount++
             $skippedMessage = "Host connection state '$($resolvedHost.ConnectionState)' is not eligible. Allowed states: $($AllowedHostConnectionStates -join ', ')."
             Write-Log -Level 'WARN' -Message "Skipping host '$($context.VMHost.Name)' in vCenter '$($context.VCenter)' because $skippedMessage"
 
@@ -866,10 +929,13 @@ try {
                     ActionStatus = 'Skipped'
                     ActionMessage = $skippedMessage
                 })
+                $Script:Summary.SkippedCount++
             }
 
             continue
         }
+
+        $Script:Summary.ProcessedHostCount++
 
         $hostConnectivityResult = [pscustomobject]@{
             ConnectivityAttempted = $false
@@ -973,12 +1039,20 @@ try {
                 ActionStatus = $actionStatus
                 ActionMessage = $actionMessage
             })
+
+            switch ($actionStatus) {
+                'Failed' { $Script:Summary.FailedCount++ }
+                'Skipped' { $Script:Summary.SkippedCount++ }
+                default { $Script:Summary.SuccessCount++ }
+            }
         }
     }
 
     Export-Report
+    Write-Summary
 }
 catch {
     Write-Log -Level 'ERROR' -Message $_.Exception.Message
+    Write-Summary
     throw
 }
