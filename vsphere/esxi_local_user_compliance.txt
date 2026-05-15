@@ -13,6 +13,7 @@ $LogDirectory = Join-Path -Path $PSScriptRoot -ChildPath 'logs'
 $InputCsvHostColumn = 'Host'
 $DesiredLockdownMode = 'lockdownNormal'
 $DefaultUserDescription = 'Managed by vsphere-esxi-hardening script'
+$AllowedHostConnectionStates = @('Connected', 'Maintenance')
 
 # ============================================================================
 # Runtime state
@@ -230,7 +231,7 @@ function Get-PlainTextPassword {
     )
 
     if ($ProvidedPassword -and $ProvidedPassword.Trim()) {
-        return $ProvidedPassword
+        return $ProvidedPassword.Trim()
     }
 
     $securePassword = Read-Host -Prompt $PromptMessage -AsSecureString
@@ -249,6 +250,24 @@ function Get-PlainTextPassword {
             [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
         }
     }
+}
+
+function Expand-HostTokens {
+    param(
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string]$Value
+    )
+
+    if (-not $Value) {
+        return @()
+    }
+
+    return @(
+        ($Value -split '[,\s;]+') |
+            Where-Object { $_ -and $_.Trim() } |
+            ForEach-Object { $_.Trim() }
+    )
 }
 
 function Get-ConnectedVCenterServers {
@@ -275,11 +294,8 @@ function Get-HostNamesFromInput {
     $names = New-Object System.Collections.Generic.List[string]
 
     if ($HostArgument) {
-        foreach ($entry in ($HostArgument -split ',')) {
-            $trimmed = $entry.Trim()
-            if ($trimmed) {
-                $names.Add($trimmed)
-            }
+        foreach ($entry in (Expand-HostTokens -Value $HostArgument)) {
+            [void]$names.Add($entry)
         }
     }
 
@@ -288,7 +304,16 @@ function Get-HostNamesFromInput {
             throw "CSV file not found: $CsvPath"
         }
 
-        $rows = Import-Csv -Path $CsvPath
+        $importedHosts = New-Object System.Collections.Generic.List[string]
+        $rows = @()
+
+        try {
+            $rows = @(Import-Csv -Path $CsvPath -ErrorAction Stop)
+        }
+        catch {
+            $rows = @()
+        }
+
         foreach ($row in $rows) {
             $propertyName = $InputCsvHostColumn
 
@@ -300,8 +325,31 @@ function Get-HostNamesFromInput {
             }
 
             $value = [string]$row.$propertyName
-            if ($value -and $value.Trim()) {
-                $names.Add($value.Trim())
+            foreach ($entry in (Expand-HostTokens -Value $value)) {
+                [void]$importedHosts.Add($entry)
+            }
+        }
+
+        if ($importedHosts.Count -gt 0) {
+            foreach ($entry in $importedHosts) {
+                [void]$names.Add($entry)
+            }
+        }
+        else {
+            $rawLines = @(Get-Content -Path $CsvPath -ErrorAction Stop)
+            foreach ($line in $rawLines) {
+                $trimmedLine = $line.Trim()
+                if (-not $trimmedLine) {
+                    continue
+                }
+
+                if ($trimmedLine -ieq $InputCsvHostColumn) {
+                    continue
+                }
+
+                foreach ($entry in (Expand-HostTokens -Value $trimmedLine)) {
+                    [void]$names.Add($entry)
+                }
             }
         }
     }
@@ -326,6 +374,8 @@ function Resolve-TargetHosts {
                 [void]$matches.Add([pscustomobject]@{
                     VMHost = $vmHost
                     VCenter = $viServer.Name
+                    ConnectionState = $vmHost.ConnectionState.ToString()
+                    IsEligible = ($vmHost.ConnectionState.ToString() -in $AllowedHostConnectionStates)
                 })
             }
         }
@@ -356,6 +406,8 @@ function Get-AllConnectedHosts {
             [void]$resolvedHosts.Add([pscustomobject]@{
                 VMHost = $vmHost
                 VCenter = $viServer.Name
+                ConnectionState = $vmHost.ConnectionState.ToString()
+                IsEligible = ($vmHost.ConnectionState.ToString() -in $AllowedHostConnectionStates)
             })
         }
     }
@@ -547,8 +599,7 @@ function Get-CurrentLockdownMode {
         throw "HostAccessManager is not available for host $($Context.VMHost.Name)."
     }
 
-    $Context.AccessManager.UpdateViewData('LockdownMode')
-    return [string]$Context.AccessManager.LockdownMode
+    return [string]((Get-View -Id $Context.AccessManager.Id -Property LockdownMode).LockdownMode)
 }
 
 function Set-LockdownMode {
@@ -785,6 +836,40 @@ try {
         $context = Get-HostContext -VMHost $resolvedHost.VMHost -VCenter $resolvedHost.VCenter
         Write-Log -Message "Processing host '$($context.VMHost.Name)' in vCenter '$($context.VCenter)' and cluster '$($context.Cluster)'."
 
+        if (-not $resolvedHost.IsEligible) {
+            $skippedMessage = "Host connection state '$($resolvedHost.ConnectionState)' is not eligible. Allowed states: $($AllowedHostConnectionStates -join ', ')."
+            Write-Log -Level 'WARN' -Message "Skipping host '$($context.VMHost.Name)' in vCenter '$($context.VCenter)' because $skippedMessage"
+
+            foreach ($username in $RequiredUsernames) {
+                Add-ReportRow -Row ([pscustomobject]@{
+                    Timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+                    Mode = $cli.Mode
+                    VCenter = $context.VCenter
+                    Cluster = $context.Cluster
+                    Host = $context.VMHost.Name
+                    HostConnectionState = $resolvedHost.ConnectionState
+                    Username = $username
+                    ConnectivityUsername = $connectivityUsername
+                    RequestedLockdownMode = $connectivityLockdownMode
+                    UserPresent = $false
+                    ReadOnlyAccess = $false
+                    LockdownMode = $null
+                    PreLockdownMode = $null
+                    PostLockdownMode = $null
+                    LockdownTemporarilyDisabled = $false
+                    LockdownRestoreStatus = 'NotRequested'
+                    InLockdownExceptionList = $false
+                    ConnectivityAttempted = $false
+                    ConnectivityStatus = 'Skipped'
+                    ConnectivityMessage = $null
+                    ActionStatus = 'Skipped'
+                    ActionMessage = $skippedMessage
+                })
+            }
+
+            continue
+        }
+
         $hostConnectivityResult = [pscustomobject]@{
             ConnectivityAttempted = $false
             ConnectivityStatus = 'NotRequested'
@@ -869,6 +954,7 @@ try {
                 VCenter = $context.VCenter
                 Cluster = $context.Cluster
                 Host = $context.VMHost.Name
+                HostConnectionState = $resolvedHost.ConnectionState
                 Username = $username
                 ConnectivityUsername = $connectivityUsername
                 RequestedLockdownMode = $connectivityLockdownMode
