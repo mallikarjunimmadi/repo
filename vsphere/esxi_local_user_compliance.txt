@@ -451,6 +451,7 @@ function Get-HostContext {
         VCenter = $VCenter
         Cluster = if ($cluster) { $cluster.Name } else { 'Standalone' }
         HostView = $hostView
+        AccessManagerMoRef = $hostView.ConfigManager.HostAccessManager
         UserDirectory = $userDirectoryView
         AccountManager = $accountManagerView
         AccessManager = $hostAccessManagerView
@@ -599,7 +600,7 @@ function Get-CurrentLockdownMode {
         throw "HostAccessManager is not available for host $($Context.VMHost.Name)."
     }
 
-    return [string]((Get-View -Id $Context.AccessManager.Id -Property LockdownMode).LockdownMode)
+    return [string]((Get-View -Id $Context.AccessManagerMoRef -Property LockdownMode).LockdownMode)
 }
 
 function Set-LockdownMode {
