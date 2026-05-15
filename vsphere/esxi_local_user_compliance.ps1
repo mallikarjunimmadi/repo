@@ -418,9 +418,13 @@ function Test-HostUserPresence {
         throw "UserDirectory is not available for host $($Context.VMHost.Name)."
     }
 
+    $normalizedUsername = $Username.Trim().ToLowerInvariant()
+
     try {
         $results = @($Context.UserDirectory.RetrieveUserGroups('', $Username, '', '', $true, $true, $false))
-        return ($results | Where-Object { $_.Principal -eq $Username }).Count -gt 0
+        return ($results | Where-Object {
+            $_.Principal -and $_.Principal.ToString().Trim().ToLowerInvariant() -eq $normalizedUsername
+        }).Count -gt 0
     }
     catch {
         if ($_.Exception.Message -match 'could not be found') {
@@ -444,8 +448,15 @@ function Get-HostAccessEntry {
         throw "HostAccessManager is not available for host $($Context.VMHost.Name)."
     }
 
+    $normalizedUsername = $Username.Trim().ToLowerInvariant()
     $entries = @($Context.AccessManager.RetrieveHostAccessControlEntries())
-    return $entries | Where-Object { $_.Group -eq $false -and $_.Principal -eq $Username } | Select-Object -First 1
+    return $entries |
+        Where-Object {
+            $_.Group -eq $false -and
+            $_.Principal -and
+            $_.Principal.ToString().Trim().ToLowerInvariant() -eq $normalizedUsername
+        } |
+        Select-Object -First 1
 }
 
 function Get-LockdownExceptions {
@@ -814,12 +825,15 @@ try {
                     $actionStatus = 'Remediated'
                 }
 
+                $entry = Get-HostAccessEntry -Context $context -Username $username
                 $userPresent = Test-HostUserPresence -Context $context -Username $username
 
-                if ($userPresent) {
-                    $entry = Get-HostAccessEntry -Context $context -Username $username
-                    $readOnly = ($entry -and $entry.AccessMode -eq 'accessReadOnly')
+                if (-not $userPresent -and $entry) {
+                    Write-Log -Level 'WARN' -Message "UserDirectory did not return user '$username' on host '$($context.VMHost.Name)'. Falling back to host access entry presence."
+                    $userPresent = $true
                 }
+
+                $readOnly = ($entry -and $entry.AccessMode -eq 'accessReadOnly')
 
                 $lockdownException = (Get-LockdownExceptions -Context $context) -contains $username
                 $lockdownMode = Get-CurrentLockdownMode -Context $context
