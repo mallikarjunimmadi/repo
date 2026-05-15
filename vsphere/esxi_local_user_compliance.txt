@@ -30,6 +30,7 @@ $Script:Summary = [ordered]@{
     FailedCount = 0
     SkippedCount = 0
 }
+$Script:RunStartTime = $null
 
 function Show-Usage {
     @'
@@ -795,6 +796,12 @@ function Export-Report {
 }
 
 function Write-Summary {
+    $elapsed = $null
+    $endTime = Get-Date
+    if ($Script:RunStartTime) {
+        $elapsed = $endTime - $Script:RunStartTime
+    }
+
     $modeKey = switch ($cli.Mode) {
         'validate' { 'Validate' }
         'remediate' { 'Remediate' }
@@ -831,9 +838,21 @@ function Write-Summary {
             Write-Log -Message $line
         }
     }
+
+    if ($Script:RunStartTime) {
+        Write-Log -Message ("StartTime: {0}" -f $Script:RunStartTime.ToString('yyyy-MM-dd HH:mm:ss'))
+    }
+
+    Write-Log -Message ("EndTime: {0}" -f $endTime.ToString('yyyy-MM-dd HH:mm:ss'))
+
+    if ($elapsed) {
+        $elapsedLine = "ElapsedTime: {0:00}:{1:00}:{2:00}" -f [int]$elapsed.TotalHours, $elapsed.Minutes, $elapsed.Seconds
+        Write-Log -Message $elapsedLine
+    }
 }
 
 Initialize-OutputPaths
+$Script:RunStartTime = Get-Date
 
 try {
     $cli = Parse-Arguments -Arguments $args
