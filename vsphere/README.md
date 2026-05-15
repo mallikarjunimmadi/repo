@@ -91,7 +91,7 @@ Checks:
 Example:
 
 ```powershell
-.\esxi_local_user_compliance.ps1 --validate --host esxi01.example.com,esxi02.example.com
+.\esxi_local_user_compliance_v0.0.2.ps1 --validate --host esxi01.example.com,esxi02.example.com
 ```
 
 ### Remediate
@@ -111,7 +111,7 @@ Password behavior:
 Example:
 
 ```powershell
-.\esxi_local_user_compliance.ps1 --remediate --csv .\hosts.csv --pass 'StrongPassword123!'
+.\esxi_local_user_compliance_v0.0.2.ps1 --remediate --csv .\hosts.csv --pass 'StrongPassword123!'
 ```
 
 ### Check Connectivity
@@ -133,7 +133,7 @@ Credential behavior:
 Example:
 
 ```powershell
-.\esxi_local_user_compliance.ps1 --check-connectivity --host esxi01.example.com --username SOCVA --pass 'StrongPassword123!' --lockdown-mode enable
+.\esxi_local_user_compliance_v0.0.2.ps1 --check-connectivity --host esxi01.example.com --username SOCVA --pass 'StrongPassword123!' --lockdown-mode enable
 ```
 
 Versioned example:
@@ -190,37 +190,37 @@ The report includes:
 Validate a single host:
 
 ```powershell
-.\esxi_local_user_compliance.ps1 --validate --host esxi01.example.com
+.\esxi_local_user_compliance_v0.0.2.ps1 --validate --host esxi01.example.com
 ```
 
 Validate multiple hosts:
 
 ```powershell
-.\esxi_local_user_compliance.ps1 --validate --host esxi01.example.com,esxi02.example.com
+.\esxi_local_user_compliance_v0.0.2.ps1 --validate --host esxi01.example.com,esxi02.example.com
 ```
 
 Remediate using secure prompt for password:
 
 ```powershell
-.\esxi_local_user_compliance.ps1 --remediate --host esxi01.example.com,esxi02.example.com
+.\esxi_local_user_compliance_v0.0.2.ps1 --remediate --host esxi01.example.com,esxi02.example.com
 ```
 
 Check connectivity from CSV input:
 
 ```powershell
-.\esxi_local_user_compliance.ps1 --check-connectivity --csv .\hosts.csv --username SOCVA
+.\esxi_local_user_compliance_v0.0.2.ps1 --check-connectivity --csv .\hosts.csv --username SOCVA
 ```
 
 Check connectivity for all hosts in connected vCenters:
 
 ```powershell
-.\esxi_local_user_compliance.ps1 --check-connectivity --username SOCVA --lockdown-mode enable
+.\esxi_local_user_compliance_v0.0.2.ps1 --check-connectivity --username SOCVA --lockdown-mode enable
 ```
 
 Validate all hosts in connected vCenters:
 
 ```powershell
-.\esxi_local_user_compliance.ps1 --validate
+.\esxi_local_user_compliance_v0.0.2.ps1 --validate
 ```
 
 ## Notes
