@@ -4,7 +4,6 @@ PowerCLI script to validate and remediate ESXi local user access and lockdown co
 
 Script files:
 
-- `esxi_local_user_compliance.ps1`
 - `esxi_local_user_compliance_v0.0.2.ps1`
 
 ## Features
