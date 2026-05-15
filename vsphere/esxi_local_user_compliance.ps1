@@ -24,9 +24,9 @@ $Script:ReportRows = New-Object System.Collections.Generic.List[object]
 function Show-Usage {
     @'
 Usage:
-  .\vsphere-esxi-hardening_v0.0.1.ps1 --validate --host esxi01
-  .\vsphere-esxi-hardening_v0.0.1.ps1 --remediate --host esxi01,esxi02 --pass MyPassword!
-  .\vsphere-esxi-hardening_v0.0.1.ps1 --check-connectivity --csv .\hosts.csv --username SOCVA --pass MyPassword! --lockdown-mode enable
+  .\esxi_local_user_compliance.ps1 --validate --host esxi01
+  .\esxi_local_user_compliance.ps1 --remediate --host esxi01,esxi02 --pass MyPassword!
+  .\esxi_local_user_compliance.ps1 --check-connectivity --csv .\hosts.csv --username SOCVA --pass MyPassword! --lockdown-mode enable
 
 Supported arguments:
   --validate
@@ -323,7 +323,7 @@ function Resolve-TargetHosts {
         foreach ($viServer in $VIServers) {
             $vmHosts = @(Get-VMHost -Server $viServer -Name $hostName -ErrorAction SilentlyContinue)
             foreach ($vmHost in $vmHosts) {
-                $matches.Add([pscustomobject]@{
+                [void]$matches.Add([pscustomobject]@{
                     VMHost = $vmHost
                     VCenter = $viServer.Name
                 })
@@ -336,11 +336,11 @@ function Resolve-TargetHosts {
         }
 
         foreach ($match in $matches) {
-            $resolvedHosts.Add($match)
+            [void]$resolvedHosts.Add($match)
         }
     }
 
-    return @($resolvedHosts)
+    return @($resolvedHosts.ToArray())
 }
 
 function Get-AllConnectedHosts {
@@ -353,7 +353,7 @@ function Get-AllConnectedHosts {
     foreach ($viServer in $VIServers) {
         $vmHosts = @(Get-VMHost -Server $viServer -ErrorAction SilentlyContinue)
         foreach ($vmHost in $vmHosts) {
-            $resolvedHosts.Add([pscustomobject]@{
+            [void]$resolvedHosts.Add([pscustomobject]@{
                 VMHost = $vmHost
                 VCenter = $viServer.Name
             })
@@ -418,8 +418,17 @@ function Test-HostUserPresence {
         throw "UserDirectory is not available for host $($Context.VMHost.Name)."
     }
 
-    $results = @($Context.UserDirectory.RetrieveUserGroups('', $Username, '', '', $true, $true, $false))
-    return ($results | Where-Object { $_.Principal -eq $Username }).Count -gt 0
+    try {
+        $results = @($Context.UserDirectory.RetrieveUserGroups('', $Username, '', '', $true, $true, $false))
+        return ($results | Where-Object { $_.Principal -eq $Username }).Count -gt 0
+    }
+    catch {
+        if ($_.Exception.Message -match 'could not be found') {
+            return $false
+        }
+
+        throw
+    }
 }
 
 function Get-HostAccessEntry {
