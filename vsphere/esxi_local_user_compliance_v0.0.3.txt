@@ -636,19 +636,31 @@ function Test-HostUserPresence {
 
     $normalizedUsername = $Username.Trim().ToLowerInvariant()
 
-    try {
-        $results = @($Context.UserDirectory.RetrieveUserGroups('', $Username, '', '', $true, $true, $false))
-        return ($results | Where-Object {
-            $_.Principal -and $_.Principal.ToString().Trim().ToLowerInvariant() -eq $normalizedUsername
-        }).Count -gt 0
-    }
-    catch {
-        if ($_.Exception.Message -match 'could not be found') {
-            return $false
-        }
+    $queries = @(
+        @{ Search = $Username; ExactMatch = $true },
+        @{ Search = $Username; ExactMatch = $false },
+        @{ Search = ''; ExactMatch = $false }
+    )
 
-        throw
+    foreach ($query in $queries) {
+        try {
+            $results = @($Context.UserDirectory.RetrieveUserGroups('', $query.Search, '', '', $true, $true, $query.ExactMatch))
+            if (($results | Where-Object {
+                $_.Principal -and $_.Principal.ToString().Trim().ToLowerInvariant() -eq $normalizedUsername
+            }).Count -gt 0) {
+                return $true
+            }
+        }
+        catch {
+            if ($_.Exception.Message -match 'could not be found') {
+                continue
+            }
+
+            throw
+        }
     }
+
+    return $false
 }
 
 function Get-HostAccessEntry {
@@ -724,7 +736,8 @@ function Ensure-HostUser {
         [string]$Password
     )
 
-    if (Test-HostUserPresence -Context $Context -Username $Username) {
+    if ((Test-HostUserPresence -Context $Context -Username $Username) -or
+        (Get-HostAccessEntry -Context $Context -Username $Username)) {
         Write-Log -Message "User '$Username' already exists on host '$($Context.VMHost.Name)'."
         return
     }
@@ -738,8 +751,18 @@ function Ensure-HostUser {
     $userSpec.Password = $Password
     $userSpec.Description = $DefaultUserDescription
 
-    $Context.AccountManager.CreateUser($userSpec)
-    Write-Log -Level 'SUCCESS' -Message "Created user '$Username' on host '$($Context.VMHost.Name)'."
+    try {
+        $Context.AccountManager.CreateUser($userSpec)
+        Write-Log -Level 'SUCCESS' -Message "Created user '$Username' on host '$($Context.VMHost.Name)'."
+    }
+    catch {
+        if ($_.Exception.Message -match 'already exists') {
+            Write-Log -Level 'WARN' -Message "User '$Username' already exists on host '$($Context.VMHost.Name)'. Continuing with password reset and access validation."
+            return
+        }
+
+        throw
+    }
 }
 
 function Reset-HostUserPassword {
