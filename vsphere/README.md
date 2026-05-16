@@ -4,7 +4,7 @@ PowerCLI script to validate and remediate ESXi local user access and lockdown co
 
 Script files:
 
-- `esxi_local_user_compliance_v0.0.2.ps1`
+- `esxi_local_user_compliance_v0.0.3.ps1`
 
 ## Features
 
@@ -18,7 +18,9 @@ Script files:
 - Validates whether required local users exist on each ESXi host.
 - Validates whether each required user has `ReadOnly` host access.
 - Validates whether each required user is in the lockdown exception list.
+- Supports `--username` override in `--validate` and `--remediate` mode so you can target only the supplied username(s) instead of the script-defined `RequiredUsernames`.
 - Can remediate missing local users, assign `ReadOnly` access, enable lockdown mode, and add users to lockdown exceptions.
+- In `v0.0.3`, remediation also resets the ESXi local user password to the password supplied for the run.
 - Can test direct connectivity to each ESXi host by using a specific supplied or prompted username and password.
 - In `--check-connectivity` mode, can either preserve lockdown or temporarily disable and restore it, depending on `--lockdown-mode`.
 - Supports `--lockdown-mode enable|disable` in `--check-connectivity` mode to control whether lockdown is preserved or temporarily disabled during the connectivity test. The default is `enable`.
@@ -50,7 +52,8 @@ Update these values near the top of the script:
 Notes:
 
 - `RequiredUsernames` supports one or more usernames.
-- In remediation and connectivity mode, the same password is used for every username in `RequiredUsernames`.
+- In `--validate` and `--remediate`, `--username` overrides `RequiredUsernames`. If `--username` is not supplied, the script uses `RequiredUsernames`.
+- In remediation mode, the same password is used for every username processed in that run.
 - Default lockdown mode is `lockdownNormal`.
 
 ## Input Options
@@ -88,10 +91,15 @@ Checks:
 - Whether the user is in the lockdown exception list
 - Current lockdown mode
 
+Username behavior:
+
+- If `--username` is supplied, validation runs only for the supplied username(s)
+- If `--username` is not supplied, validation uses `RequiredUsernames` from the script
+
 Example:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.2.ps1 --validate --host esxi01.example.com,esxi02.example.com
+.\esxi_local_user_compliance_v0.0.3.ps1 --validate --host esxi01.example.com,esxi02.example.com
 ```
 
 ### Remediate
@@ -99,19 +107,22 @@ Example:
 Performs these actions for each configured username:
 
 - Creates the local user if it does not already exist
+- Resets the local user password to the password supplied for the remediation run
 - Assigns `ReadOnly` host access
 - Sets the host lockdown mode to the configured value
 - Adds the user to the lockdown exception list
 
 Password behavior:
 
+- Use `--username <username>` to override `RequiredUsernames` and remediate only the supplied username(s)
+- If `--username` is not supplied, remediation uses `RequiredUsernames` from the script
 - Use `--pass <password>` to supply the password on the command line
 - If `--pass` is not provided, the script prompts securely
 
 Example:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.2.ps1 --remediate --csv .\hosts.csv --pass 'StrongPassword123!'
+.\esxi_local_user_compliance_v0.0.3.ps1 --remediate --csv .\hosts.csv --pass 'StrongPassword123!'
 ```
 
 ### Check Connectivity
@@ -133,13 +144,13 @@ Credential behavior:
 Example:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.2.ps1 --check-connectivity --host esxi01.example.com --username SOCVA --pass 'StrongPassword123!' --lockdown-mode enable
+.\esxi_local_user_compliance_v0.0.3.ps1 --check-connectivity --host esxi01.example.com --username SOCVA --pass 'StrongPassword123!' --lockdown-mode enable
 ```
 
 Versioned example:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.2.ps1 --validate --host esxi01.example.com
+.\esxi_local_user_compliance_v0.0.3.ps1 --validate --host esxi01.example.com
 ```
 
 ## Command Reference
@@ -149,7 +160,7 @@ Versioned example:
 - `--check-connectivity` Validate and test direct ESXi login.
 - `--host` One ESXi host or a comma-separated list of ESXi hosts.
 - `--csv` CSV file containing hosts.
-- `--username` Specific username for `--check-connectivity`.
+- `--username` For `--validate` and `--remediate`, overrides `RequiredUsernames`. For `--check-connectivity`, specifies the direct ESXi login username.
 - `--pass` Password used for remediation or connectivity checks.
 - `--lockdown-mode` Connectivity-only option. Accepts `enable` or `disable`.
 - `--help` Show built-in usage output.
@@ -163,7 +174,7 @@ Each run creates:
 - A log file under the configured `LogDirectory`
 - A CSV report under the configured `ReportDirectory`
 
-In `esxi_local_user_compliance_v0.0.2.ps1`, the log also includes a startup line showing the script version used for that run.
+In `esxi_local_user_compliance_v0.0.3.ps1`, the log also includes a startup line showing the script version used for that run.
 
 The report includes:
 
@@ -183,6 +194,7 @@ The report includes:
 - Lockdown restore status
 - Lockdown exception membership
 - Connectivity test result
+- Password reset status
 - Action status and message
 
 ## Examples
@@ -190,37 +202,49 @@ The report includes:
 Validate a single host:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.2.ps1 --validate --host esxi01.example.com
+.\esxi_local_user_compliance_v0.0.3.ps1 --validate --host esxi01.example.com
 ```
 
 Validate multiple hosts:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.2.ps1 --validate --host esxi01.example.com,esxi02.example.com
+.\esxi_local_user_compliance_v0.0.3.ps1 --validate --host esxi01.example.com,esxi02.example.com
+```
+
+Validate a specific username instead of `RequiredUsernames`:
+
+```powershell
+.\esxi_local_user_compliance_v0.0.3.ps1 --validate --host esxi01.example.com --username SOCVA
 ```
 
 Remediate using secure prompt for password:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.2.ps1 --remediate --host esxi01.example.com,esxi02.example.com
+.\esxi_local_user_compliance_v0.0.3.ps1 --remediate --host esxi01.example.com,esxi02.example.com
+```
+
+Remediate a specific username with an explicit password:
+
+```powershell
+.\esxi_local_user_compliance_v0.0.3.ps1 --remediate --host esxi01.example.com --username SOCVA --pass 'StrongPassword123!'
 ```
 
 Check connectivity from CSV input:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.2.ps1 --check-connectivity --csv .\hosts.csv --username SOCVA
+.\esxi_local_user_compliance_v0.0.3.ps1 --check-connectivity --csv .\hosts.csv --username SOCVA
 ```
 
 Check connectivity for all hosts in connected vCenters:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.2.ps1 --check-connectivity --username SOCVA --lockdown-mode enable
+.\esxi_local_user_compliance_v0.0.3.ps1 --check-connectivity --username SOCVA --lockdown-mode enable
 ```
 
 Validate all hosts in connected vCenters:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.2.ps1 --validate
+.\esxi_local_user_compliance_v0.0.3.ps1 --validate
 ```
 
 ## Notes
