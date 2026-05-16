@@ -144,7 +144,7 @@ Credential behavior:
 Example:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.3.ps1 --check-connectivity --host esxi01.example.com --username SOCVA --pass 'StrongPassword123!' --lockdown-mode enable
+.\esxi_local_user_compliance_v0.0.3.ps1 --check-connectivity --host esxi01.example.com --username imallikarjun --pass 'StrongPassword123!' --lockdown-mode enable
 ```
 
 Versioned example:
@@ -214,7 +214,7 @@ Validate multiple hosts:
 Validate a specific username instead of `RequiredUsernames`:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.3.ps1 --validate --host esxi01.example.com --username SOCVA
+.\esxi_local_user_compliance_v0.0.3.ps1 --validate --host esxi01.example.com --username imallikarjun
 ```
 
 Remediate using secure prompt for password:
@@ -226,19 +226,19 @@ Remediate using secure prompt for password:
 Remediate a specific username with an explicit password:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.3.ps1 --remediate --host esxi01.example.com --username SOCVA --pass 'StrongPassword123!'
+.\esxi_local_user_compliance_v0.0.3.ps1 --remediate --host esxi01.example.com --username imallikarjun --pass 'StrongPassword123!'
 ```
 
 Check connectivity from CSV input:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.3.ps1 --check-connectivity --csv .\hosts.csv --username SOCVA
+.\esxi_local_user_compliance_v0.0.3.ps1 --check-connectivity --csv .\hosts.csv --username imallikarjun
 ```
 
 Check connectivity for all hosts in connected vCenters:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.3.ps1 --check-connectivity --username SOCVA --lockdown-mode enable
+.\esxi_local_user_compliance_v0.0.3.ps1 --check-connectivity --username imallikarjun --lockdown-mode enable
 ```
 
 Validate all hosts in connected vCenters:
