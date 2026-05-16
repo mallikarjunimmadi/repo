@@ -70,6 +70,8 @@ $Script:Summary = [ordered]@{
     ResolvedHostCount = 0
     ProcessedHostCount = 0
     SkippedHostCount = 0
+    TotalPlannedRows = 0
+    CompletedRows = 0
     SuccessCount = 0
     FailedCount = 0
     SkippedCount = 0
@@ -163,6 +165,37 @@ function Write-Log {
     }
 
     Add-Content -Path $Script:LogFile -Value $line
+}
+
+function Write-RunProgress {
+    <#
+    .SYNOPSIS
+    Updates the console progress bar for row-by-row processing.
+
+    .DESCRIPTION
+    Tracks completion using report rows because every host/username outcome
+    produces exactly one row, including skipped hosts.
+    #>
+    param(
+        [switch]$Completed
+    )
+
+    $total = [int]$Script:Summary.TotalPlannedRows
+    $done = [int]$Script:Summary.CompletedRows
+
+    if ($total -le 0) {
+        return
+    }
+
+    $percentComplete = [int](($done / $total) * 100)
+    if ($percentComplete -gt 100) {
+        $percentComplete = 100
+    }
+
+    $status = "$done of $total completed"
+    $currentOperation = if ($Completed) { 'Run complete' } else { 'Processing host user checks' }
+
+    Write-Progress -Activity 'ESXi local user compliance' -Status $status -CurrentOperation $currentOperation -PercentComplete $percentComplete -Completed:$Completed
 }
 
 function Parse-Arguments {
@@ -1087,6 +1120,9 @@ function Add-ReportRow {
     else {
         $Row | Export-Csv -Path $Script:ReportFile -NoTypeInformation -Force
     }
+
+    $Script:Summary.CompletedRows++
+    Write-RunProgress
 }
 
 function Export-Report {
@@ -1255,6 +1291,9 @@ try {
             $connectivityLockdownMode = $cli.LockdownMode
         }
     }
+
+    $Script:Summary.TotalPlannedRows = $resolvedHosts.Count * $targetUsernames.Count
+    Write-RunProgress
 
     # Process each resolved host independently so failures on one host do not
     # prevent later hosts from being evaluated and reported.
@@ -1430,12 +1469,14 @@ try {
     }
 
     # Final reporting always runs at the end of a successful pass.
+    Write-RunProgress -Completed
     Export-Report
     Write-Summary
 }
 catch {
     # Even on fatal errors, write the summary and rethrow so callers still see
     # the original failure while logs remain complete.
+    Write-RunProgress -Completed
     Write-Log -Level 'ERROR' -Message $_.Exception.Message
     Write-Summary
     throw
