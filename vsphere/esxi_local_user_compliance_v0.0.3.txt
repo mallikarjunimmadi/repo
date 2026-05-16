@@ -89,7 +89,9 @@ function Show-Usage {
     @'
 Usage:
   .\esxi_local_user_compliance_v0.0.3.ps1 --validate --host esxi01
+  .\esxi_local_user_compliance_v0.0.3.ps1 --validate --host esxi01 --username SOCVA
   .\esxi_local_user_compliance_v0.0.3.ps1 --remediate --host esxi01,esxi02 --pass MyPassword!
+  .\esxi_local_user_compliance_v0.0.3.ps1 --remediate --host esxi01 --username SOCVA --pass MyPassword!
   .\esxi_local_user_compliance_v0.0.3.ps1 --check-connectivity --csv .\hosts.csv --username SOCVA --pass MyPassword! --lockdown-mode enable
 
 Supported arguments:
@@ -106,7 +108,8 @@ Supported arguments:
 Notes:
   - Connect to one or more vCenters before running this script.
   - CSV input should contain a host column. Default column name is "Host".
-  - The same password is used for all usernames listed in $RequiredUsernames.
+  - For --validate and --remediate, --username overrides $RequiredUsernames and only the supplied username(s) are processed.
+  - The same password is used for all usernames targeted during remediation.
   - --validate and --check-connectivity default to all hosts in connected vCenters if no host input is provided.
 '@
 }
@@ -1232,6 +1235,16 @@ try {
     $plainTextPassword = $null
     $connectivityUsername = $null
     $connectivityLockdownMode = 'enable'
+    $targetUsernames = @($RequiredUsernames | Where-Object { $_ -and $_.Trim() } | Sort-Object -Unique)
+
+    if ($cli.Mode -in @('validate', 'remediate') -and $cli.Username) {
+        $targetUsernames = @(Expand-HostTokens -Value $cli.Username | Sort-Object -Unique)
+    }
+
+    if ($cli.Mode -in @('validate', 'remediate') -and $targetUsernames.Count -eq 0) {
+        throw 'At least one target username is required for validate or remediate mode.'
+    }
+
     if ($cli.Mode -eq 'remediate') {
         $plainTextPassword = Get-PlainTextPassword -ProvidedPassword $cli.Password -PromptMessage 'Enter password for required host user account(s)'
     }
@@ -1256,7 +1269,7 @@ try {
             $skippedMessage = "Host connection state '$($resolvedHost.ConnectionState)' is not eligible. Allowed states: $($AllowedHostConnectionStates -join ', ')."
             Write-Log -Level 'WARN' -Message "Skipping host '$($context.VMHost.Name)' in vCenter '$($context.VCenter)' because $skippedMessage"
 
-            foreach ($username in $RequiredUsernames) {
+            foreach ($username in $targetUsernames) {
                 Add-ReportRow -Row ([pscustomobject]@{
                     Timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
                     Mode = $cli.Mode
@@ -1309,7 +1322,7 @@ try {
         # Evaluate each required username on the current host. In remediation
         # mode, the script first enforces the desired state and then re-reads
         # the host so the report reflects the post-remediation outcome.
-        foreach ($username in $RequiredUsernames) {
+        foreach ($username in $targetUsernames) {
             $userPresent = $false
             $readOnly = $false
             $lockdownException = $false
