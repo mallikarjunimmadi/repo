@@ -645,9 +645,11 @@ function Test-HostUserPresence {
     foreach ($query in $queries) {
         try {
             $results = @($Context.UserDirectory.RetrieveUserGroups('', $query.Search, '', '', $true, $true, $query.ExactMatch))
-            if (($results | Where-Object {
+            $matchingResults = @($results | Where-Object {
                 $_.Principal -and $_.Principal.ToString().Trim().ToLowerInvariant() -eq $normalizedUsername
-            }).Count -gt 0) {
+            })
+
+            if ($matchingResults.Count -gt 0) {
                 return $true
             }
         }
