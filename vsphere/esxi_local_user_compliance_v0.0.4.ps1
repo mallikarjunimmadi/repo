@@ -1,11 +1,12 @@
 <#
 .SYNOPSIS
-v0.0.3 of the ESXi local user compliance script.
+v0.0.4 of the ESXi local user compliance script.
 
 .DESCRIPTION
-This version preserves the existing validation, remediation, and connectivity
-behavior while adding clearer documentation for each configuration block,
-runtime block, helper function, and the main execution flow.
+This version updates remediation sequencing so user creation and compliance
+steps are executed in the required order, adds optional password reset
+behavior through `--force-reset`, and improves post-action reporting so user
+presence is recorded accurately even when a later step fails.
 
 .NOTES
 - Requires an existing PowerCLI session connected to one or more vCenters.
@@ -16,36 +17,8 @@ runtime block, helper function, and the main execution flow.
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# ============================================================================
-# Script identity
-# The version is logged at runtime so operators can confirm which script
-# revision produced the output.
-# ============================================================================
-$ScriptVersion = '0.0.3'
+$ScriptVersion = '0.0.4'
 
-# ============================================================================
-# Configurable settings
-# Update these values to match your environment and policy requirements.
-#
-# RequiredUsernames:
-#   One or more ESXi local accounts that must exist on every target host.
-#
-# ReportDirectory / LogDirectory:
-#   Local output folders created under the script directory if they do not
-#   already exist.
-#
-# InputCsvHostColumn:
-#   Preferred CSV column name used when importing hosts from a file.
-#
-# DesiredLockdownMode:
-#   Lockdown mode enforced during remediation.
-#
-# DefaultUserDescription:
-#   Description written to newly created ESXi local users.
-#
-# AllowedHostConnectionStates:
-#   Hosts in other states are skipped and recorded as skipped in the report.
-# ============================================================================
 $RequiredUsernames = @(
     'SOCVA'
 )
@@ -57,11 +30,6 @@ $DesiredLockdownMode = 'lockdownNormal'
 $DefaultUserDescription = 'Managed by vsphere-esxi-hardening script'
 $AllowedHostConnectionStates = @('Connected', 'Maintenance')
 
-# ============================================================================
-# Runtime state
-# These script-scoped variables are shared across helper functions so that
-# logging, reporting, and summary tracking stay centralized.
-# ============================================================================
 $Script:LogFile = $null
 $Script:ReportFile = $null
 $Script:ReportRows = New-Object System.Collections.Generic.List[object]
@@ -79,22 +47,14 @@ $Script:Summary = [ordered]@{
 $Script:RunStartTime = $null
 
 function Show-Usage {
-    <#
-    .SYNOPSIS
-    Displays command-line usage and examples.
-
-    .DESCRIPTION
-    Prints the supported execution modes, accepted parameters, and a few
-    operational notes so the script can be run without opening external
-    documentation.
-    #>
     @'
 Usage:
-  .\esxi_local_user_compliance_v0.0.3.ps1 --validate --host esxi01
-  .\esxi_local_user_compliance_v0.0.3.ps1 --validate --host esxi01 --username SOCVA
-  .\esxi_local_user_compliance_v0.0.3.ps1 --remediate --host esxi01,esxi02 --pass MyPassword!
-  .\esxi_local_user_compliance_v0.0.3.ps1 --remediate --host esxi01 --username SOCVA --pass MyPassword!
-  .\esxi_local_user_compliance_v0.0.3.ps1 --check-connectivity --csv .\hosts.csv --username SOCVA --pass MyPassword! --lockdown-mode enable
+  .\esxi_local_user_compliance_v0.0.4.ps1 --validate --host esxi01
+  .\esxi_local_user_compliance_v0.0.4.ps1 --validate --host esxi01 --username SOCVA
+  .\esxi_local_user_compliance_v0.0.4.ps1 --remediate --host esxi01,esxi02
+  .\esxi_local_user_compliance_v0.0.4.ps1 --remediate --host esxi01 --username SOCVA --pass MyPassword!
+  .\esxi_local_user_compliance_v0.0.4.ps1 --remediate --host esxi01 --username SOCVA --pass MyPassword! --force-reset
+  .\esxi_local_user_compliance_v0.0.4.ps1 --check-connectivity --csv .\hosts.csv --username SOCVA --pass MyPassword! --lockdown-mode enable
 
 Supported arguments:
   --validate
@@ -104,6 +64,7 @@ Supported arguments:
   --csv <path-to-csv>
   --username <username>
   --pass <password>
+  --force-reset
   --lockdown-mode <enable|disable>
   --help
 
@@ -111,20 +72,13 @@ Notes:
   - Connect to one or more vCenters before running this script.
   - CSV input should contain a host column. Default column name is "Host".
   - For --validate and --remediate, --username overrides $RequiredUsernames and only the supplied username(s) are processed.
-  - The same password is used for all usernames targeted during remediation.
+  - For remediation, password is required when creating a missing user and optional otherwise unless --force-reset is used.
+  - --force-reset resets the password only for users that already exist.
   - --validate and --check-connectivity default to all hosts in connected vCenters if no host input is provided.
 '@
 }
 
 function Initialize-OutputPaths {
-    <#
-    .SYNOPSIS
-    Creates output folders and prepares unique log/report filenames.
-
-    .DESCRIPTION
-    Every run gets its own timestamped log and CSV report so results from
-    separate executions do not overwrite each other.
-    #>
     $timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
 
     foreach ($directory in @($ReportDirectory, $LogDirectory)) {
@@ -138,14 +92,6 @@ function Initialize-OutputPaths {
 }
 
 function Write-Log {
-    <#
-    .SYNOPSIS
-    Writes a message to both console and log file.
-
-    .DESCRIPTION
-    Standardizes timestamped logging across the script and adds simple color
-    coding for warning, error, and success messages in the console.
-    #>
     param(
         [Parameter(Mandatory = $true)]
         [string]$Message,
@@ -168,14 +114,6 @@ function Write-Log {
 }
 
 function Write-RunProgress {
-    <#
-    .SYNOPSIS
-    Updates the console progress bar for row-by-row processing.
-
-    .DESCRIPTION
-    Tracks completion using report rows because every host/username outcome
-    produces exactly one row, including skipped hosts.
-    #>
     param(
         [switch]$Completed
     )
@@ -199,15 +137,6 @@ function Write-RunProgress {
 }
 
 function Parse-Arguments {
-    <#
-    .SYNOPSIS
-    Parses CLI arguments into a structured object.
-
-    .DESCRIPTION
-    Supports both separated and equals-sign argument styles, validates that
-    only one primary mode is chosen, and normalizes the optional lockdown
-    preference for connectivity checks.
-    #>
     param(
         [string[]]$Arguments
     )
@@ -218,6 +147,7 @@ function Parse-Arguments {
         CsvPath = $null
         Username = $null
         Password = $null
+        ForceReset = $false
         LockdownMode = $null
         Help = $false
     }
@@ -298,6 +228,10 @@ function Parse-Arguments {
                 $parsed.Password = $value
                 break
             }
+            '^--?force-reset$' {
+                $parsed.ForceReset = $true
+                break
+            }
             '^--?lockdown-mode$' {
                 if (-not $value) {
                     $index++
@@ -331,14 +265,6 @@ function Parse-Arguments {
 }
 
 function Get-RequiredValue {
-    <#
-    .SYNOPSIS
-    Returns a provided value or prompts the operator for one.
-
-    .DESCRIPTION
-    Used for values such as the direct ESXi username during connectivity
-    checks, where an empty value should be treated as an execution error.
-    #>
     param(
         [string]$ProvidedValue,
         [string]$PromptMessage
@@ -357,15 +283,6 @@ function Get-RequiredValue {
 }
 
 function Get-PlainTextPassword {
-    <#
-    .SYNOPSIS
-    Returns a provided password or securely prompts for one.
-
-    .DESCRIPTION
-    When prompting, PowerShell returns a SecureString. This helper converts it
-    temporarily into plain text because the PowerCLI connection and ESXi user
-    creation APIs in this script require a plain-text value.
-    #>
     param(
         [string]$ProvidedPassword,
         [string]$PromptMessage = 'Enter password'
@@ -394,14 +311,6 @@ function Get-PlainTextPassword {
 }
 
 function Expand-HostTokens {
-    <#
-    .SYNOPSIS
-    Splits a host string into individual host entries.
-
-    .DESCRIPTION
-    Accepts commas, spaces, and semicolons so operators can pass host input in
-    a flexible format from the command line or from raw CSV/file content.
-    #>
     param(
         [AllowNull()]
         [AllowEmptyString()]
@@ -420,14 +329,6 @@ function Expand-HostTokens {
 }
 
 function Get-ConnectedVCenterServers {
-    <#
-    .SYNOPSIS
-    Returns currently connected PowerCLI vCenter sessions.
-
-    .DESCRIPTION
-    Checks both multi-server and single-server PowerCLI globals so the script
-    can work whether the operator connected to one vCenter or many.
-    #>
     if (Get-Variable -Name DefaultVIServers -Scope Global -ErrorAction SilentlyContinue) {
         $servers = @($global:DefaultVIServers | Where-Object { $_.IsConnected -eq $true })
         if ($servers.Count -gt 0) {
@@ -443,15 +344,6 @@ function Get-ConnectedVCenterServers {
 }
 
 function Get-HostNamesFromInput {
-    <#
-    .SYNOPSIS
-    Collects target hostnames from CLI and/or CSV input.
-
-    .DESCRIPTION
-    Supports both a structured CSV import and a fallback raw-line read. This
-    keeps the script resilient even when the CSV is very simple or does not
-    perfectly match the preferred column name.
-    #>
     param(
         [string]$HostArgument,
         [string]$CsvPath
@@ -524,15 +416,6 @@ function Get-HostNamesFromInput {
 }
 
 function Resolve-TargetHosts {
-    <#
-    .SYNOPSIS
-    Resolves requested hostnames across all connected vCenters.
-
-    .DESCRIPTION
-    Produces a normalized host record containing the VMHost object, parent
-    vCenter, host connection state, and a flag that says whether the host is
-    eligible for processing.
-    #>
     param(
         [string[]]$HostNames,
         [array]$VIServers
@@ -569,14 +452,6 @@ function Resolve-TargetHosts {
 }
 
 function Get-AllConnectedHosts {
-    <#
-    .SYNOPSIS
-    Returns all hosts visible through the connected vCenter sessions.
-
-    .DESCRIPTION
-    Used when the operator does not specify host input for validation or
-    connectivity mode and wants the script to operate on the full inventory.
-    #>
     param(
         [array]$VIServers
     )
@@ -602,14 +477,6 @@ function Get-AllConnectedHosts {
 }
 
 function Get-HostContext {
-    <#
-    .SYNOPSIS
-    Builds the reusable management context for a host.
-
-    .DESCRIPTION
-    Loads the host view plus the specific manager objects needed later for user
-    enumeration, account creation, access rights, and lockdown operations.
-    #>
     param(
         [Parameter(Mandatory = $true)]
         [object]$VMHost,
@@ -650,14 +517,6 @@ function Get-HostContext {
 }
 
 function Test-HostUserPresence {
-    <#
-    .SYNOPSIS
-    Checks whether a local user exists on the host.
-
-    .DESCRIPTION
-    Queries the host user directory and matches the returned principal names
-    case-insensitively to avoid false negatives caused by casing differences.
-    #>
     param(
         [Parameter(Mandatory = $true)]
         [object]$Context,
@@ -702,14 +561,6 @@ function Test-HostUserPresence {
 }
 
 function Get-HostAccessEntry {
-    <#
-    .SYNOPSIS
-    Returns the host access entry for a specific local user.
-
-    .DESCRIPTION
-    Reads the host access control list and filters for a non-group entry
-    matching the requested username.
-    #>
     param(
         [Parameter(Mandatory = $true)]
         [object]$Context,
@@ -734,14 +585,6 @@ function Get-HostAccessEntry {
 }
 
 function Get-LockdownExceptions {
-    <#
-    .SYNOPSIS
-    Returns the current lockdown exception users for the host.
-
-    .DESCRIPTION
-    Wraps the host access manager call and centralizes the availability check
-    for clearer downstream error messages.
-    #>
     param(
         [Parameter(Mandatory = $true)]
         [object]$Context
@@ -755,14 +598,6 @@ function Get-LockdownExceptions {
 }
 
 function Ensure-HostUser {
-    <#
-    .SYNOPSIS
-    Creates the local user if it does not already exist.
-
-    .DESCRIPTION
-    Remediation helper that leaves existing accounts unchanged and creates only
-    the missing local ESXi user with the configured default description.
-    #>
     param(
         [Parameter(Mandatory = $true)]
         [object]$Context,
@@ -777,7 +612,7 @@ function Ensure-HostUser {
     if ((Test-HostUserPresence -Context $Context -Username $Username) -or
         (Get-HostAccessEntry -Context $Context -Username $Username)) {
         Write-Log -Message "User '$Username' already exists on host '$($Context.VMHost.Name)'."
-        return
+        return $false
     }
 
     if (-not $Context.AccountManager) {
@@ -792,11 +627,12 @@ function Ensure-HostUser {
     try {
         $Context.AccountManager.CreateUser($userSpec)
         Write-Log -Level 'SUCCESS' -Message "Created user '$Username' on host '$($Context.VMHost.Name)'."
+        return $true
     }
     catch {
         if ($_.Exception.Message -match 'already exists') {
-            Write-Log -Level 'WARN' -Message "User '$Username' already exists on host '$($Context.VMHost.Name)'. Continuing with password reset and access validation."
-            return
+            Write-Log -Level 'WARN' -Message "User '$Username' already exists on host '$($Context.VMHost.Name)'. Continuing with access validation."
+            return $false
         }
 
         throw
@@ -804,15 +640,6 @@ function Ensure-HostUser {
 }
 
 function Reset-HostUserPassword {
-    <#
-    .SYNOPSIS
-    Resets the local user's password to the supplied remediation password.
-
-    .DESCRIPTION
-    This is called during remediation even when the user already exists so the
-    host's effective local account password is aligned with the operator-
-    supplied password for the current run.
-    #>
     param(
         [Parameter(Mandatory = $true)]
         [object]$Context,
@@ -837,14 +664,6 @@ function Reset-HostUserPassword {
 }
 
 function Ensure-ReadOnlyAccess {
-    <#
-    .SYNOPSIS
-    Ensures the local user has ReadOnly host access.
-
-    .DESCRIPTION
-    If the access mode is already correct nothing changes; otherwise the host
-    access manager updates the account to `accessReadOnly`.
-    #>
     param(
         [Parameter(Mandatory = $true)]
         [object]$Context,
@@ -864,20 +683,12 @@ function Ensure-ReadOnlyAccess {
 }
 
 function Ensure-LockdownMode {
-    <#
-    .SYNOPSIS
-    Ensures the host is in the configured lockdown mode.
-
-    .DESCRIPTION
-    Used during remediation so the host-side security posture matches the
-    policy defined at the top of the script.
-    #>
     param(
         [Parameter(Mandatory = $true)]
         [object]$Context
     )
 
-    $currentMode = [string]$Context.AccessManager.LockdownMode
+    $currentMode = Get-CurrentLockdownMode -Context $Context
     if ($currentMode -eq $DesiredLockdownMode) {
         Write-Log -Message "Host '$($Context.VMHost.Name)' is already in lockdown mode '$DesiredLockdownMode'."
         return
@@ -888,21 +699,13 @@ function Ensure-LockdownMode {
 }
 
 function Get-CurrentLockdownMode {
-    <#
-    .SYNOPSIS
-    Reads the current lockdown mode directly from the host view.
-
-    .DESCRIPTION
-    Pulls a fresh view instead of relying on cached state so the script can
-    verify real-time results after a lockdown change operation.
-    #>
     param(
         [Parameter(Mandatory = $true)]
         [object]$Context
     )
 
     if (-not $Context.VMHost) {
-        throw "VMHost is not available in context."
+        throw 'VMHost is not available in context.'
     }
 
     $freshHostView = Get-View -Id $Context.VMHost.Id -Property Config.LockdownMode
@@ -916,14 +719,6 @@ function Get-CurrentLockdownMode {
 }
 
 function Set-LockdownMode {
-    <#
-    .SYNOPSIS
-    Changes the host lockdown mode and verifies the updated value.
-
-    .DESCRIPTION
-    This helper is mainly used by connectivity checks that may need to
-    temporarily disable lockdown and later restore the original mode.
-    #>
     param(
         [Parameter(Mandatory = $true)]
         [object]$Context,
@@ -945,14 +740,6 @@ function Set-LockdownMode {
 }
 
 function Ensure-LockdownExceptionUser {
-    <#
-    .SYNOPSIS
-    Adds the local user to the lockdown exception list if needed.
-
-    .DESCRIPTION
-    Reads the current exception list, appends the user if missing, and writes
-    back a unique sorted list to avoid duplicate entries.
-    #>
     param(
         [Parameter(Mandatory = $true)]
         [object]$Context,
@@ -966,7 +753,8 @@ function Ensure-LockdownExceptionUser {
         [void]$currentExceptions.Add($user)
     }
 
-    if ($currentExceptions.Contains($Username)) {
+    $existingExceptions = @($currentExceptions | ForEach-Object { $_.ToString().Trim().ToLowerInvariant() })
+    if ($existingExceptions -contains $Username.Trim().ToLowerInvariant()) {
         Write-Log -Message "User '$Username' is already in the lockdown exception list on host '$($Context.VMHost.Name)'."
         return
     }
@@ -976,16 +764,46 @@ function Ensure-LockdownExceptionUser {
     Write-Log -Level 'SUCCESS' -Message "Added '$Username' to lockdown exceptions on host '$($Context.VMHost.Name)'."
 }
 
-function Test-HostConnectivity {
-    <#
-    .SYNOPSIS
-    Attempts a direct PowerCLI login to an ESXi host.
+function Get-UserComplianceSnapshot {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Context,
 
-    .DESCRIPTION
-    Used only in connectivity-check mode. The function returns a structured
-    result object instead of throwing immediately so the report captures both
-    success and failure outcomes cleanly.
-    #>
+        [Parameter(Mandatory = $true)]
+        [string]$Username
+    )
+
+    $snapshot = [ordered]@{
+        UserPresent = $false
+        ReadOnlyAccess = $false
+        LockdownMode = $null
+        InLockdownExceptionList = $false
+    }
+
+    try {
+        $entry = Get-HostAccessEntry -Context $Context -Username $Username
+        $userPresent = Test-HostUserPresence -Context $Context -Username $Username
+
+        if (-not $userPresent -and $entry) {
+            Write-Log -Level 'WARN' -Message "UserDirectory did not return user '$Username' on host '$($Context.VMHost.Name)'. Falling back to host access entry presence."
+            $userPresent = $true
+        }
+
+        $snapshot.UserPresent = $userPresent
+        $snapshot.ReadOnlyAccess = ($entry -and $entry.AccessMode -eq 'accessReadOnly')
+
+        $exceptions = @(Get-LockdownExceptions -Context $Context | ForEach-Object { $_.ToString().Trim().ToLowerInvariant() })
+        $snapshot.InLockdownExceptionList = $exceptions -contains $Username.Trim().ToLowerInvariant()
+        $snapshot.LockdownMode = Get-CurrentLockdownMode -Context $Context
+    }
+    catch {
+        Write-Log -Level 'WARN' -Message "Unable to fully refresh compliance state for user '$Username' on host '$($Context.VMHost.Name)': $($_.Exception.Message)"
+    }
+
+    return [pscustomobject]$snapshot
+}
+
+function Test-HostConnectivity {
     param(
         [Parameter(Mandatory = $true)]
         [string]$Hostname,
@@ -1020,15 +838,6 @@ function Test-HostConnectivity {
 }
 
 function Invoke-ConnectivityCheckWithLockdownHandling {
-    <#
-    .SYNOPSIS
-    Runs the ESXi connectivity check while honoring lockdown handling rules.
-
-    .DESCRIPTION
-    If `--lockdown-mode disable` is chosen and the host is locked down, the
-    script temporarily disables lockdown, tests connectivity, and restores the
-    original mode in a finally block.
-    #>
     param(
         [Parameter(Mandatory = $true)]
         [object]$Context,
@@ -1099,14 +908,6 @@ function Invoke-ConnectivityCheckWithLockdownHandling {
 }
 
 function Add-ReportRow {
-    <#
-    .SYNOPSIS
-    Adds a row to the in-memory and on-disk report.
-
-    .DESCRIPTION
-    The report is appended incrementally so data still exists on disk even if
-    the run stops partway through a large host list.
-    #>
     param(
         [Parameter(Mandatory = $true)]
         [psobject]$Row
@@ -1126,14 +927,6 @@ function Add-ReportRow {
 }
 
 function Export-Report {
-    <#
-    .SYNOPSIS
-    Finalizes report output messaging.
-
-    .DESCRIPTION
-    The CSV itself is written incrementally by Add-ReportRow. This function
-    simply reports whether any rows were generated and where the output lives.
-    #>
     if ($Script:ReportRows.Count -eq 0) {
         Write-Log -Level 'WARN' -Message 'No report rows were generated.'
         return
@@ -1144,14 +937,6 @@ function Export-Report {
 }
 
 function Write-Summary {
-    <#
-    .SYNOPSIS
-    Writes end-of-run summary metrics to the log.
-
-    .DESCRIPTION
-    Produces a compact table showing counts for the active execution mode along
-    with start time, end time, and elapsed runtime.
-    #>
     $elapsed = $null
     $endTime = Get-Date
     if ($Script:RunStartTime) {
@@ -1207,17 +992,11 @@ function Write-Summary {
     }
 }
 
-# ============================================================================
-# Main execution bootstrap
-# Initializes output files and records the run start time before any work is
-# done so even early failures are captured in the log.
-# ============================================================================
 Initialize-OutputPaths
 $Script:RunStartTime = Get-Date
 Write-Log -Message "Starting ESXi local user compliance script version $ScriptVersion."
 
 try {
-    # Parse and validate CLI input before touching vCenter inventory.
     $cli = Parse-Arguments -Arguments $args
 
     if ($cli.Help) {
@@ -1233,8 +1012,10 @@ try {
         throw '--lockdown-mode can be used only with --check-connectivity.'
     }
 
-    # Discover the current PowerCLI vCenter context. This script intentionally
-    # reuses existing authenticated sessions instead of opening new ones.
+    if ($cli.ForceReset -and $cli.Mode -ne 'remediate') {
+        throw '--force-reset can be used only with --remediate.'
+    }
+
     $connectedVIServers = @(Get-ConnectedVCenterServers)
     if ($connectedVIServers.Count -eq 0) {
         throw 'No connected vCenters were found. Connect to one or more vCenters first, then rerun the script.'
@@ -1242,8 +1023,6 @@ try {
 
     Write-Log -Message ("Connected vCenters detected: {0}" -f (($connectedVIServers | Select-Object -ExpandProperty Name) -join ', '))
 
-    # Build the list of requested hostnames from CLI and/or CSV input, then
-    # resolve them against the connected vCenter inventory.
     $hostNames = @(Get-HostNamesFromInput -HostArgument $cli.HostArgument -CsvPath $cli.CsvPath)
     $Script:Summary.InputHostCount = $hostNames.Count
     $resolvedHosts = @()
@@ -1267,7 +1046,6 @@ try {
 
     $Script:Summary.ResolvedHostCount = $resolvedHosts.Count
 
-    # Gather credentials only for modes that require them.
     $plainTextPassword = $null
     $connectivityUsername = $null
     $connectivityLockdownMode = 'enable'
@@ -1281,9 +1059,10 @@ try {
         throw 'At least one target username is required for validate or remediate mode.'
     }
 
-    if ($cli.Mode -eq 'remediate') {
+    if ($cli.Mode -eq 'remediate' -and $cli.ForceReset) {
         $plainTextPassword = Get-PlainTextPassword -ProvidedPassword $cli.Password -PromptMessage 'Enter password for required host user account(s)'
     }
+
     if ($cli.Mode -eq 'check-connectivity') {
         $connectivityUsername = Get-RequiredValue -ProvidedValue $cli.Username -PromptMessage 'Enter username for ESXi connectivity check'
         $plainTextPassword = Get-PlainTextPassword -ProvidedPassword $cli.Password -PromptMessage 'Enter password for ESXi connectivity check'
@@ -1295,14 +1074,10 @@ try {
     $Script:Summary.TotalPlannedRows = $resolvedHosts.Count * $targetUsernames.Count
     Write-RunProgress
 
-    # Process each resolved host independently so failures on one host do not
-    # prevent later hosts from being evaluated and reported.
     foreach ($resolvedHost in $resolvedHosts) {
         $context = Get-HostContext -VMHost $resolvedHost.VMHost -VCenter $resolvedHost.VCenter
         Write-Log -Message "Processing host '$($context.VMHost.Name)' in vCenter '$($context.VCenter)' and cluster '$($context.Cluster)'."
 
-        # Hosts in disallowed states are skipped but still reported for each
-        # required username so the CSV stays complete and auditable.
         if (-not $resolvedHost.IsEligible) {
             $Script:Summary.SkippedHostCount++
             $skippedMessage = "Host connection state '$($resolvedHost.ConnectionState)' is not eligible. Allowed states: $($AllowedHostConnectionStates -join ', ')."
@@ -1342,8 +1117,6 @@ try {
 
         $Script:Summary.ProcessedHostCount++
 
-        # Connectivity mode performs a host-level login test once, then the
-        # result is reused for each required user row in the report.
         $hostConnectivityResult = [pscustomobject]@{
             ConnectivityAttempted = $false
             ConnectivityStatus = 'NotRequested'
@@ -1358,15 +1131,15 @@ try {
             $hostConnectivityResult = Invoke-ConnectivityCheckWithLockdownHandling -Context $context -Username $connectivityUsername -Password $plainTextPassword -LockdownModePreference $connectivityLockdownMode
         }
 
-        # Evaluate each required username on the current host. In remediation
-        # mode, the script first enforces the desired state and then re-reads
-        # the host so the report reflects the post-remediation outcome.
         foreach ($username in $targetUsernames) {
-            $userPresent = $false
-            $readOnly = $false
-            $lockdownException = $false
-            $lockdownMode = $null
-            $passwordResetStatus = 'NotRequested'
+            $snapshot = [pscustomobject]@{
+                UserPresent = $false
+                ReadOnlyAccess = $false
+                LockdownMode = $null
+                InLockdownExceptionList = $false
+            }
+            $userCreatedThisRun = $false
+            $passwordResetStatus = if ($cli.Mode -eq 'remediate') { 'NotRequested' } else { 'NotApplicable' }
             $actionStatus = 'Validated'
             $actionMessage = $null
             $connectivityResult = [pscustomobject]@{
@@ -1381,30 +1154,39 @@ try {
 
             try {
                 if ($cli.Mode -eq 'remediate') {
-                    Ensure-HostUser -Context $context -Username $username -Password $plainTextPassword
-                    Reset-HostUserPassword -Context $context -Username $username -Password $plainTextPassword
-                    $passwordResetStatus = 'Success'
+                    $snapshot = Get-UserComplianceSnapshot -Context $context -Username $username
+
+                    if (-not $snapshot.UserPresent) {
+                        if (-not $plainTextPassword) {
+                            $plainTextPassword = Get-PlainTextPassword -ProvidedPassword $cli.Password -PromptMessage "Enter password to create missing host user '$username'"
+                        }
+
+                        $userCreatedThisRun = Ensure-HostUser -Context $context -Username $username -Password $plainTextPassword
+                        $snapshot = Get-UserComplianceSnapshot -Context $context -Username $username
+                    }
+                    else {
+                        Write-Log -Message "User '$username' already exists on host '$($context.VMHost.Name)'."
+                    }
+
                     Ensure-ReadOnlyAccess -Context $context -Username $username
                     Ensure-LockdownMode -Context $context
                     Ensure-LockdownExceptionUser -Context $context -Username $username
+
+                    if ($cli.ForceReset -and -not $userCreatedThisRun) {
+                        Reset-HostUserPassword -Context $context -Username $username -Password $plainTextPassword
+                        $passwordResetStatus = 'Success'
+                    }
+                    elseif ($userCreatedThisRun) {
+                        $passwordResetStatus = 'NotRequired'
+                    }
+                    else {
+                        $passwordResetStatus = 'Skipped'
+                    }
+
                     $actionStatus = 'Remediated'
                 }
 
-                $entry = Get-HostAccessEntry -Context $context -Username $username
-                $userPresent = Test-HostUserPresence -Context $context -Username $username
-
-                # Some hosts may return an ACL entry even when UserDirectory does
-                # not positively enumerate the account. In that case, keep the
-                # report practical by accepting the ACL as evidence of presence.
-                if (-not $userPresent -and $entry) {
-                    Write-Log -Level 'WARN' -Message "UserDirectory did not return user '$username' on host '$($context.VMHost.Name)'. Falling back to host access entry presence."
-                    $userPresent = $true
-                }
-
-                $readOnly = ($entry -and $entry.AccessMode -eq 'accessReadOnly')
-
-                $lockdownException = (Get-LockdownExceptions -Context $context) -contains $username
-                $lockdownMode = Get-CurrentLockdownMode -Context $context
+                $snapshot = Get-UserComplianceSnapshot -Context $context -Username $username
 
                 if ($cli.Mode -eq 'check-connectivity') {
                     $connectivityResult = $hostConnectivityResult
@@ -1426,12 +1208,17 @@ try {
                 }
             }
             catch {
-                if ($cli.Mode -eq 'remediate' -and $passwordResetStatus -ne 'Success') {
+                if ($cli.Mode -eq 'remediate' -and $cli.ForceReset -and $passwordResetStatus -ne 'Success') {
                     $passwordResetStatus = 'Failed'
                 }
+                elseif ($cli.Mode -eq 'remediate' -and $passwordResetStatus -eq 'NotRequested') {
+                    $passwordResetStatus = 'Skipped'
+                }
+
                 $actionStatus = 'Failed'
                 $actionMessage = $_.Exception.Message
                 Write-Log -Level 'ERROR' -Message "Failed on host '$($context.VMHost.Name)' for user '$username': $actionMessage"
+                $snapshot = Get-UserComplianceSnapshot -Context $context -Username $username
             }
 
             Add-ReportRow -Row ([pscustomobject]@{
@@ -1444,14 +1231,14 @@ try {
                 Username = $username
                 ConnectivityUsername = $connectivityUsername
                 RequestedLockdownMode = $connectivityLockdownMode
-                UserPresent = $userPresent
-                ReadOnlyAccess = $readOnly
-                LockdownMode = $lockdownMode
+                UserPresent = $snapshot.UserPresent
+                ReadOnlyAccess = $snapshot.ReadOnlyAccess
+                LockdownMode = $snapshot.LockdownMode
                 PreLockdownMode = $connectivityResult.PreLockdownMode
                 PostLockdownMode = $connectivityResult.PostLockdownMode
                 LockdownTemporarilyDisabled = $connectivityResult.LockdownTemporarilyDisabled
                 LockdownRestoreStatus = $connectivityResult.LockdownRestoreStatus
-                InLockdownExceptionList = $lockdownException
+                InLockdownExceptionList = $snapshot.InLockdownExceptionList
                 ConnectivityAttempted = $connectivityResult.ConnectivityAttempted
                 ConnectivityStatus = $connectivityResult.ConnectivityStatus
                 ConnectivityMessage = $connectivityResult.ConnectivityMessage
@@ -1468,14 +1255,11 @@ try {
         }
     }
 
-    # Final reporting always runs at the end of a successful pass.
     Write-RunProgress -Completed
     Export-Report
     Write-Summary
 }
 catch {
-    # Even on fatal errors, write the summary and rethrow so callers still see
-    # the original failure while logs remain complete.
     Write-RunProgress -Completed
     Write-Log -Level 'ERROR' -Message $_.Exception.Message
     Write-Summary
