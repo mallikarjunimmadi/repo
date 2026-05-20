@@ -1,6 +1,6 @@
-# vSphere ESXi Local User Compliance v0.0.7
+# vSphere ESXi Local User Compliance v0.0.6
 
-Documentation for `esxi_local_user_compliance_v0.0.7.ps1`.
+Documentation for `esxi_local_user_compliance_v0.0.6.ps1`.
 
 ## Overview
 
@@ -116,43 +116,43 @@ Examples:
 Validate a single host:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -Validate -VMHost esxi01.example.com -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
+.\esxi_local_user_compliance_v0.0.6.ps1 -Validate -VMHost esxi01.example.com -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
 ```
 
 Validate multiple hosts in one comma-separated argument:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -Validate -VMHost esxi01.example.com,esxi02.example.com -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
+.\esxi_local_user_compliance_v0.0.6.ps1 -Validate -VMHost esxi01.example.com,esxi02.example.com -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
 ```
 
 Validate multiple hosts as separate values:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -Validate -VMHost esxi01.example.com esxi02.example.com -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
+.\esxi_local_user_compliance_v0.0.6.ps1 -Validate -VMHost esxi01.example.com esxi02.example.com -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
 ```
 
 Validate hosts from CSV:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -Validate -CsvPath .\hosts.csv -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
+.\esxi_local_user_compliance_v0.0.6.ps1 -Validate -CsvPath .\hosts.csv -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
 ```
 
 Validate a specific username:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -Validate -VMHost esxi01.example.com -Username <custom-username> -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
+.\esxi_local_user_compliance_v0.0.6.ps1 -Validate -VMHost esxi01.example.com -Username <custom-username> -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
 ```
 
 Validate multiple usernames:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -Validate -VMHost esxi01.example.com -Username <custom-username>,AUDITUSR -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
+.\esxi_local_user_compliance_v0.0.6.ps1 -Validate -VMHost esxi01.example.com -Username <custom-username>,AUDITUSR -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
 ```
 
 Validate all hosts in connected vCenters:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -Validate -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
+.\esxi_local_user_compliance_v0.0.6.ps1 -Validate -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
 ```
 
 ### Remediate
@@ -173,43 +173,43 @@ Examples:
 Remediate a single host and prompt for username/password:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -Remediate -VMHost esxi01.example.com -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
+.\esxi_local_user_compliance_v0.0.6.ps1 -Remediate -VMHost esxi01.example.com -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
 ```
 
 Remediate multiple hosts in one comma-separated argument:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -Remediate -VMHost esxi01.example.com,esxi02.example.com -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
+.\esxi_local_user_compliance_v0.0.6.ps1 -Remediate -VMHost esxi01.example.com,esxi02.example.com -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
 ```
 
 Remediate multiple hosts as separate values:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -Remediate -VMHost esxi01.example.com esxi02.example.com -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
+.\esxi_local_user_compliance_v0.0.6.ps1 -Remediate -VMHost esxi01.example.com esxi02.example.com -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
 ```
 
 Remediate a specific username and prompt for password:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -Remediate -VMHost esxi01.example.com -Username <custom-username> -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
+.\esxi_local_user_compliance_v0.0.6.ps1 -Remediate -VMHost esxi01.example.com -Username <custom-username> -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
 ```
 
 Remediate a specific username with an explicit password:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -Remediate -VMHost esxi01.example.com -Username <custom-username> -Password 'StrongPassword123!' -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
+.\esxi_local_user_compliance_v0.0.6.ps1 -Remediate -VMHost esxi01.example.com -Username <custom-username> -Password 'StrongPassword123!' -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
 ```
 
 Remediate with forced password reset:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -Remediate -VMHost esxi01.example.com -Username <custom-username> -Password 'StrongPassword123!' -ForceReset -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
+.\esxi_local_user_compliance_v0.0.6.ps1 -Remediate -VMHost esxi01.example.com -Username <custom-username> -Password 'StrongPassword123!' -ForceReset -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
 ```
 
 Remediate hosts from CSV:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -Remediate -CsvPath .\hosts.csv -Username <custom-username> -Password 'StrongPassword123!' -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
+.\esxi_local_user_compliance_v0.0.6.ps1 -Remediate -CsvPath .\hosts.csv -Username <custom-username> -Password 'StrongPassword123!' -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
 ```
 
 ### Check Connectivity
@@ -229,37 +229,37 @@ Examples:
 Check connectivity for one host and prompt for username/password:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -CheckConnectivity -VMHost esxi01.example.com
+.\esxi_local_user_compliance_v0.0.6.ps1 -CheckConnectivity -VMHost esxi01.example.com
 ```
 
 Check connectivity for one host with explicit credentials:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -CheckConnectivity -VMHost esxi01.example.com -Username <custom-username> -Password 'StrongPassword123!'
+.\esxi_local_user_compliance_v0.0.6.ps1 -CheckConnectivity -VMHost esxi01.example.com -Username <custom-username> -Password 'StrongPassword123!'
 ```
 
 Check connectivity from CSV:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -CheckConnectivity -CsvPath .\hosts.csv -Username <custom-username> -Password 'StrongPassword123!'
+.\esxi_local_user_compliance_v0.0.6.ps1 -CheckConnectivity -CsvPath .\hosts.csv -Username <custom-username> -Password 'StrongPassword123!'
 ```
 
 Check connectivity for all hosts in connected vCenters:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -CheckConnectivity -Username <custom-username> -Password 'StrongPassword123!'
+.\esxi_local_user_compliance_v0.0.6.ps1 -CheckConnectivity -Username <custom-username> -Password 'StrongPassword123!'
 ```
 
 Check connectivity while preserving lockdown:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -CheckConnectivity -VMHost esxi01.example.com -Username <custom-username> -Password 'StrongPassword123!' -LockdownMode enable
+.\esxi_local_user_compliance_v0.0.6.ps1 -CheckConnectivity -VMHost esxi01.example.com -Username <custom-username> -Password 'StrongPassword123!' -LockdownMode enable
 ```
 
 Check connectivity while temporarily disabling lockdown:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -CheckConnectivity -VMHost esxi01.example.com -Username <custom-username> -Password 'StrongPassword123!' -LockdownMode disable
+.\esxi_local_user_compliance_v0.0.6.ps1 -CheckConnectivity -VMHost esxi01.example.com -Username <custom-username> -Password 'StrongPassword123!' -LockdownMode disable
 ```
 
 ## Reporting
