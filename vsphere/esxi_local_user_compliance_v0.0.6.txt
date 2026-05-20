@@ -1449,7 +1449,7 @@ try {
             $hostNames
         }
         else {
-            @('ALL HOSTS')
+            @("ALL HOSTS ($($resolvedHosts.Count))")
         }
 
         Confirm-Remediation -TargetHosts $confirmationHosts -TargetUsernames $targetUsernames
