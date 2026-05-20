@@ -421,7 +421,7 @@ function Confirm-Remediation {
         ($TargetHosts -join ', ')
     }
     else {
-        'all resolved target hosts'
+        'ALL HOSTS'
     }
 
     $userSummary = if ($TargetUsernames -and $TargetUsernames.Count -gt 0) {
@@ -1449,7 +1449,7 @@ try {
             $hostNames
         }
         else {
-            @($resolvedHosts | ForEach-Object { $_.VMHost.Name } | Sort-Object -Unique)
+            @('ALL HOSTS')
         }
 
         Confirm-Remediation -TargetHosts $confirmationHosts -TargetUsernames $targetUsernames
