@@ -94,7 +94,7 @@ Notes:
   - For -Validate and -Remediate, define the desired esxAdminsGroup value in $DesiredEsxAdminsGroupValue or override it with -EsxAdminsGroup.
   - For remediation, password is required when creating a missing user and optional otherwise unless -ForceReset is used.
   - -ForceReset resets the password only for users that already exist.
-  - -Validate and -CheckConnectivity default to all hosts in connected vCenters if no host input is provided.
+  - -Validate, -Remediate, and -CheckConnectivity default to all hosts in connected vCenters if no host input is provided.
 '@
 }
 
@@ -1392,7 +1392,7 @@ try {
     $resolvedHosts = @()
 
     if ($hostNames.Count -eq 0) {
-        if ($cli.Mode -in @('validate', 'check-connectivity')) {
+        if ($cli.Mode -in @('validate', 'remediate', 'check-connectivity')) {
             Write-Log -Level 'WARN' -Message "No host input was provided. Defaulting to all hosts across connected vCenters for mode '$($cli.Mode)'."
             $resolvedHosts = @(Get-AllConnectedHosts -VIServers $connectedVIServers)
         }
@@ -1445,7 +1445,14 @@ try {
     }
 
     if ($cli.Mode -eq 'remediate') {
-        Confirm-Remediation -TargetHosts $hostNames -TargetUsernames $targetUsernames
+        $confirmationHosts = if ($hostNames.Count -gt 0) {
+            $hostNames
+        }
+        else {
+            @($resolvedHosts | ForEach-Object { $_.VMHost.Name } | Sort-Object -Unique)
+        }
+
+        Confirm-Remediation -TargetHosts $confirmationHosts -TargetUsernames $targetUsernames
         $plainTextPassword = Get-PlainTextPassword -ProvidedPassword $cli.Password -PromptMessage 'Enter password for required host user account(s)'
     }
 
