@@ -36,7 +36,7 @@ $ErrorActionPreference = 'Stop'
 $ScriptVersion = '0.0.6'
 
 $RequiredUsernames = @(
-    'SOCVA'
+    'ESXIUSER'
 )
 
 $ReportDirectory = Join-Path -Path $PSScriptRoot -ChildPath 'reports'
@@ -68,11 +68,11 @@ function Show-Usage {
     @'
 Usage:
   .\esxi_local_user_compliance_v0.0.6.ps1 -Validate -VMHost esxi01 -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
-  .\esxi_local_user_compliance_v0.0.6.ps1 -Validate -VMHost esxi01 -Username SOCVA -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
+  .\esxi_local_user_compliance_v0.0.6.ps1 -Validate -VMHost esxi01 -Username ESXIUSER -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
   .\esxi_local_user_compliance_v0.0.6.ps1 -Remediate -VMHost esxi01,esxi02 -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
-  .\esxi_local_user_compliance_v0.0.6.ps1 -Remediate -VMHost esxi01 -Username SOCVA -Password MyPassword! -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
-  .\esxi_local_user_compliance_v0.0.6.ps1 -Remediate -VMHost esxi01 -Username SOCVA -Password MyPassword! -ForceReset -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
-  .\esxi_local_user_compliance_v0.0.6.ps1 -CheckConnectivity -CsvPath .\hosts.csv -Username SOCVA -Password MyPassword! -LockdownMode enable
+  .\esxi_local_user_compliance_v0.0.6.ps1 -Remediate -VMHost esxi01 -Username ESXIUSER -Password MyPassword! -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
+  .\esxi_local_user_compliance_v0.0.6.ps1 -Remediate -VMHost esxi01 -Username ESXIUSER -Password MyPassword! -ForceReset -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
+  .\esxi_local_user_compliance_v0.0.6.ps1 -CheckConnectivity -CsvPath .\hosts.csv -Username ESXIUSER -Password MyPassword! -LockdownMode enable
 
 Supported arguments:
   -Validate
@@ -381,7 +381,7 @@ function Get-UsernameWithDefault {
     param(
         [string]$ProvidedValue,
         [string]$PromptMessage,
-        [string]$DefaultValue = 'SOCVA'
+        [string]$DefaultValue = 'ESXIUSER'
     )
 
     if ($ProvidedValue -and $ProvidedValue.Trim()) {
@@ -1457,7 +1457,7 @@ try {
     }
 
     if ($cli.Mode -eq 'check-connectivity') {
-        $connectivityUsername = Get-UsernameWithDefault -ProvidedValue $cli.Username -PromptMessage 'Enter username for ESXi connectivity check' -DefaultValue 'SOCVA'
+        $connectivityUsername = Get-UsernameWithDefault -ProvidedValue $cli.Username -PromptMessage 'Enter username for ESXi connectivity check' -DefaultValue 'ESXIUSER'
         $plainTextPassword = Get-PlainTextPassword -ProvidedPassword $cli.Password -PromptMessage 'Enter password for ESXi connectivity check'
         $connectivityLockdownMode = if ($cli.LockdownMode) { $cli.LockdownMode } else { 'enable' }
     }
