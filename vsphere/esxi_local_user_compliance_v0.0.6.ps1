@@ -94,7 +94,7 @@ Notes:
   - For -Validate and -Remediate, define the desired esxAdminsGroup value in $DesiredEsxAdminsGroupValue or override it with -EsxAdminsGroup.
   - For remediation, password is required when creating a missing user and optional otherwise unless -ForceReset is used.
   - -ForceReset resets the password only for users that already exist.
-  - -Validate and -CheckConnectivity default to all hosts in connected vCenters if no host input is provided.
+  - -Validate, -Remediate, and -CheckConnectivity default to all hosts in connected vCenters if no host input is provided.
 '@
 }
 
@@ -421,7 +421,7 @@ function Confirm-Remediation {
         ($TargetHosts -join ', ')
     }
     else {
-        'all resolved target hosts'
+        'ALL HOSTS'
     }
 
     $userSummary = if ($TargetUsernames -and $TargetUsernames.Count -gt 0) {
@@ -1392,7 +1392,7 @@ try {
     $resolvedHosts = @()
 
     if ($hostNames.Count -eq 0) {
-        if ($cli.Mode -in @('validate', 'check-connectivity')) {
+        if ($cli.Mode -in @('validate', 'remediate', 'check-connectivity')) {
             Write-Log -Level 'WARN' -Message "No host input was provided. Defaulting to all hosts across connected vCenters for mode '$($cli.Mode)'."
             $resolvedHosts = @(Get-AllConnectedHosts -VIServers $connectedVIServers)
         }
@@ -1445,7 +1445,14 @@ try {
     }
 
     if ($cli.Mode -eq 'remediate') {
-        Confirm-Remediation -TargetHosts $hostNames -TargetUsernames $targetUsernames
+        $confirmationHosts = if ($hostNames.Count -gt 0) {
+            $hostNames
+        }
+        else {
+            @("ALL HOSTS ($($resolvedHosts.Count))")
+        }
+
+        Confirm-Remediation -TargetHosts $confirmationHosts -TargetUsernames $targetUsernames
         $plainTextPassword = Get-PlainTextPassword -ProvidedPassword $cli.Password -PromptMessage 'Enter password for required host user account(s)'
     }
 
@@ -1473,7 +1480,7 @@ try {
             Write-Log -Level 'WARN' -Message "Skipping host '$($context.VMHost.Name)' in vCenter '$($context.VCenter)' because $skippedMessage"
 
             $reportUsernames = if ($cli.Mode -eq 'check-connectivity') { @($null) } else { $targetUsernames }
-            foreach ($username in $reportUsernames) {
+            foreach ($currentUsername in $reportUsernames) {
                 Add-ReportRow -Row (New-ModeReportRow -Mode $cli.Mode -Data ([ordered]@{
                     Timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
                     Mode = $cli.Mode
@@ -1481,7 +1488,7 @@ try {
                     Cluster = $context.Cluster
                     Host = $context.VMHost.Name
                     HostConnectionState = $resolvedHost.ConnectionState
-                    Username = $username
+                    Username = $currentUsername
                     ConnectivityUsername = $connectivityUsername
                     RequestedLockdownMode = $connectivityLockdownMode
                     UserPresent = $false
@@ -1529,9 +1536,9 @@ try {
         }
 
         $reportUsernames = if ($cli.Mode -eq 'check-connectivity') { @($null) } else { $targetUsernames }
-        foreach ($username in $reportUsernames) {
+        foreach ($currentUsername in $reportUsernames) {
             $logIdentityLabel = if ($cli.Mode -eq 'check-connectivity') { 'connectivity user' } else { 'user' }
-            $logIdentityValue = if ($cli.Mode -eq 'check-connectivity') { $connectivityUsername } else { $username }
+            $logIdentityValue = if ($cli.Mode -eq 'check-connectivity') { $connectivityUsername } else { $currentUsername }
             $snapshot = [pscustomobject]@{
                 UserPresent = $false
                 ReadOnlyAccess = $false
@@ -1563,21 +1570,21 @@ try {
 
             try {
                 if ($cli.Mode -eq 'remediate') {
-                    $snapshot = Get-UserComplianceSnapshot -Context $context -Username $username -ExpectedEsxAdminsGroupValue $effectiveEsxAdminsGroupValue
+                    $snapshot = Get-UserComplianceSnapshot -Context $context -Username $currentUsername -ExpectedEsxAdminsGroupValue $effectiveEsxAdminsGroupValue
 
                     if (-not $snapshot.UserPresent) {
                         if (-not $plainTextPassword) {
-                            $plainTextPassword = Get-PlainTextPassword -ProvidedPassword $cli.Password -PromptMessage "Enter password to create missing host user '$username'"
+                            $plainTextPassword = Get-PlainTextPassword -ProvidedPassword $cli.Password -PromptMessage "Enter password to create missing host user '$currentUsername'"
                         }
 
-                        $userCreatedThisRun = Ensure-HostUser -Context $context -Username $username -Password $plainTextPassword
-                        $snapshot = Get-UserComplianceSnapshot -Context $context -Username $username -ExpectedEsxAdminsGroupValue $effectiveEsxAdminsGroupValue
+                        $userCreatedThisRun = Ensure-HostUser -Context $context -Username $currentUsername -Password $plainTextPassword
+                        $snapshot = Get-UserComplianceSnapshot -Context $context -Username $currentUsername -ExpectedEsxAdminsGroupValue $effectiveEsxAdminsGroupValue
                     }
                     else {
-                        Write-Log -Message "User '$username' already exists on host '$($context.VMHost.Name)'."
+                        Write-Log -Message "User '$currentUsername' already exists on host '$($context.VMHost.Name)'."
                     }
 
-                    Ensure-ReadOnlyAccess -Context $context -Username $username
+                    Ensure-ReadOnlyAccess -Context $context -Username $currentUsername
                     if (-not $effectiveEsxAdminsGroupValue) {
                         $esxAdminsGroupRemediationStatus = 'Skipped'
                     }
@@ -1589,10 +1596,10 @@ try {
                         $esxAdminsGroupRemediationStatus = 'AlreadyCompliant'
                     }
                     Ensure-LockdownMode -Context $context
-                    Ensure-LockdownExceptionUser -Context $context -Username $username
+                    Ensure-LockdownExceptionUser -Context $context -Username $currentUsername
 
                     if ($cli.ForceReset -and -not $userCreatedThisRun) {
-                        Reset-HostUserPassword -Context $context -Username $username -Password $plainTextPassword
+                        Reset-HostUserPassword -Context $context -Username $currentUsername -Password $plainTextPassword
                         $passwordResetStatus = 'Success'
                     }
                     elseif ($userCreatedThisRun) {
@@ -1605,9 +1612,9 @@ try {
                     $actionStatus = 'Remediated'
                 }
 
-                $snapshot = Get-UserComplianceSnapshot -Context $context -Username $username -ExpectedEsxAdminsGroupValue $effectiveEsxAdminsGroupValue
+                $snapshot = Get-UserComplianceSnapshot -Context $context -Username $currentUsername -ExpectedEsxAdminsGroupValue $effectiveEsxAdminsGroupValue
                 if ($cli.Mode -eq 'validate') {
-                    Write-ValidationSnapshotLog -Mode $cli.Mode -Context $context -Username $username -Snapshot $snapshot
+                    Write-ValidationSnapshotLog -Mode $cli.Mode -Context $context -Username $currentUsername -Snapshot $snapshot
                 }
 
                 if ($cli.Mode -eq 'check-connectivity') {
@@ -1643,7 +1650,7 @@ try {
                 $actionStatus = 'Failed'
                 $actionMessage = $_.Exception.Message
                 Write-Log -Level 'ERROR' -Message "Failed on host '$($context.VMHost.Name)' for $logIdentityLabel '$logIdentityValue': $actionMessage"
-                $snapshot = Get-UserComplianceSnapshot -Context $context -Username $username -ExpectedEsxAdminsGroupValue $effectiveEsxAdminsGroupValue
+                $snapshot = Get-UserComplianceSnapshot -Context $context -Username $currentUsername -ExpectedEsxAdminsGroupValue $effectiveEsxAdminsGroupValue
             }
 
             Add-ReportRow -Row (New-ModeReportRow -Mode $cli.Mode -Data ([ordered]@{
@@ -1653,7 +1660,7 @@ try {
                 Cluster = $context.Cluster
                 Host = $context.VMHost.Name
                 HostConnectionState = $resolvedHost.ConnectionState
-                Username = $username
+                Username = $currentUsername
                 ConnectivityUsername = $connectivityUsername
                 RequestedLockdownMode = $connectivityLockdownMode
                 UserPresent = $snapshot.UserPresent
