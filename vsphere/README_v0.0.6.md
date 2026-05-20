@@ -98,7 +98,7 @@ If no host input is provided:
 
 - `-Validate` runs against all hosts in connected vCenters.
 - `-CheckConnectivity` runs against all hosts in connected vCenters.
-- `-Remediate` requires explicit host input.
+- `-Remediate` runs against all hosts in connected vCenters when no host input is provided.
 
 ## Mode Behavior
 
@@ -159,11 +159,12 @@ Validate all hosts in connected vCenters:
 
 Behavior:
 
-- `-VMHost` or `-CsvPath` is required.
+- `-VMHost` and `-CsvPath` are optional.
 - `-Username` is optional.
 - If `-Username` is omitted, the script prompts and defaults to the value defined in `$RequiredUsernames`.
 - `-Password` is optional.
 - If `-Password` is omitted, the script prompts for it.
+- If no host input is supplied, the script resolves all hosts in connected vCenters and asks for confirmation before making changes.
 - Remediation always asks for confirmation before changes are made.
 - `-ForceReset` resets the password only for users that already existed before remediation.
 
