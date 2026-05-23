@@ -1,6 +1,6 @@
 # PCAP Report Generator
 
-`pcap_report_v0.47.py` builds per-stream reports from a `.pcap` or `.pcapng` file using `tshark`.
+The PCAP report script builds per-stream reports from a `.pcap` or `.pcapng` file using `tshark`.
 
 It generates:
 - `CSV` for spreadsheet-style analysis
@@ -34,24 +34,18 @@ If `tshark` is not found on macOS and Wireshark is installed:
 sudo ln -s /Applications/Wireshark.app/Contents/MacOS/tshark /usr/local/bin/tshark
 ```
 
-## Files
-
-- [pcap_report_v0.47.py](/Users/mi013830/tools/scripts/pcap/pcap_report_v0.47.py): current version
-- [pcap_report_v0.46.py](/Users/mi013830/tools/scripts/pcap/pcap_report_v0.46.py): previous version
-- [pcap_report_v0.44.py](/Users/mi013830/tools/scripts/pcap/pcap_report_v0.44.py): earlier UI baseline
-
 ## Usage
 
 Basic run:
 
 ```bash
-python3 pcap_report_v0.47.py -r capture.pcapng
+python3 <script_name>.py -r capture.pcapng
 ```
 
 Write outputs to custom paths:
 
 ```bash
-python3 pcap_report_v0.47.py \
+python3 <script_name>.py \
   -r capture.pcapng \
   -o capture_report.csv \
   --out-json capture_report.json \
@@ -62,19 +56,19 @@ python3 pcap_report_v0.47.py \
 Filter to HTTPS traffic only:
 
 ```bash
-python3 pcap_report_v0.47.py -r capture.pcapng -Y 'tcp.port == 443'
+python3 <script_name>.py -r capture.pcapng -Y 'tcp.port == 443'
 ```
 
 Keep only streams lasting at least 60 seconds:
 
 ```bash
-python3 pcap_report_v0.47.py -r capture.pcapng --min-duration 60
+python3 <script_name>.py -r capture.pcapng --min-duration 60
 ```
 
 Write timestamps in UTC:
 
 ```bash
-python3 pcap_report_v0.47.py -r capture.pcapng --utc
+python3 <script_name>.py -r capture.pcapng --utc
 ```
 
 ## CLI Options
@@ -278,7 +272,7 @@ These are heuristics, not protocol-forensic guarantees. Validate critical findin
 ## Quick Start
 
 ```bash
-python3 pcap_report_v0.47.py -r sample.pcapng
+python3 <script_name>.py -r sample.pcapng
 ```
 
 Then open:
