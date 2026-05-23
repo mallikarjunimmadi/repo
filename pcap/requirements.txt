@@ -1,0 +1,7 @@
+# Python package requirements for pcap_report_v0.47.py
+#
+# This project uses only the Python standard library.
+# No pip-installable Python packages are required.
+#
+# External system dependency:
+# - tshark (Wireshark CLI) must be installed and available in PATH
