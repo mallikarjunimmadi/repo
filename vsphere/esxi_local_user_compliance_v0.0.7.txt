@@ -168,6 +168,24 @@ function Write-RunProgress {
     Write-Progress -Activity 'ESXi local user compliance' -Status $status -CurrentOperation $currentOperation -PercentComplete $percentComplete -Completed:$Completed
 }
 
+function Write-DiscoveryProgress {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Activity,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Status,
+
+        [string]$CurrentOperation,
+
+        [int]$PercentComplete = -1,
+
+        [switch]$Completed
+    )
+
+    Write-Progress -Id 1 -Activity $Activity -Status $Status -CurrentOperation $CurrentOperation -PercentComplete $PercentComplete -Completed:$Completed
+}
+
 function Write-ValidationSnapshotLog {
     param(
         [Parameter(Mandatory = $true)]
@@ -583,9 +601,17 @@ function Resolve-TargetHosts {
 
     $resolvedHosts = New-Object System.Collections.Generic.List[object]
     $hostLookup = @{}
+    $totalVIServers = @($VIServers).Count
+    $currentVIServerIndex = 0
+
+    Write-Log -Message "Building host inventory from $totalVIServers connected vCenter(s) to resolve $($HostNames.Count) requested host name(s)."
 
     foreach ($viServer in $VIServers) {
+        $currentVIServerIndex++
+        Write-DiscoveryProgress -Activity 'Resolving target hosts' -Status "Scanning vCenter $currentVIServerIndex of $totalVIServers" -CurrentOperation $viServer.Name -PercentComplete ([int](($currentVIServerIndex / [Math]::Max($totalVIServers, 1)) * 100))
+        Write-Log -Message "Fetching ESXi host inventory from vCenter '$($viServer.Name)' for host resolution."
         $vmHosts = @(Get-VMHost -Server $viServer -ErrorAction SilentlyContinue)
+        Write-Log -Message "Fetched $($vmHosts.Count) host(s) from vCenter '$($viServer.Name)' for host resolution."
         foreach ($vmHost in $vmHosts) {
             $inventoryEntry = [pscustomobject]@{
                 VMHost = $vmHost
@@ -635,6 +661,8 @@ function Resolve-TargetHosts {
         }
     }
 
+    Write-DiscoveryProgress -Activity 'Resolving target hosts' -Status "Resolved $($resolvedHosts.Count) host(s)" -CurrentOperation 'Host resolution complete' -Completed
+
     return @($resolvedHosts.ToArray())
 }
 
@@ -644,9 +672,17 @@ function Get-AllConnectedHosts {
     )
 
     $resolvedHosts = New-Object System.Collections.Generic.List[object]
+    $totalVIServers = @($VIServers).Count
+    $currentVIServerIndex = 0
+
+    Write-Log -Message "Enumerating all ESXi hosts from $totalVIServers connected vCenter(s)."
 
     foreach ($viServer in $VIServers) {
+        $currentVIServerIndex++
+        Write-DiscoveryProgress -Activity 'Enumerating connected hosts' -Status "Scanning vCenter $currentVIServerIndex of $totalVIServers" -CurrentOperation $viServer.Name -PercentComplete ([int](($currentVIServerIndex / [Math]::Max($totalVIServers, 1)) * 100))
+        Write-Log -Message "Fetching all ESXi hosts from vCenter '$($viServer.Name)'."
         $vmHosts = @(Get-VMHost -Server $viServer -ErrorAction SilentlyContinue)
+        Write-Log -Message "Fetched $($vmHosts.Count) host(s) from vCenter '$($viServer.Name)'."
         foreach ($vmHost in $vmHosts) {
             [void]$resolvedHosts.Add([pscustomobject]@{
                 VMHost = $vmHost
