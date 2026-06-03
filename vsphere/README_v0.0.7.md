@@ -4,41 +4,47 @@ Documentation for `esxi_local_user_compliance_v0.0.7.ps1`.
 
 ## Overview
 
-This script validates, remediates, and tests ESXi local user compliance across hosts managed by one or more connected vCenters by using native PowerShell parameters.
+`esxi_local_user_compliance_v0.0.7.ps1` validates, remediates, and tests ESXi local-user compliance across one or more connected vCenters by using native PowerShell parameters.
 
-It checks and reports on:
+It supports three mutually exclusive modes:
+
+- `-Validate`
+- `-Remediate`
+- `-CheckConnectivity`
+
+The script can inspect and report on:
 
 - ESXi local user presence
 - `ReadOnly` host access
-- Domain join status
+- Active Directory join state
 - `Config.HostAgent.plugins.hostsvc.esxAdminsGroup`
 - Lockdown mode
-- Lockdown exception list membership
-- Connectivity status in connectivity mode
+- Lockdown exception membership
+- Direct host connectivity in connectivity mode
 
-In `-Remediate` mode, it:
+In `-Remediate` mode, the script can:
 
-1. Creates the user if missing.
-2. Ensures `ReadOnly` access.
-3. Replaces `Config.HostAgent.plugins.hostsvc.esxAdminsGroup` with the desired value.
-4. Ensures lockdown mode is `lockdownNormal`.
-5. Ensures the user is in the lockdown exception list.
-6. Resets the password only if `-ForceReset` is used and the user already existed.
+1. Create a missing local user.
+2. Ensure `ReadOnly` access for the user.
+3. Set `Config.HostAgent.plugins.hostsvc.esxAdminsGroup` to the desired value.
+4. Ensure lockdown mode is `lockdownNormal`.
+5. Ensure the user is present in the lockdown exception list.
+6. Reset the password only when `-ForceReset` is supplied for an already existing user.
 
 ## Requirements
 
 - PowerShell with VMware PowerCLI installed
-- Active connection to one or more vCenters
-- Privileges to inspect and change ESXi users, advanced settings, and lockdown configuration
+- An active connection to one or more vCenters
+- Permissions to inspect and update ESXi users, host access, advanced settings, and lockdown configuration
 
-Example vCenter connection:
+Example:
 
 ```powershell
 Connect-VIServer -Server vcsa01.example.com
 Connect-VIServer -Server vcsa02.example.com
 ```
 
-## Configuration
+## Script Configuration
 
 Important script-level settings:
 
@@ -51,7 +57,7 @@ Important script-level settings:
 - `InputCsvHostColumn`
 - `AllowedHostConnectionStates`
 
-If `DesiredEsxAdminsGroupValue` is still `CHANGE_ME`, provide `-EsxAdminsGroup` at runtime.
+If `DesiredEsxAdminsGroupValue` is still set to `CHANGE_ME`, provide `-EsxAdminsGroup` at runtime.
 
 ## Parameters
 
@@ -64,22 +70,23 @@ If `DesiredEsxAdminsGroupValue` is still `CHANGE_ME`, provide `-EsxAdminsGroup` 
 - `-Password`
 - `-ForceReset`
 - `-EsxAdminsGroup`
+- `-ResolutionChunkSize`
 - `-LockdownMode`
 - `-Help`
 
-Parameter rules:
+## Parameter Rules
 
 - Use only one of `-Validate`, `-Remediate`, or `-CheckConnectivity`.
-- `-Password` is valid only with `-Remediate` and `-CheckConnectivity`.
-- `-CheckConnectivity` accepts an optional `-Username` and an optional `-Password`.
-- In `-CheckConnectivity`, `-LockdownMode` is supported. Other flags besides host selection, `-Username`, `-Password`, and `-LockdownMode` are ignored.
-- In `-Remediate` and `-CheckConnectivity`, `-Password` may be supplied as an argument or entered at the prompt.
-- In `-Remediate` and `-CheckConnectivity`, if `-Username` is not supplied, the script prompts and defaults to the value defined in `$RequiredUsernames`.
-- In `-Remediate`, the script asks for confirmation before making changes.
+- `-Password` is valid only with `-Remediate` or `-CheckConnectivity`.
+- `-ForceReset` is valid only with `-Remediate`.
+- `-LockdownMode` is valid only with `-CheckConnectivity`.
+- `-CheckConnectivity` accepts only one `-Username` value.
+- `-EsxAdminsGroup` is meaningful only in `-Validate` and `-Remediate`.
+- `-Help` prints usage and exits.
 
 ## Host Input
 
-Hosts can be supplied with:
+Hosts can be provided by:
 
 - `-VMHost esxi01.example.com`
 - `-VMHost esxi01.example.com,esxi02.example.com`
@@ -94,11 +101,20 @@ esxi01.example.com
 esxi02.example.com
 ```
 
-If no host input is provided:
+If no host input is provided, the script defaults to all ESXi hosts across connected vCenters for all three modes.
 
-- `-Validate` runs against all hosts in connected vCenters.
-- `-CheckConnectivity` runs against all hosts in connected vCenters.
-- `-Remediate` runs against all hosts in connected vCenters when no host input is provided.
+## Host Resolution Behavior
+
+Host resolution is unchunked by default.
+
+- Default behavior: one host lookup pass per connected vCenter
+- Optional behavior: use `-ResolutionChunkSize <positive-integer>` to split host resolution into batches
+
+Example:
+
+```powershell
+.\esxi_local_user_compliance_v0.0.7.ps1 -Validate -CsvPath .\hosts.csv -EsxAdminsGroup 'DOMAIN\ESX-ADMINS' -ResolutionChunkSize 200
+```
 
 ## Mode Behavior
 
@@ -106,50 +122,28 @@ If no host input is provided:
 
 Behavior:
 
-- `-Password` is rejected.
 - `-Username` is optional.
 - If `-Username` is omitted, the script uses `RequiredUsernames`.
-- `-EsxAdminsGroup` should be supplied unless `DesiredEsxAdminsGroupValue` is already configured in the script.
+- `-Password` is rejected.
+- `-EsxAdminsGroup` should be provided unless `DesiredEsxAdminsGroupValue` is already configured in the script.
 
 Examples:
-
-Validate a single host:
 
 ```powershell
 .\esxi_local_user_compliance_v0.0.7.ps1 -Validate -VMHost esxi01.example.com -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
 ```
 
-Validate multiple hosts in one comma-separated argument:
-
 ```powershell
 .\esxi_local_user_compliance_v0.0.7.ps1 -Validate -VMHost esxi01.example.com,esxi02.example.com -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
 ```
-
-Validate multiple hosts as separate values:
-
-```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -Validate -VMHost esxi01.example.com esxi02.example.com -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
-```
-
-Validate hosts from CSV:
 
 ```powershell
 .\esxi_local_user_compliance_v0.0.7.ps1 -Validate -CsvPath .\hosts.csv -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
 ```
 
-Validate a specific username:
-
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -Validate -VMHost esxi01.example.com -Username <custom-username> -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
+.\esxi_local_user_compliance_v0.0.7.ps1 -Validate -VMHost esxi01.example.com -Username SOCVA -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
 ```
-
-Validate multiple usernames:
-
-```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -Validate -VMHost esxi01.example.com -Username <custom-username>,AUDITUSR -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
-```
-
-Validate all hosts in connected vCenters:
 
 ```powershell
 .\esxi_local_user_compliance_v0.0.7.ps1 -Validate -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
@@ -159,119 +153,84 @@ Validate all hosts in connected vCenters:
 
 Behavior:
 
-- `-VMHost` and `-CsvPath` are optional.
 - `-Username` is optional.
-- If `-Username` is omitted, the script prompts and defaults to the value defined in `$RequiredUsernames`.
-- `-Password` is optional.
-- If `-Password` is omitted, the script prompts for it.
-- If no host input is supplied, the script resolves all hosts in connected vCenters and asks for confirmation before making changes.
-- Remediation always asks for confirmation before changes are made.
+- If `-Username` is omitted, the script uses `RequiredUsernames`.
+- `-Password` is required for user creation and for `-ForceReset`, and is otherwise optional.
+- If `-Password` is not supplied when needed, the script prompts for it.
+- The script always asks for confirmation before making changes.
+- If no host input is supplied, the script targets all hosts in connected vCenters.
 - `-ForceReset` resets the password only for users that already existed before remediation.
 
 Examples:
-
-Remediate a single host and prompt for username/password:
 
 ```powershell
 .\esxi_local_user_compliance_v0.0.7.ps1 -Remediate -VMHost esxi01.example.com -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
 ```
 
-Remediate multiple hosts in one comma-separated argument:
-
 ```powershell
 .\esxi_local_user_compliance_v0.0.7.ps1 -Remediate -VMHost esxi01.example.com,esxi02.example.com -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
 ```
 
-Remediate multiple hosts as separate values:
-
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -Remediate -VMHost esxi01.example.com esxi02.example.com -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
+.\esxi_local_user_compliance_v0.0.7.ps1 -Remediate -VMHost esxi01.example.com -Username SOCVA -Password 'StrongPassword123!' -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
 ```
 
-Remediate a specific username and prompt for password:
-
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -Remediate -VMHost esxi01.example.com -Username <custom-username> -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
+.\esxi_local_user_compliance_v0.0.7.ps1 -Remediate -VMHost esxi01.example.com -Username SOCVA -Password 'StrongPassword123!' -ForceReset -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
 ```
 
-Remediate a specific username with an explicit password:
-
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -Remediate -VMHost esxi01.example.com -Username <custom-username> -Password 'StrongPassword123!' -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
+.\esxi_local_user_compliance_v0.0.7.ps1 -Remediate -CsvPath .\hosts.csv -Username SOCVA -Password 'StrongPassword123!' -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
 ```
 
-Remediate with forced password reset:
-
-```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -Remediate -VMHost esxi01.example.com -Username <custom-username> -Password 'StrongPassword123!' -ForceReset -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
-```
-
-Remediate hosts from CSV:
-
-```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -Remediate -CsvPath .\hosts.csv -Username <custom-username> -Password 'StrongPassword123!' -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
-```
-
-### Check Connectivity
+### CheckConnectivity
 
 Behavior:
 
 - `-Username` is optional.
-- If `-Username` is omitted, the script prompts and defaults to the value defined in `$RequiredUsernames`.
-- `-Password` is optional.
-- If `-Password` is omitted, the script prompts for it.
+- If `-Username` is omitted, the script prompts and defaults to `SOCVA`.
+- `-Password` can be supplied or entered at the prompt.
 - `-LockdownMode` accepts `enable` or `disable`.
-- Other flags besides host selection, `-Username`, `-Password`, and `-LockdownMode` are ignored in this mode.
-- If no host input is provided, all hosts in connected vCenters are checked.
+- If `-LockdownMode enable` is used or omitted, the script preserves existing lockdown mode during the connectivity test.
+- If `-LockdownMode disable` is used and the host is not already `lockdownDisabled`, the script temporarily disables lockdown, performs the connectivity check, and then restores the original mode.
+- If no host input is supplied, the script checks all hosts in connected vCenters.
 
 Examples:
-
-Check connectivity for one host and prompt for username/password:
 
 ```powershell
 .\esxi_local_user_compliance_v0.0.7.ps1 -CheckConnectivity -VMHost esxi01.example.com
 ```
 
-Check connectivity for one host with explicit credentials:
-
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -CheckConnectivity -VMHost esxi01.example.com -Username <custom-username> -Password 'StrongPassword123!'
+.\esxi_local_user_compliance_v0.0.7.ps1 -CheckConnectivity -VMHost esxi01.example.com -Username SOCVA -Password 'StrongPassword123!'
 ```
 
-Check connectivity from CSV:
-
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -CheckConnectivity -CsvPath .\hosts.csv -Username <custom-username> -Password 'StrongPassword123!'
+.\esxi_local_user_compliance_v0.0.7.ps1 -CheckConnectivity -CsvPath .\hosts.csv -Username SOCVA -Password 'StrongPassword123!'
 ```
 
-Check connectivity for all hosts in connected vCenters:
-
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -CheckConnectivity -Username <custom-username> -Password 'StrongPassword123!'
+.\esxi_local_user_compliance_v0.0.7.ps1 -CheckConnectivity -Username SOCVA -Password 'StrongPassword123!'
 ```
 
-Check connectivity while preserving lockdown:
-
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -CheckConnectivity -VMHost esxi01.example.com -Username <custom-username> -Password 'StrongPassword123!' -LockdownMode enable
+.\esxi_local_user_compliance_v0.0.7.ps1 -CheckConnectivity -VMHost esxi01.example.com -Username SOCVA -Password 'StrongPassword123!' -LockdownMode enable
 ```
 
-Check connectivity while temporarily disabling lockdown:
-
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -CheckConnectivity -VMHost esxi01.example.com -Username <custom-username> -Password 'StrongPassword123!' -LockdownMode disable
+.\esxi_local_user_compliance_v0.0.7.ps1 -CheckConnectivity -VMHost esxi01.example.com -Username SOCVA -Password 'StrongPassword123!' -LockdownMode disable
 ```
 
 ## Reporting
 
 Each run writes:
 
-- A timestamped log file with the selected mode in the filename
-- A timestamped CSV report with the selected mode in the filename
+- A timestamped log file in `logs`
+- A timestamped CSV report in `reports`
 
-Report columns are mode-specific so each CSV includes only the fields relevant to that run.
+The filenames include the selected mode.
 
-Validate and remediate report fields:
+### Validate Report Columns
 
 - `Timestamp`
 - `Mode`
@@ -280,8 +239,6 @@ Validate and remediate report fields:
 - `Host`
 - `HostConnectionState`
 - `Username`
-- `ConnectivityUsername`
-- `RequestedLockdownMode`
 - `UserPresent`
 - `ReadOnlyAccess`
 - `DomainJoined`
@@ -295,12 +252,31 @@ Validate and remediate report fields:
 - `ActionStatus`
 - `ActionMessage`
 
-Additional remediate-only fields:
+### Remediate Report Columns
 
+- `Timestamp`
+- `Mode`
+- `VCenter`
+- `Cluster`
+- `Host`
+- `HostConnectionState`
+- `Username`
+- `UserPresent`
+- `ReadOnlyAccess`
+- `DomainJoined`
+- `DomainName`
+- `DomainMembershipStatus`
+- `EsxAdminsGroupExpected`
+- `EsxAdminsGroupActual`
+- `EsxAdminGroupStatus`
 - `EsxAdminsGroupRemediationStatus`
+- `LockdownMode`
+- `InLockdownExceptionList`
 - `PasswordResetStatus`
+- `ActionStatus`
+- `ActionMessage`
 
-Check-connectivity report fields:
+### Check-Connectivity Report Columns
 
 - `Timestamp`
 - `Mode`
@@ -320,14 +296,24 @@ Check-connectivity report fields:
 - `ActionStatus`
 - `ActionMessage`
 
+## Status Values
+
+Common row-level status values include:
+
+- `Validated`
+- `Remediated`
+- `Skipped`
+- `Failed`
+
 `EsxAdminGroupStatus` values:
 
 - `Valid`
 - `Invalid`
 - `Skipped`
 
-## Notes
+## Operational Notes
 
-- Hosts not found in a connected vCenter are logged and skipped.
-- Hosts outside the allowed connection states are reported as skipped.
-- The script logs operator choices such as mode, host input, username input, password source, remediation confirmation response, and effective `EsxAdminsGroup` value.
+- Hosts not found in any connected vCenter are logged as errors and excluded from processing.
+- Hosts outside the allowed connection states are written as skipped rows.
+- In connectivity mode, failed connection attempts still generate report rows.
+- The script logs operator choices such as mode, host input, username source, password source, and effective host-resolution mode.
