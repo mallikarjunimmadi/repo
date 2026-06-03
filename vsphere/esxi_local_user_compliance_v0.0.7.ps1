@@ -582,20 +582,47 @@ function Resolve-TargetHosts {
     )
 
     $resolvedHosts = New-Object System.Collections.Generic.List[object]
+    $hostLookup = @{}
+
+    foreach ($viServer in $VIServers) {
+        $vmHosts = @(Get-VMHost -Server $viServer -ErrorAction SilentlyContinue)
+        foreach ($vmHost in $vmHosts) {
+            $inventoryEntry = [pscustomobject]@{
+                VMHost = $vmHost
+                VCenter = $viServer.Name
+                ConnectionState = $vmHost.ConnectionState.ToString()
+                IsEligible = ($vmHost.ConnectionState.ToString() -in $AllowedHostConnectionStates)
+            }
+
+            foreach ($lookupKey in @(
+                    $vmHost.Name,
+                    $vmHost.ExtensionData.Name
+                )) {
+                if (-not $lookupKey) {
+                    continue
+                }
+
+                $normalizedKey = $lookupKey.ToString().Trim().ToLowerInvariant()
+                if (-not $normalizedKey) {
+                    continue
+                }
+
+                if (-not $hostLookup.ContainsKey($normalizedKey)) {
+                    $hostLookup[$normalizedKey] = New-Object System.Collections.Generic.List[object]
+                }
+
+                [void]$hostLookup[$normalizedKey].Add($inventoryEntry)
+            }
+        }
+    }
 
     foreach ($hostName in $HostNames) {
-        $matches = New-Object System.Collections.Generic.List[object]
-
-        foreach ($viServer in $VIServers) {
-            $vmHosts = @(Get-VMHost -Server $viServer -Name $hostName -ErrorAction SilentlyContinue)
-            foreach ($vmHost in $vmHosts) {
-                [void]$matches.Add([pscustomobject]@{
-                    VMHost = $vmHost
-                    VCenter = $viServer.Name
-                    ConnectionState = $vmHost.ConnectionState.ToString()
-                    IsEligible = ($vmHost.ConnectionState.ToString() -in $AllowedHostConnectionStates)
-                })
-            }
+        $normalizedHostName = $hostName.Trim().ToLowerInvariant()
+        $matches = if ($hostLookup.ContainsKey($normalizedHostName)) {
+            @($hostLookup[$normalizedHostName].ToArray())
+        }
+        else {
+            @()
         }
 
         if ($matches.Count -eq 0) {
@@ -1646,16 +1673,18 @@ try {
                     $actionStatus = 'Remediated'
                 }
 
-                $snapshot = Get-UserComplianceSnapshot -Context $context -Username $currentUsername -ExpectedEsxAdminsGroupValue $effectiveEsxAdminsGroupValue
-                if ($cli.Mode -eq 'validate') {
-                    Write-ValidationSnapshotLog -Mode $cli.Mode -Context $context -Username $currentUsername -Snapshot $snapshot
-                }
-
                 if ($cli.Mode -eq 'check-connectivity') {
                     $connectivityResult = $hostConnectivityResult
                     if ($connectivityResult.ConnectivityStatus -eq 'Failed' -or
                         $connectivityResult.LockdownRestoreStatus -eq 'Failed') {
+                        $actionStatus = 'Failed'
                         $actionMessage = $connectivityResult.ConnectivityMessage
+                    }
+                }
+                else {
+                    $snapshot = Get-UserComplianceSnapshot -Context $context -Username $currentUsername -ExpectedEsxAdminsGroupValue $effectiveEsxAdminsGroupValue
+                    if ($cli.Mode -eq 'validate') {
+                        Write-ValidationSnapshotLog -Mode $cli.Mode -Context $context -Username $currentUsername -Snapshot $snapshot
                     }
                 }
 
@@ -1684,7 +1713,9 @@ try {
                 $actionStatus = 'Failed'
                 $actionMessage = $_.Exception.Message
                 Write-Log -Level 'ERROR' -Message "Failed on host '$($context.VMHost.Name)' for $logIdentityLabel '$logIdentityValue': $actionMessage"
-                $snapshot = Get-UserComplianceSnapshot -Context $context -Username $currentUsername -ExpectedEsxAdminsGroupValue $effectiveEsxAdminsGroupValue
+                if ($cli.Mode -ne 'check-connectivity') {
+                    $snapshot = Get-UserComplianceSnapshot -Context $context -Username $currentUsername -ExpectedEsxAdminsGroupValue $effectiveEsxAdminsGroupValue
+                }
             }
 
             Add-ReportRow -Row (New-ModeReportRow -Mode $cli.Mode -Data ([ordered]@{
