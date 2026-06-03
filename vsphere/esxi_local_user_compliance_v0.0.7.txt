@@ -340,6 +340,7 @@ function New-CliOptionsFromParameters {
         ForceReset = [bool]$ForceReset
         EsxAdminsGroup = $EsxAdminsGroup
         ResolutionChunkSize = $ResolutionChunkSize
+        ResolutionChunkingEnabled = ($PSBoundParameters.ContainsKey('ResolutionChunkSize') -and $ResolutionChunkSize -gt 0)
         LockdownMode = $LockdownMode
         Help = [bool]$Help
     }
@@ -648,32 +649,77 @@ function Resolve-TargetHosts {
     $resolvedByKey = @{}
     $resolvedEntryKeys = @{}
     $totalVIServers = @($VIServers).Count
-    $hostNameChunks = if ($ChunkSize -gt 0) {
-        @(Split-Collection -Items $HostNames -ChunkSize $ChunkSize)
-    }
-    else {
-        ,@($HostNames)
-    }
-    $totalChunks = [Math]::Max(($totalVIServers * $hostNameChunks.Count), 1)
-    $completedChunks = 0
 
     if ($ChunkSize -gt 0) {
+        $hostNameChunks = @(Split-Collection -Items $HostNames -ChunkSize $ChunkSize)
+        $totalChunks = [Math]::Max(($totalVIServers * $hostNameChunks.Count), 1)
+        $completedChunks = 0
         Write-Log -Message "Resolving $($HostNames.Count) requested host name(s) across $totalVIServers connected vCenter(s) in $($hostNameChunks.Count) chunk(s) of size $ChunkSize."
+        foreach ($viServer in $VIServers) {
+            $currentChunkIndex = 0
+            foreach ($hostNameChunk in $hostNameChunks) {
+                $currentChunkIndex++
+                $completedChunks++
+                $percentComplete = [int](($completedChunks / $totalChunks) * 100)
+                Write-DiscoveryProgress -Activity 'Resolving target hosts' -Status "Scanning vCenter chunk $completedChunks of $totalChunks" -CurrentOperation "$($viServer.Name) [chunk $currentChunkIndex of $($hostNameChunks.Count)]" -PercentComplete $percentComplete
+                Write-Log -Message "Resolving host chunk $currentChunkIndex of $($hostNameChunks.Count) against vCenter '$($viServer.Name)'."
+                $vmHosts = @(Get-VMHost -Server $viServer -Name $hostNameChunk -ErrorAction SilentlyContinue)
+                Write-Log -Message "Resolved $($vmHosts.Count) host(s) in chunk $currentChunkIndex from vCenter '$($viServer.Name)'."
+
+                foreach ($vmHost in $vmHosts) {
+                    $inventoryEntry = [pscustomobject]@{
+                        VMHost = $vmHost
+                        VCenter = $viServer.Name
+                        ConnectionState = $vmHost.ConnectionState.ToString()
+                        IsEligible = ($vmHost.ConnectionState.ToString() -in $AllowedHostConnectionStates)
+                    }
+
+                    $hostNameKeys = New-Object System.Collections.Generic.List[string]
+                    if ($vmHost.Name) {
+                        [void]$hostNameKeys.Add($vmHost.Name.ToString())
+
+                        $shortHostName = $vmHost.Name.ToString().Split('.')[0]
+                        if ($shortHostName) {
+                            [void]$hostNameKeys.Add($shortHostName)
+                        }
+                    }
+
+                    foreach ($lookupKey in ($hostNameKeys | Select-Object -Unique)) {
+                        if (-not $lookupKey) {
+                            continue
+                        }
+
+                        $normalizedKey = $lookupKey.ToString().Trim().ToLowerInvariant()
+                        if (-not $normalizedKey) {
+                            continue
+                        }
+
+                        if (-not $resolvedByKey.ContainsKey($normalizedKey)) {
+                            $resolvedByKey[$normalizedKey] = New-Object System.Collections.Generic.List[object]
+                            $resolvedEntryKeys[$normalizedKey] = @{}
+                        }
+
+                        $entryKey = "$($viServer.Name)|$($vmHost.Id)"
+                        if (-not $resolvedEntryKeys[$normalizedKey].ContainsKey($entryKey)) {
+                            [void]$resolvedByKey[$normalizedKey].Add($inventoryEntry)
+                            $resolvedEntryKeys[$normalizedKey][$entryKey] = $true
+                        }
+                    }
+                }
+            }
+        }
     }
     else {
         Write-Log -Message "Resolving $($HostNames.Count) requested host name(s) across $totalVIServers connected vCenter(s) without chunking."
-    }
+        $currentVIServerIndex = 0
 
-    foreach ($viServer in $VIServers) {
-        $currentChunkIndex = 0
-        foreach ($hostNameChunk in $hostNameChunks) {
-            $currentChunkIndex++
-            $completedChunks++
-            $percentComplete = [int](($completedChunks / $totalChunks) * 100)
-            Write-DiscoveryProgress -Activity 'Resolving target hosts' -Status "Scanning vCenter chunk $completedChunks of $totalChunks" -CurrentOperation "$($viServer.Name) [chunk $currentChunkIndex of $($hostNameChunks.Count)]" -PercentComplete $percentComplete
-            Write-Log -Message "Resolving host chunk $currentChunkIndex of $($hostNameChunks.Count) against vCenter '$($viServer.Name)'."
-            $vmHosts = @(Get-VMHost -Server $viServer -Name $hostNameChunk -ErrorAction SilentlyContinue)
-            Write-Log -Message "Resolved $($vmHosts.Count) host(s) in chunk $currentChunkIndex from vCenter '$($viServer.Name)'."
+        foreach ($viServer in $VIServers) {
+            $currentVIServerIndex++
+            $percentComplete = [int](($currentVIServerIndex / [Math]::Max($totalVIServers, 1)) * 100)
+            Write-DiscoveryProgress -Activity 'Resolving target hosts' -Status "Scanning vCenter $currentVIServerIndex of $totalVIServers" -CurrentOperation $viServer.Name -PercentComplete $percentComplete
+            Write-Log -Message "Resolving all requested hosts against vCenter '$($viServer.Name)' without chunking."
+            $vmHosts = @(Get-VMHost -Server $viServer -Name $HostNames -ErrorAction SilentlyContinue)
+            Write-Log -Message "Resolved $($vmHosts.Count) host(s) from vCenter '$($viServer.Name)' without chunking."
 
             foreach ($vmHost in $vmHosts) {
                 $inventoryEntry = [pscustomobject]@{
@@ -1525,7 +1571,7 @@ try {
         Write-Log -Message 'LockdownMode argument provided: none'
     }
 
-    if ($cli.ResolutionChunkSize -gt 0) {
+    if ($cli.ResolutionChunkingEnabled) {
         Write-Log -Message "ResolutionChunkSize argument provided: $($cli.ResolutionChunkSize)"
     }
     else {
@@ -1536,6 +1582,13 @@ try {
 
     if ($cli.ResolutionChunkSize -lt 0) {
         throw '-ResolutionChunkSize must be a positive integer when provided.'
+    }
+
+    if ($cli.ResolutionChunkingEnabled) {
+        Write-Log -Message "Host resolution mode: chunked (chunk size $($cli.ResolutionChunkSize))."
+    }
+    else {
+        Write-Log -Message 'Host resolution mode: unchunked.'
     }
 
     if ($cli.LockdownMode -and $cli.Mode -ne 'check-connectivity') {
@@ -1581,7 +1634,8 @@ try {
         }
     }
     else {
-        $resolvedHosts = @(Resolve-TargetHosts -HostNames $hostNames -VIServers $connectedVIServers -ChunkSize $cli.ResolutionChunkSize)
+        $effectiveResolutionChunkSize = if ($cli.ResolutionChunkingEnabled) { $cli.ResolutionChunkSize } else { 0 }
+        $resolvedHosts = @(Resolve-TargetHosts -HostNames $hostNames -VIServers $connectedVIServers -ChunkSize $effectiveResolutionChunkSize)
     }
 
     if ($resolvedHosts.Count -eq 0) {
