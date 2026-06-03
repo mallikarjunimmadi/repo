@@ -25,6 +25,7 @@ param(
     [string]$Password,
     [switch]$ForceReset,
     [string]$EsxAdminsGroup,
+    [int]$ResolutionChunkSize,
     [ValidateSet('enable', 'disable')]
     [string]$LockdownMode,
     [switch]$Help
@@ -73,6 +74,7 @@ Usage:
   .\esxi_local_user_compliance_v0.0.7.ps1 -Remediate -VMHost esxi01 -Username SOCVA -Password MyPassword! -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
   .\esxi_local_user_compliance_v0.0.7.ps1 -Remediate -VMHost esxi01 -Username SOCVA -Password MyPassword! -ForceReset -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
   .\esxi_local_user_compliance_v0.0.7.ps1 -CheckConnectivity -CsvPath .\hosts.csv -Username SOCVA -Password MyPassword! -LockdownMode enable
+  .\esxi_local_user_compliance_v0.0.7.ps1 -CheckConnectivity -CsvPath .\hosts.csv -Username SOCVA -Password MyPassword! -ResolutionChunkSize 200
 
 Supported arguments:
   -Validate
@@ -84,6 +86,7 @@ Supported arguments:
   -Password <password>
   -ForceReset
   -EsxAdminsGroup <value>
+  -ResolutionChunkSize <positive-integer>
   -LockdownMode <enable|disable>
   -Help
 
@@ -95,6 +98,7 @@ Notes:
   - For remediation, password is required when creating a missing user and optional otherwise unless -ForceReset is used.
   - -ForceReset resets the password only for users that already exist.
   - -Validate, -Remediate, and -CheckConnectivity default to all hosts in connected vCenters if no host input is provided.
+  - Host resolution is unchunked by default. Use -ResolutionChunkSize only when you explicitly want chunked host lookup batches.
 '@
 }
 
@@ -166,6 +170,24 @@ function Write-RunProgress {
     $currentOperation = if ($Completed) { 'Run complete' } else { 'Processing host user checks' }
 
     Write-Progress -Activity 'ESXi local user compliance' -Status $status -CurrentOperation $currentOperation -PercentComplete $percentComplete -Completed:$Completed
+}
+
+function Write-DiscoveryProgress {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Activity,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Status,
+
+        [string]$CurrentOperation,
+
+        [int]$PercentComplete = -1,
+
+        [switch]$Completed
+    )
+
+    Write-Progress -Id 1 -Activity $Activity -Status $Status -CurrentOperation $CurrentOperation -PercentComplete $PercentComplete -Completed:$Completed
 }
 
 function Write-ValidationSnapshotLog {
@@ -317,6 +339,8 @@ function New-CliOptionsFromParameters {
         Password = $Password
         ForceReset = [bool]$ForceReset
         EsxAdminsGroup = $EsxAdminsGroup
+        ResolutionChunkSize = $ResolutionChunkSize
+        ResolutionChunkingEnabled = ($PSBoundParameters.ContainsKey('ResolutionChunkSize') -and $ResolutionChunkSize -gt 0)
         LockdownMode = $LockdownMode
         Help = [bool]$Help
     }
@@ -575,55 +599,178 @@ function Get-HostNamesFromInput {
     return @($names | Sort-Object -Unique)
 }
 
+function Split-Collection {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object[]]$Items,
+
+        [int]$ChunkSize = 200
+    )
+
+    if ($ChunkSize -le 0) {
+        throw 'ChunkSize must be greater than zero.'
+    }
+
+    $chunks = New-Object System.Collections.Generic.List[object[]]
+    for ($index = 0; $index -lt $Items.Count; $index += $ChunkSize) {
+        $remaining = $Items.Count - $index
+        $currentSize = [Math]::Min($ChunkSize, $remaining)
+        $chunk = New-Object object[] $currentSize
+        [Array]::Copy($Items, $index, $chunk, 0, $currentSize)
+        [void]$chunks.Add($chunk)
+    }
+
+    return @($chunks.ToArray())
+}
+
+function Get-ReportLoopIdentities {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Mode,
+
+        [string[]]$TargetUsernames
+    )
+
+    if ($Mode -eq 'check-connectivity') {
+        return @('__connectivity__')
+    }
+
+    return @($TargetUsernames)
+}
+
 function Resolve-TargetHosts {
     param(
         [string[]]$HostNames,
-        [array]$VIServers
+        [array]$VIServers,
+        [int]$ChunkSize = 0
     )
 
     $resolvedHosts = New-Object System.Collections.Generic.List[object]
-    $hostLookup = @{}
+    $resolvedByKey = @{}
+    $resolvedEntryKeys = @{}
+    $totalVIServers = @($VIServers).Count
 
-    foreach ($viServer in $VIServers) {
-        $vmHosts = @(Get-VMHost -Server $viServer -ErrorAction SilentlyContinue)
-        foreach ($vmHost in $vmHosts) {
-            $inventoryEntry = [pscustomobject]@{
-                VMHost = $vmHost
-                VCenter = $viServer.Name
-                ConnectionState = $vmHost.ConnectionState.ToString()
-                IsEligible = ($vmHost.ConnectionState.ToString() -in $AllowedHostConnectionStates)
+    if ($ChunkSize -gt 0) {
+        $hostNameChunks = @(Split-Collection -Items $HostNames -ChunkSize $ChunkSize)
+        $totalChunks = [Math]::Max(($totalVIServers * $hostNameChunks.Count), 1)
+        $completedChunks = 0
+        Write-Log -Message "Resolving $($HostNames.Count) requested host name(s) across $totalVIServers connected vCenter(s) in $($hostNameChunks.Count) chunk(s) of size $ChunkSize."
+        foreach ($viServer in $VIServers) {
+            $currentChunkIndex = 0
+            foreach ($hostNameChunk in $hostNameChunks) {
+                $currentChunkIndex++
+                $completedChunks++
+                $percentComplete = [int](($completedChunks / $totalChunks) * 100)
+                Write-DiscoveryProgress -Activity 'Resolving target hosts' -Status "Scanning vCenter chunk $completedChunks of $totalChunks" -CurrentOperation "$($viServer.Name) [chunk $currentChunkIndex of $($hostNameChunks.Count)]" -PercentComplete $percentComplete
+                Write-Log -Message "Resolving host chunk $currentChunkIndex of $($hostNameChunks.Count) against vCenter '$($viServer.Name)'."
+                $vmHosts = @(Get-VMHost -Server $viServer -Name $hostNameChunk -ErrorAction SilentlyContinue)
+                Write-Log -Message "Resolved $($vmHosts.Count) host(s) in chunk $currentChunkIndex from vCenter '$($viServer.Name)'."
+
+                foreach ($vmHost in $vmHosts) {
+                    $inventoryEntry = [pscustomobject]@{
+                        VMHost = $vmHost
+                        VCenter = $viServer.Name
+                        ConnectionState = $vmHost.ConnectionState.ToString()
+                        IsEligible = ($vmHost.ConnectionState.ToString() -in $AllowedHostConnectionStates)
+                    }
+
+                    $hostNameKeys = New-Object System.Collections.Generic.List[string]
+                    if ($vmHost.Name) {
+                        [void]$hostNameKeys.Add($vmHost.Name.ToString())
+
+                        $shortHostName = $vmHost.Name.ToString().Split('.')[0]
+                        if ($shortHostName) {
+                            [void]$hostNameKeys.Add($shortHostName)
+                        }
+                    }
+
+                    foreach ($lookupKey in ($hostNameKeys | Select-Object -Unique)) {
+                        if (-not $lookupKey) {
+                            continue
+                        }
+
+                        $normalizedKey = $lookupKey.ToString().Trim().ToLowerInvariant()
+                        if (-not $normalizedKey) {
+                            continue
+                        }
+
+                        if (-not $resolvedByKey.ContainsKey($normalizedKey)) {
+                            $resolvedByKey[$normalizedKey] = New-Object System.Collections.Generic.List[object]
+                            $resolvedEntryKeys[$normalizedKey] = @{}
+                        }
+
+                        $entryKey = "$($viServer.Name)|$($vmHost.Id)"
+                        if (-not $resolvedEntryKeys[$normalizedKey].ContainsKey($entryKey)) {
+                            [void]$resolvedByKey[$normalizedKey].Add($inventoryEntry)
+                            $resolvedEntryKeys[$normalizedKey][$entryKey] = $true
+                        }
+                    }
+                }
             }
+        }
+    }
+    else {
+        Write-Log -Message "Resolving $($HostNames.Count) requested host name(s) across $totalVIServers connected vCenter(s) without chunking."
+        $currentVIServerIndex = 0
 
-            foreach ($lookupKey in @(
-                    $vmHost.Name,
-                    $vmHost.ExtensionData.Name
-                )) {
-                if (-not $lookupKey) {
-                    continue
+        foreach ($viServer in $VIServers) {
+            $currentVIServerIndex++
+            $percentComplete = [int](($currentVIServerIndex / [Math]::Max($totalVIServers, 1)) * 100)
+            Write-DiscoveryProgress -Activity 'Resolving target hosts' -Status "Scanning vCenter $currentVIServerIndex of $totalVIServers" -CurrentOperation $viServer.Name -PercentComplete $percentComplete
+            Write-Log -Message "Resolving all requested hosts against vCenter '$($viServer.Name)' without chunking."
+            $vmHosts = @(Get-VMHost -Server $viServer -Name $HostNames -ErrorAction SilentlyContinue)
+            Write-Log -Message "Resolved $($vmHosts.Count) host(s) from vCenter '$($viServer.Name)' without chunking."
+
+            foreach ($vmHost in $vmHosts) {
+                $inventoryEntry = [pscustomobject]@{
+                    VMHost = $vmHost
+                    VCenter = $viServer.Name
+                    ConnectionState = $vmHost.ConnectionState.ToString()
+                    IsEligible = ($vmHost.ConnectionState.ToString() -in $AllowedHostConnectionStates)
                 }
 
-                $normalizedKey = $lookupKey.ToString().Trim().ToLowerInvariant()
-                if (-not $normalizedKey) {
-                    continue
+                $hostNameKeys = New-Object System.Collections.Generic.List[string]
+                if ($vmHost.Name) {
+                    [void]$hostNameKeys.Add($vmHost.Name.ToString())
+
+                    $shortHostName = $vmHost.Name.ToString().Split('.')[0]
+                    if ($shortHostName) {
+                        [void]$hostNameKeys.Add($shortHostName)
+                    }
                 }
 
-                if (-not $hostLookup.ContainsKey($normalizedKey)) {
-                    $hostLookup[$normalizedKey] = New-Object System.Collections.Generic.List[object]
-                }
+                foreach ($lookupKey in ($hostNameKeys | Select-Object -Unique)) {
+                    if (-not $lookupKey) {
+                        continue
+                    }
 
-                [void]$hostLookup[$normalizedKey].Add($inventoryEntry)
+                    $normalizedKey = $lookupKey.ToString().Trim().ToLowerInvariant()
+                    if (-not $normalizedKey) {
+                        continue
+                    }
+
+                    if (-not $resolvedByKey.ContainsKey($normalizedKey)) {
+                        $resolvedByKey[$normalizedKey] = New-Object System.Collections.Generic.List[object]
+                        $resolvedEntryKeys[$normalizedKey] = @{}
+                    }
+
+                    $entryKey = "$($viServer.Name)|$($vmHost.Id)"
+                    if (-not $resolvedEntryKeys[$normalizedKey].ContainsKey($entryKey)) {
+                        [void]$resolvedByKey[$normalizedKey].Add($inventoryEntry)
+                        $resolvedEntryKeys[$normalizedKey][$entryKey] = $true
+                    }
+                }
             }
         }
     }
 
     foreach ($hostName in $HostNames) {
         $normalizedHostName = $hostName.Trim().ToLowerInvariant()
-        $matches = if ($hostLookup.ContainsKey($normalizedHostName)) {
-            @($hostLookup[$normalizedHostName].ToArray())
-        }
-        else {
-            @()
-        }
+        $matches = @(
+            if ($resolvedByKey.ContainsKey($normalizedHostName)) {
+                $resolvedByKey[$normalizedHostName].ToArray()
+            }
+        )
 
         if ($matches.Count -eq 0) {
             Write-Log -Level 'ERROR' -Message "Host '$hostName' was not found in any connected vCenter."
@@ -635,6 +782,8 @@ function Resolve-TargetHosts {
         }
     }
 
+    Write-DiscoveryProgress -Activity 'Resolving target hosts' -Status "Resolved $($resolvedHosts.Count) host(s)" -CurrentOperation 'Host resolution complete' -Completed
+
     return @($resolvedHosts.ToArray())
 }
 
@@ -644,9 +793,17 @@ function Get-AllConnectedHosts {
     )
 
     $resolvedHosts = New-Object System.Collections.Generic.List[object]
+    $totalVIServers = @($VIServers).Count
+    $currentVIServerIndex = 0
+
+    Write-Log -Message "Enumerating all ESXi hosts from $totalVIServers connected vCenter(s)."
 
     foreach ($viServer in $VIServers) {
+        $currentVIServerIndex++
+        Write-DiscoveryProgress -Activity 'Enumerating connected hosts' -Status "Scanning vCenter $currentVIServerIndex of $totalVIServers" -CurrentOperation $viServer.Name -PercentComplete ([int](($currentVIServerIndex / [Math]::Max($totalVIServers, 1)) * 100))
+        Write-Log -Message "Fetching all ESXi hosts from vCenter '$($viServer.Name)'."
         $vmHosts = @(Get-VMHost -Server $viServer -ErrorAction SilentlyContinue)
+        Write-Log -Message "Fetched $($vmHosts.Count) host(s) from vCenter '$($viServer.Name)'."
         foreach ($vmHost in $vmHosts) {
             [void]$resolvedHosts.Add([pscustomobject]@{
                 VMHost = $vmHost
@@ -656,6 +813,8 @@ function Get-AllConnectedHosts {
             })
         }
     }
+
+    Write-DiscoveryProgress -Activity 'Enumerating connected hosts' -Status "Resolved $($resolvedHosts.Count) host(s)" -CurrentOperation 'Host enumeration complete' -Completed
 
     return @(
         $resolvedHosts |
@@ -1412,7 +1571,25 @@ try {
         Write-Log -Message 'LockdownMode argument provided: none'
     }
 
+    if ($cli.ResolutionChunkingEnabled) {
+        Write-Log -Message "ResolutionChunkSize argument provided: $($cli.ResolutionChunkSize)"
+    }
+    else {
+        Write-Log -Message 'ResolutionChunkSize argument provided: none'
+    }
+
     Write-Log -Message ("Password argument provided: {0}" -f ([bool]($cli.Password)))
+
+    if ($cli.ResolutionChunkSize -lt 0) {
+        throw '-ResolutionChunkSize must be a positive integer when provided.'
+    }
+
+    if ($cli.ResolutionChunkingEnabled) {
+        Write-Log -Message "Host resolution mode: chunked (chunk size $($cli.ResolutionChunkSize))."
+    }
+    else {
+        Write-Log -Message 'Host resolution mode: unchunked.'
+    }
 
     if ($cli.LockdownMode -and $cli.Mode -ne 'check-connectivity') {
         throw '-LockdownMode can be used only with -CheckConnectivity.'
@@ -1457,7 +1634,8 @@ try {
         }
     }
     else {
-        $resolvedHosts = @(Resolve-TargetHosts -HostNames $hostNames -VIServers $connectedVIServers)
+        $effectiveResolutionChunkSize = if ($cli.ResolutionChunkingEnabled) { $cli.ResolutionChunkSize } else { 0 }
+        $resolvedHosts = @(Resolve-TargetHosts -HostNames $hostNames -VIServers $connectedVIServers -ChunkSize $effectiveResolutionChunkSize)
     }
 
     if ($resolvedHosts.Count -eq 0) {
@@ -1540,7 +1718,7 @@ try {
             $skippedMessage = "Host connection state '$($resolvedHost.ConnectionState)' is not eligible. Allowed states: $($AllowedHostConnectionStates -join ', ')."
             Write-Log -Level 'WARN' -Message "Skipping host '$($context.VMHost.Name)' in vCenter '$($context.VCenter)' because $skippedMessage"
 
-            $reportUsernames = if ($cli.Mode -eq 'check-connectivity') { @($null) } else { $targetUsernames }
+            $reportUsernames = @(Get-ReportLoopIdentities -Mode $cli.Mode -TargetUsernames $targetUsernames)
             foreach ($currentUsername in $reportUsernames) {
                 Add-ReportRow -Row (New-ModeReportRow -Mode $cli.Mode -Data ([ordered]@{
                     Timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
@@ -1549,7 +1727,7 @@ try {
                     Cluster = $context.Cluster
                     Host = $context.VMHost.Name
                     HostConnectionState = $resolvedHost.ConnectionState
-                    Username = $currentUsername
+                    Username = if ($cli.Mode -eq 'check-connectivity') { $null } else { $currentUsername }
                     ConnectivityUsername = $connectivityUsername
                     RequestedLockdownMode = $connectivityLockdownMode
                     UserPresent = $false
@@ -1596,7 +1774,7 @@ try {
             $hostConnectivityResult = Invoke-ConnectivityCheckWithLockdownHandling -Context $context -Username $connectivityUsername -Password $plainTextPassword -LockdownModePreference $connectivityLockdownMode
         }
 
-        $reportUsernames = if ($cli.Mode -eq 'check-connectivity') { @($null) } else { $targetUsernames }
+        $reportUsernames = @(Get-ReportLoopIdentities -Mode $cli.Mode -TargetUsernames $targetUsernames)
         foreach ($currentUsername in $reportUsernames) {
             $logIdentityLabel = if ($cli.Mode -eq 'check-connectivity') { 'connectivity user' } else { 'user' }
             $logIdentityValue = if ($cli.Mode -eq 'check-connectivity') { $connectivityUsername } else { $currentUsername }
@@ -1725,7 +1903,7 @@ try {
                 Cluster = $context.Cluster
                 Host = $context.VMHost.Name
                 HostConnectionState = $resolvedHost.ConnectionState
-                Username = $currentUsername
+                Username = if ($cli.Mode -eq 'check-connectivity') { $null } else { $currentUsername }
                 ConnectivityUsername = $connectivityUsername
                 RequestedLockdownMode = $connectivityLockdownMode
                 UserPresent = $snapshot.UserPresent
