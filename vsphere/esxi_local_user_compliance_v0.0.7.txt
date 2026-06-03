@@ -593,6 +593,30 @@ function Get-HostNamesFromInput {
     return @($names | Sort-Object -Unique)
 }
 
+function Split-Collection {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object[]]$Items,
+
+        [int]$ChunkSize = 200
+    )
+
+    if ($ChunkSize -le 0) {
+        throw 'ChunkSize must be greater than zero.'
+    }
+
+    $chunks = New-Object System.Collections.Generic.List[object[]]
+    for ($index = 0; $index -lt $Items.Count; $index += $ChunkSize) {
+        $remaining = $Items.Count - $index
+        $currentSize = [Math]::Min($ChunkSize, $remaining)
+        $chunk = New-Object object[] $currentSize
+        [Array]::Copy($Items, $index, $chunk, 0, $currentSize)
+        [void]$chunks.Add($chunk)
+    }
+
+    return @($chunks.ToArray())
+}
+
 function Resolve-TargetHosts {
     param(
         [string[]]$HostNames,
@@ -600,56 +624,76 @@ function Resolve-TargetHosts {
     )
 
     $resolvedHosts = New-Object System.Collections.Generic.List[object]
-    $hostLookup = @{}
+    $resolvedByKey = @{}
+    $resolvedEntryKeys = @{}
     $totalVIServers = @($VIServers).Count
-    $currentVIServerIndex = 0
+    $hostNameChunks = @(Split-Collection -Items $HostNames -ChunkSize 200)
+    $totalChunks = [Math]::Max(($totalVIServers * $hostNameChunks.Count), 1)
+    $completedChunks = 0
 
-    Write-Log -Message "Building host inventory from $totalVIServers connected vCenter(s) to resolve $($HostNames.Count) requested host name(s)."
+    Write-Log -Message "Resolving $($HostNames.Count) requested host name(s) across $totalVIServers connected vCenter(s) in $($hostNameChunks.Count) chunk(s)."
 
     foreach ($viServer in $VIServers) {
-        $currentVIServerIndex++
-        Write-DiscoveryProgress -Activity 'Resolving target hosts' -Status "Scanning vCenter $currentVIServerIndex of $totalVIServers" -CurrentOperation $viServer.Name -PercentComplete ([int](($currentVIServerIndex / [Math]::Max($totalVIServers, 1)) * 100))
-        Write-Log -Message "Fetching ESXi host inventory from vCenter '$($viServer.Name)' for host resolution."
-        $vmHosts = @(Get-VMHost -Server $viServer -ErrorAction SilentlyContinue)
-        Write-Log -Message "Fetched $($vmHosts.Count) host(s) from vCenter '$($viServer.Name)' for host resolution."
-        foreach ($vmHost in $vmHosts) {
-            $inventoryEntry = [pscustomobject]@{
-                VMHost = $vmHost
-                VCenter = $viServer.Name
-                ConnectionState = $vmHost.ConnectionState.ToString()
-                IsEligible = ($vmHost.ConnectionState.ToString() -in $AllowedHostConnectionStates)
-            }
+        $currentChunkIndex = 0
+        foreach ($hostNameChunk in $hostNameChunks) {
+            $currentChunkIndex++
+            $completedChunks++
+            $percentComplete = [int](($completedChunks / $totalChunks) * 100)
+            Write-DiscoveryProgress -Activity 'Resolving target hosts' -Status "Scanning vCenter chunk $completedChunks of $totalChunks" -CurrentOperation "$($viServer.Name) [chunk $currentChunkIndex of $($hostNameChunks.Count)]" -PercentComplete $percentComplete
+            Write-Log -Message "Resolving host chunk $currentChunkIndex of $($hostNameChunks.Count) against vCenter '$($viServer.Name)'."
+            $vmHosts = @(Get-VMHost -Server $viServer -Name $hostNameChunk -ErrorAction SilentlyContinue)
+            Write-Log -Message "Resolved $($vmHosts.Count) host(s) in chunk $currentChunkIndex from vCenter '$($viServer.Name)'."
 
-            foreach ($lookupKey in @(
-                    $vmHost.Name,
-                    $vmHost.ExtensionData.Name
-                )) {
-                if (-not $lookupKey) {
-                    continue
+            foreach ($vmHost in $vmHosts) {
+                $inventoryEntry = [pscustomobject]@{
+                    VMHost = $vmHost
+                    VCenter = $viServer.Name
+                    ConnectionState = $vmHost.ConnectionState.ToString()
+                    IsEligible = ($vmHost.ConnectionState.ToString() -in $AllowedHostConnectionStates)
                 }
 
-                $normalizedKey = $lookupKey.ToString().Trim().ToLowerInvariant()
-                if (-not $normalizedKey) {
-                    continue
+                $hostNameKeys = New-Object System.Collections.Generic.List[string]
+                if ($vmHost.Name) {
+                    [void]$hostNameKeys.Add($vmHost.Name.ToString())
+
+                    $shortHostName = $vmHost.Name.ToString().Split('.')[0]
+                    if ($shortHostName) {
+                        [void]$hostNameKeys.Add($shortHostName)
+                    }
                 }
 
-                if (-not $hostLookup.ContainsKey($normalizedKey)) {
-                    $hostLookup[$normalizedKey] = New-Object System.Collections.Generic.List[object]
-                }
+                foreach ($lookupKey in ($hostNameKeys | Select-Object -Unique)) {
+                    if (-not $lookupKey) {
+                        continue
+                    }
 
-                [void]$hostLookup[$normalizedKey].Add($inventoryEntry)
+                    $normalizedKey = $lookupKey.ToString().Trim().ToLowerInvariant()
+                    if (-not $normalizedKey) {
+                        continue
+                    }
+
+                    if (-not $resolvedByKey.ContainsKey($normalizedKey)) {
+                        $resolvedByKey[$normalizedKey] = New-Object System.Collections.Generic.List[object]
+                        $resolvedEntryKeys[$normalizedKey] = @{}
+                    }
+
+                    $entryKey = "$($viServer.Name)|$($vmHost.Id)"
+                    if (-not $resolvedEntryKeys[$normalizedKey].ContainsKey($entryKey)) {
+                        [void]$resolvedByKey[$normalizedKey].Add($inventoryEntry)
+                        $resolvedEntryKeys[$normalizedKey][$entryKey] = $true
+                    }
+                }
             }
         }
     }
 
     foreach ($hostName in $HostNames) {
         $normalizedHostName = $hostName.Trim().ToLowerInvariant()
-        $matches = if ($hostLookup.ContainsKey($normalizedHostName)) {
-            @($hostLookup[$normalizedHostName].ToArray())
-        }
-        else {
-            @()
-        }
+        $matches = @(
+            if ($resolvedByKey.ContainsKey($normalizedHostName)) {
+                $resolvedByKey[$normalizedHostName].ToArray()
+            }
+        )
 
         if ($matches.Count -eq 0) {
             Write-Log -Level 'ERROR' -Message "Host '$hostName' was not found in any connected vCenter."
