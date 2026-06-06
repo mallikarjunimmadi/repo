@@ -62,6 +62,8 @@ Important script-level settings:
 
 If `DesiredEsxAdminsGroupValue` is still set to `CHANGE_ME`, provide `-EsxAdminsGroup` at runtime.
 
+If the provided ESX admin group is not already domain-qualified, the script attempts to resolve a host-visible principal automatically by checking directory results and joined-domain variants such as `DOMAIN\GroupName`.
+
 ## Parameters
 
 - `-Validate`

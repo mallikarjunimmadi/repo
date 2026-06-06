@@ -975,6 +975,139 @@ function Get-EsxAdminsGroupState {
     return [pscustomobject]$result
 }
 
+function Get-PrincipalLeafName {
+    param(
+        [AllowNull()]
+        [string]$PrincipalName
+    )
+
+    if (-not $PrincipalName) {
+        return $null
+    }
+
+    $trimmedPrincipalName = $PrincipalName.Trim()
+    if (-not $trimmedPrincipalName) {
+        return $null
+    }
+
+    if ($trimmedPrincipalName.Contains('\')) {
+        return ($trimmedPrincipalName -split '\\')[-1].Trim()
+    }
+
+    if ($trimmedPrincipalName.Contains('@')) {
+        return ($trimmedPrincipalName -split '@')[0].Trim()
+    }
+
+    return $trimmedPrincipalName
+}
+
+function Get-EsxAdminGroupPrincipalCandidates {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Context,
+
+        [string]$GroupName
+    )
+
+    $candidates = New-Object System.Collections.Generic.List[string]
+    $seen = @{}
+
+    function Add-Candidate {
+        param(
+            [AllowNull()]
+            [string]$Candidate
+        )
+
+        if (-not $Candidate -or -not $Candidate.Trim()) {
+            return
+        }
+
+        $normalizedCandidate = $Candidate.Trim().ToLowerInvariant()
+        if ($seen.ContainsKey($normalizedCandidate)) {
+            return
+        }
+
+        [void]$candidates.Add($Candidate.Trim())
+        $seen[$normalizedCandidate] = $true
+    }
+
+    if (-not $GroupName -or -not $GroupName.Trim()) {
+        return @()
+    }
+
+    $trimmedGroupName = $GroupName.Trim()
+    Add-Candidate -Candidate $trimmedGroupName
+
+    if ($Context.UserDirectory) {
+        $normalizedGroupName = $trimmedGroupName.ToLowerInvariant()
+        $queries = @(
+            @{ Search = $trimmedGroupName; ExactMatch = $true },
+            @{ Search = $trimmedGroupName; ExactMatch = $false }
+        )
+
+        foreach ($query in $queries) {
+            try {
+                $results = @($Context.UserDirectory.RetrieveUserGroups('', $query.Search, '', '', $true, $true, $query.ExactMatch))
+                foreach ($result in $results) {
+                    if (-not $result.Principal) {
+                        continue
+                    }
+
+                    $principalName = $result.Principal.ToString().Trim()
+                    if (-not $principalName) {
+                        continue
+                    }
+
+                    $normalizedPrincipalName = $principalName.ToLowerInvariant()
+                    $principalLeafName = Get-PrincipalLeafName -PrincipalName $principalName
+                    if ($normalizedPrincipalName -eq $normalizedGroupName -or
+                        ($principalLeafName -and $principalLeafName.ToLowerInvariant() -eq $normalizedGroupName)) {
+                        Add-Candidate -Candidate $principalName
+                    }
+                }
+            }
+            catch {
+                if ($_.Exception.Message -match 'could not be found') {
+                    continue
+                }
+            }
+        }
+    }
+
+    $domainInfo = Get-HostDomainMembershipInfo -Context $Context
+    if ($domainInfo.DomainJoined -and $domainInfo.DomainName) {
+        $joinedDomainName = $domainInfo.DomainName.Trim()
+        if ($joinedDomainName) {
+            Add-Candidate -Candidate "$joinedDomainName\$trimmedGroupName"
+            Add-Candidate -Candidate "$trimmedGroupName@$joinedDomainName"
+
+            $domainShortName = ($joinedDomainName -split '\.')[0].Trim()
+            if ($domainShortName) {
+                Add-Candidate -Candidate "$domainShortName\$trimmedGroupName"
+            }
+        }
+    }
+
+    return @($candidates.ToArray())
+}
+
+function Resolve-EsxAdminGroupPrincipal {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Context,
+
+        [string]$GroupName
+    )
+
+    $candidates = @(Get-EsxAdminGroupPrincipalCandidates -Context $Context -GroupName $GroupName)
+    if ($candidates.Count -eq 0) {
+        return $null
+    }
+
+    Write-Log -Message "Resolved ESX admin group candidate principal(s) for '$GroupName' on host '$($Context.VMHost.Name)': $($candidates -join ', ')"
+    return $candidates[0]
+}
+
 function Get-HostGroupAccessEntry {
     param(
         [Parameter(Mandatory = $true)]
@@ -988,13 +1121,22 @@ function Get-HostGroupAccessEntry {
         throw "HostAccessManager is not available for host $($Context.VMHost.Name)."
     }
 
-    $normalizedGroupName = $GroupName.Trim().ToLowerInvariant()
+    $candidateNames = @(Get-EsxAdminGroupPrincipalCandidates -Context $Context -GroupName $GroupName)
+    if ($candidateNames.Count -eq 0) {
+        return $null
+    }
+
+    $normalizedCandidateNames = @{}
+    foreach ($candidateName in $candidateNames) {
+        $normalizedCandidateNames[$candidateName.Trim().ToLowerInvariant()] = $true
+    }
+
     $entries = @($Context.AccessManager.RetrieveHostAccessControlEntries())
     return $entries |
         Where-Object {
             $_.Group -eq $true -and
             $_.Principal -and
-            $_.Principal.ToString().Trim().ToLowerInvariant() -eq $normalizedGroupName
+            $normalizedCandidateNames.ContainsKey($_.Principal.ToString().Trim().ToLowerInvariant())
         } |
         Select-Object -First 1
 }
@@ -1251,6 +1393,23 @@ function Set-LockdownMode {
     return $updatedMode
 }
 
+function Ensure-LockdownDisabledForAdminAccess {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Context
+    )
+
+    $currentMode = Get-CurrentLockdownMode -Context $Context
+    if ($currentMode -eq 'lockdownDisabled') {
+        Write-Log -Message "Host '$($Context.VMHost.Name)' is already in lockdown mode 'lockdownDisabled'. Admin host access will be assigned before lockdown is re-enabled."
+        return 'AlreadyDisabled'
+    }
+
+    Write-Log -Level 'WARN' -Message "Host '$($Context.VMHost.Name)' is in lockdown mode '$currentMode'. Disabling lockdown temporarily to assign Admin host access."
+    $null = Set-LockdownMode -Context $Context -Mode 'lockdownDisabled'
+    return 'DisabledTemporarily'
+}
+
 function Ensure-LockdownExceptionUser {
     param(
         [Parameter(Mandatory = $true)]
@@ -1390,9 +1549,29 @@ function Ensure-EsxAdminsGroupAdminAccess {
         return 'AlreadyCompliant'
     }
 
-    $Context.AccessManager.ChangeAccessMode($GroupName, $true, $DesiredEsxAdminsGroupAccessMode)
-    Write-Log -Level 'SUCCESS' -Message "Assigned Admin host access to group '$GroupName' on host '$($Context.VMHost.Name)'."
-    return 'Success'
+    $candidateNames = @(Get-EsxAdminGroupPrincipalCandidates -Context $Context -GroupName $GroupName)
+    if ($candidateNames.Count -eq 0) {
+        throw "Unable to resolve any candidate principal names for ESX admin group '$GroupName'."
+    }
+
+    $attemptErrors = New-Object System.Collections.Generic.List[string]
+    foreach ($candidateName in $candidateNames) {
+        try {
+            $Context.AccessManager.ChangeAccessMode($candidateName, $true, $DesiredEsxAdminsGroupAccessMode)
+            Write-Log -Level 'SUCCESS' -Message "Assigned Admin host access to group '$candidateName' on host '$($Context.VMHost.Name)'."
+            return 'Success'
+        }
+        catch {
+            if ($_.Exception.Message -match 'does not exist') {
+                [void]$attemptErrors.Add(("{0}: {1}" -f $candidateName, $_.Exception.Message))
+                continue
+            }
+
+            throw
+        }
+    }
+
+    throw "Unable to assign Admin host access to ESX admin group '$GroupName' on host '$($Context.VMHost.Name)'. Tried: $($candidateNames -join ', '). Errors: $($attemptErrors -join ' | ')"
 }
 
 function Test-HostConnectivity {
@@ -1896,6 +2075,7 @@ try {
                 InLockdownExceptionList = $false
             }
             $userCreatedThisRun = $false
+            $lockdownAdminAccessPreparationStatus = 'NotRequired'
             $esxAdminsGroupRemediationStatus = if ($cli.Mode -eq 'remediate') {
                 if ($effectiveEsxAdminsGroupValue) { 'NotRequested' } else { 'Skipped' }
             } else { 'NotApplicable' }
@@ -1931,7 +2111,6 @@ try {
                         Write-Log -Message "User '$currentUsername' already exists on host '$($context.VMHost.Name)'."
                     }
 
-                    Ensure-ReadOnlyAccess -Context $context -Username $currentUsername
                     if (-not $effectiveEsxAdminsGroupValue) {
                         $esxAdminsGroupRemediationStatus = 'Skipped'
                         $esxAdminsGroupAdminAccessRemediationStatus = 'Skipped'
@@ -1945,6 +2124,7 @@ try {
                     }
 
                     if ($effectiveEsxAdminsGroupValue) {
+                        $lockdownAdminAccessPreparationStatus = Ensure-LockdownDisabledForAdminAccess -Context $context
                         if ($snapshot.EsxAdminsGroupAdminAccessStatus -ne 'Valid') {
                             $esxAdminsGroupAdminAccessRemediationStatus = Ensure-EsxAdminsGroupAdminAccess -Context $context -GroupName $effectiveEsxAdminsGroupValue
                         }
@@ -1954,8 +2134,9 @@ try {
                         }
                     }
 
-                    Ensure-LockdownMode -Context $context
+                    Ensure-ReadOnlyAccess -Context $context -Username $currentUsername
                     Ensure-LockdownExceptionUser -Context $context -Username $currentUsername
+                    Ensure-LockdownMode -Context $context
 
                     if ($cli.ForceReset -and -not $userCreatedThisRun) {
                         Reset-HostUserPassword -Context $context -Username $currentUsername -Password $plainTextPassword
@@ -2009,6 +2190,15 @@ try {
                 }
                 elseif ($cli.Mode -eq 'remediate' -and $passwordResetStatus -eq 'NotRequested') {
                     $passwordResetStatus = 'Skipped'
+                }
+
+                if ($cli.Mode -eq 'remediate' -and $lockdownAdminAccessPreparationStatus -ne 'NotRequired') {
+                    try {
+                        Ensure-LockdownMode -Context $context
+                    }
+                    catch {
+                        Write-Log -Level 'WARN' -Message "Unable to restore lockdown mode '$DesiredLockdownMode' on host '$($context.VMHost.Name)' after remediation failure: $($_.Exception.Message)"
+                    }
                 }
 
                 $actionStatus = 'Failed'
