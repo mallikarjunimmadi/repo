@@ -1393,6 +1393,23 @@ function Set-LockdownMode {
     return $updatedMode
 }
 
+function Ensure-LockdownDisabledForAdminAccess {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Context
+    )
+
+    $currentMode = Get-CurrentLockdownMode -Context $Context
+    if ($currentMode -eq 'lockdownDisabled') {
+        Write-Log -Message "Host '$($Context.VMHost.Name)' is already in lockdown mode 'lockdownDisabled'. Admin host access will be assigned before lockdown is re-enabled."
+        return 'AlreadyDisabled'
+    }
+
+    Write-Log -Level 'WARN' -Message "Host '$($Context.VMHost.Name)' is in lockdown mode '$currentMode'. Disabling lockdown temporarily to assign Admin host access."
+    $null = Set-LockdownMode -Context $Context -Mode 'lockdownDisabled'
+    return 'DisabledTemporarily'
+}
+
 function Ensure-LockdownExceptionUser {
     param(
         [Parameter(Mandatory = $true)]
@@ -2058,6 +2075,7 @@ try {
                 InLockdownExceptionList = $false
             }
             $userCreatedThisRun = $false
+            $lockdownAdminAccessPreparationStatus = 'NotRequired'
             $esxAdminsGroupRemediationStatus = if ($cli.Mode -eq 'remediate') {
                 if ($effectiveEsxAdminsGroupValue) { 'NotRequested' } else { 'Skipped' }
             } else { 'NotApplicable' }
@@ -2093,7 +2111,6 @@ try {
                         Write-Log -Message "User '$currentUsername' already exists on host '$($context.VMHost.Name)'."
                     }
 
-                    Ensure-ReadOnlyAccess -Context $context -Username $currentUsername
                     if (-not $effectiveEsxAdminsGroupValue) {
                         $esxAdminsGroupRemediationStatus = 'Skipped'
                         $esxAdminsGroupAdminAccessRemediationStatus = 'Skipped'
@@ -2107,6 +2124,7 @@ try {
                     }
 
                     if ($effectiveEsxAdminsGroupValue) {
+                        $lockdownAdminAccessPreparationStatus = Ensure-LockdownDisabledForAdminAccess -Context $context
                         if ($snapshot.EsxAdminsGroupAdminAccessStatus -ne 'Valid') {
                             $esxAdminsGroupAdminAccessRemediationStatus = Ensure-EsxAdminsGroupAdminAccess -Context $context -GroupName $effectiveEsxAdminsGroupValue
                         }
@@ -2116,8 +2134,9 @@ try {
                         }
                     }
 
-                    Ensure-LockdownMode -Context $context
+                    Ensure-ReadOnlyAccess -Context $context -Username $currentUsername
                     Ensure-LockdownExceptionUser -Context $context -Username $currentUsername
+                    Ensure-LockdownMode -Context $context
 
                     if ($cli.ForceReset -and -not $userCreatedThisRun) {
                         Reset-HostUserPassword -Context $context -Username $currentUsername -Password $plainTextPassword
@@ -2171,6 +2190,15 @@ try {
                 }
                 elseif ($cli.Mode -eq 'remediate' -and $passwordResetStatus -eq 'NotRequested') {
                     $passwordResetStatus = 'Skipped'
+                }
+
+                if ($cli.Mode -eq 'remediate' -and $lockdownAdminAccessPreparationStatus -ne 'NotRequired') {
+                    try {
+                        Ensure-LockdownMode -Context $context
+                    }
+                    catch {
+                        Write-Log -Level 'WARN' -Message "Unable to restore lockdown mode '$DesiredLockdownMode' on host '$($context.VMHost.Name)' after remediation failure: $($_.Exception.Message)"
+                    }
                 }
 
                 $actionStatus = 'Failed'
