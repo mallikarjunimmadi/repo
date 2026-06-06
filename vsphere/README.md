@@ -1,10 +1,10 @@
-# vSphere ESXi Local User Compliance v0.0.7
+# vSphere ESXi Local User Compliance v0.0.8
 
-Documentation for `esxi_local_user_compliance_v0.0.7.ps1`.
+Documentation for `esxi_local_user_compliance_v0.0.8.ps1`.
 
 ## Overview
 
-`esxi_local_user_compliance_v0.0.7.ps1` validates, remediates, and tests ESXi local-user compliance across one or more connected vCenters by using native PowerShell parameters.
+`esxi_local_user_compliance_v0.0.8.ps1` validates, remediates, and tests ESXi local-user compliance across one or more connected vCenters by using native PowerShell parameters.
 
 It supports three mutually exclusive modes:
 
@@ -18,6 +18,7 @@ The script can inspect and report on:
 - `ReadOnly` host access
 - Active Directory join state
 - `Config.HostAgent.plugins.hostsvc.esxAdminsGroup`
+- Host-level `Admin` access for the provided ESX admin group
 - Lockdown mode
 - Lockdown exception membership
 - Direct host connectivity in connectivity mode
@@ -27,9 +28,10 @@ In `-Remediate` mode, the script can:
 1. Create a missing local user.
 2. Ensure `ReadOnly` access for the user.
 3. Set `Config.HostAgent.plugins.hostsvc.esxAdminsGroup` to the desired value.
-4. Ensure lockdown mode is `lockdownNormal`.
-5. Ensure the user is present in the lockdown exception list.
-6. Reset the password only when `-ForceReset` is supplied for an already existing user.
+4. Ensure the provided ESX admin group has `Admin` access on the ESXi host.
+5. Ensure lockdown mode is `lockdownNormal`.
+6. Ensure the user is present in the lockdown exception list.
+7. Reset the password only when `-ForceReset` is supplied for an already existing user.
 
 ## Requirements
 
@@ -51,6 +53,7 @@ Important script-level settings:
 - `RequiredUsernames`
 - `DesiredLockdownMode`
 - `DesiredEsxAdminsGroupValue`
+- `DesiredEsxAdminsGroupAccessMode`
 - `EsxAdminsGroupSettingName`
 - `ReportDirectory`
 - `LogDirectory`
@@ -113,7 +116,7 @@ Host resolution is unchunked by default.
 Example:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -Validate -CsvPath .\hosts.csv -EsxAdminsGroup 'DOMAIN\ESX-ADMINS' -ResolutionChunkSize 200
+.\esxi_local_user_compliance_v0.0.8.ps1 -Validate -CsvPath .\hosts.csv -EsxAdminsGroup 'DOMAIN\ESX-ADMINS' -ResolutionChunkSize 200
 ```
 
 ## Mode Behavior
@@ -126,27 +129,28 @@ Behavior:
 - If `-Username` is omitted, the script uses `RequiredUsernames`.
 - `-Password` is rejected.
 - `-EsxAdminsGroup` should be provided unless `DesiredEsxAdminsGroupValue` is already configured in the script.
+- When an ESX admin group is provided, validation also checks that the host grants that group `Admin` access.
 
 Examples:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -Validate -VMHost esxi01.example.com -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
+.\esxi_local_user_compliance_v0.0.8.ps1 -Validate -VMHost esxi01.example.com -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
 ```
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -Validate -VMHost esxi01.example.com,esxi02.example.com -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
+.\esxi_local_user_compliance_v0.0.8.ps1 -Validate -VMHost esxi01.example.com,esxi02.example.com -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
 ```
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -Validate -CsvPath .\hosts.csv -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
+.\esxi_local_user_compliance_v0.0.8.ps1 -Validate -CsvPath .\hosts.csv -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
 ```
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -Validate -VMHost esxi01.example.com -Username SOCVA -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
+.\esxi_local_user_compliance_v0.0.8.ps1 -Validate -VMHost esxi01.example.com -Username SOCVA -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
 ```
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -Validate -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
+.\esxi_local_user_compliance_v0.0.8.ps1 -Validate -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
 ```
 
 ### Remediate
@@ -160,27 +164,28 @@ Behavior:
 - The script always asks for confirmation before making changes.
 - If no host input is supplied, the script targets all hosts in connected vCenters.
 - `-ForceReset` resets the password only for users that already existed before remediation.
+- When an ESX admin group is provided, remediation also ensures that group has `Admin` access on each ESXi host.
 
 Examples:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -Remediate -VMHost esxi01.example.com -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
+.\esxi_local_user_compliance_v0.0.8.ps1 -Remediate -VMHost esxi01.example.com -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
 ```
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -Remediate -VMHost esxi01.example.com,esxi02.example.com -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
+.\esxi_local_user_compliance_v0.0.8.ps1 -Remediate -VMHost esxi01.example.com,esxi02.example.com -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
 ```
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -Remediate -VMHost esxi01.example.com -Username SOCVA -Password 'StrongPassword123!' -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
+.\esxi_local_user_compliance_v0.0.8.ps1 -Remediate -VMHost esxi01.example.com -Username SOCVA -Password 'StrongPassword123!' -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
 ```
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -Remediate -VMHost esxi01.example.com -Username SOCVA -Password 'StrongPassword123!' -ForceReset -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
+.\esxi_local_user_compliance_v0.0.8.ps1 -Remediate -VMHost esxi01.example.com -Username SOCVA -Password 'StrongPassword123!' -ForceReset -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
 ```
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -Remediate -CsvPath .\hosts.csv -Username SOCVA -Password 'StrongPassword123!' -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
+.\esxi_local_user_compliance_v0.0.8.ps1 -Remediate -CsvPath .\hosts.csv -Username SOCVA -Password 'StrongPassword123!' -EsxAdminsGroup 'DOMAIN\ESX-ADMINS'
 ```
 
 ### CheckConnectivity
@@ -198,27 +203,27 @@ Behavior:
 Examples:
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -CheckConnectivity -VMHost esxi01.example.com
+.\esxi_local_user_compliance_v0.0.8.ps1 -CheckConnectivity -VMHost esxi01.example.com
 ```
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -CheckConnectivity -VMHost esxi01.example.com -Username SOCVA -Password 'StrongPassword123!'
+.\esxi_local_user_compliance_v0.0.8.ps1 -CheckConnectivity -VMHost esxi01.example.com -Username SOCVA -Password 'StrongPassword123!'
 ```
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -CheckConnectivity -CsvPath .\hosts.csv -Username SOCVA -Password 'StrongPassword123!'
+.\esxi_local_user_compliance_v0.0.8.ps1 -CheckConnectivity -CsvPath .\hosts.csv -Username SOCVA -Password 'StrongPassword123!'
 ```
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -CheckConnectivity -Username SOCVA -Password 'StrongPassword123!'
+.\esxi_local_user_compliance_v0.0.8.ps1 -CheckConnectivity -Username SOCVA -Password 'StrongPassword123!'
 ```
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -CheckConnectivity -VMHost esxi01.example.com -Username SOCVA -Password 'StrongPassword123!' -LockdownMode enable
+.\esxi_local_user_compliance_v0.0.8.ps1 -CheckConnectivity -VMHost esxi01.example.com -Username SOCVA -Password 'StrongPassword123!' -LockdownMode enable
 ```
 
 ```powershell
-.\esxi_local_user_compliance_v0.0.7.ps1 -CheckConnectivity -VMHost esxi01.example.com -Username SOCVA -Password 'StrongPassword123!' -LockdownMode disable
+.\esxi_local_user_compliance_v0.0.8.ps1 -CheckConnectivity -VMHost esxi01.example.com -Username SOCVA -Password 'StrongPassword123!' -LockdownMode disable
 ```
 
 ## Reporting
@@ -247,6 +252,9 @@ The filenames include the selected mode.
 - `EsxAdminsGroupExpected`
 - `EsxAdminsGroupActual`
 - `EsxAdminGroupStatus`
+- `EsxAdminsGroupAdminAccessExpected`
+- `EsxAdminsGroupAdminAccessActual`
+- `EsxAdminsGroupAdminAccessStatus`
 - `LockdownMode`
 - `InLockdownExceptionList`
 - `ActionStatus`
@@ -269,7 +277,11 @@ The filenames include the selected mode.
 - `EsxAdminsGroupExpected`
 - `EsxAdminsGroupActual`
 - `EsxAdminGroupStatus`
+- `EsxAdminsGroupAdminAccessExpected`
+- `EsxAdminsGroupAdminAccessActual`
+- `EsxAdminsGroupAdminAccessStatus`
 - `EsxAdminsGroupRemediationStatus`
+- `EsxAdminsGroupAdminAccessRemediationStatus`
 - `LockdownMode`
 - `InLockdownExceptionList`
 - `PasswordResetStatus`
@@ -309,6 +321,13 @@ Common row-level status values include:
 
 - `Valid`
 - `Invalid`
+- `Skipped`
+
+`EsxAdminsGroupAdminAccessStatus` values:
+
+- `Valid`
+- `Invalid`
+- `Missing`
 - `Skipped`
 
 ## Operational Notes
